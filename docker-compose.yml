@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    image: temujira:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    # Optional headless first-admin provisioning (only applies while no users exist):
+    # environment:
+    #   TEMUJIRA_ADMIN_EMAIL: admin@example.com
+    #   TEMUJIRA_ADMIN_PASSWORD: change-me-please
+    #   TEMUJIRA_ADMIN_NAME: Admin
+    #   MAX_UPLOAD_MB: "50"
+    #   COOKIE_SECURE: "1"   # force Secure cookies when a proxy terminates TLS without X-Forwarded-Proto
