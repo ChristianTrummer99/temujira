@@ -1,0 +1,16 @@
+{
+  "name": "temujira",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Self-hosted, open-source project management for humans and AI agents",
+  "license": "MIT",
+  "scripts": {
+    "dev": "pnpm --filter @temujira/server dev",
+    "dev:web": "pnpm --filter @temujira/web start",
+    "build": "pnpm -r --filter './apps/*' --filter './packages/*' build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "e2e": "bash scripts/e2e.sh"
+  },
+  "packageManager": "pnpm@10.24.0"
+}

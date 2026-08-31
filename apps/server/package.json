@@ -1,0 +1,34 @@
+{
+  "name": "@temujira/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@temujira/shared": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "busboy": "^1.6.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.13.5",
+    "ulidx": "^2.4.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/busboy": "^1.5.4",
+    "@types/node": "^26.4.0",
+    "drizzle-kit": "^0.31.10",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

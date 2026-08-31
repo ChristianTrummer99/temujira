@@ -1,0 +1,17 @@
+{
+  "name": "@temujira/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "echo 'client ships as TS source'",
+    "test": "echo 'no tests in client'"
+  },
+  "dependencies": {
+    "@temujira/shared": "workspace:*",
+    "zod": "^4.5.4"
+  }
+}

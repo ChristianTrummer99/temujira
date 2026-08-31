@@ -1,0 +1,16 @@
+{
+  "name": "@temujira/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "echo 'shared ships as TS source'",
+    "test": "echo 'no tests in shared'"
+  },
+  "dependencies": {
+    "zod": "^4.5.4"
+  }
+}
