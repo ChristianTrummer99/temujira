@@ -59,6 +59,22 @@ email/password authentication, API key management, and every feature below marke
 - **FR-20 (v1)** Comments support file attachments too.
 - **FR-21 (v1)** Markdown renders anywhere prose appears (task descriptions, comments).
 
+### Linked tickets
+
+- **FR-24 (v2)** A task can be linked to other tasks with a relationship modifier — e.g.
+  "absorbs START-2", "related to START-3". Links are created and removed from either end,
+  and the far side shows the inverse relationship ("absorbed by START-1").
+- **FR-25 (v2)** Links are available in the UI, the API, and the CLI like every other
+  action (the parity contract), and tasks are named by their human key (`START-2`).
+
+### Attachment previews
+
+- **FR-26 (v2)** Image attachments preview in-app rather than only downloading.
+- **FR-27 (v2)** Markdown attachments render as formatted markdown.
+- **FR-28 (v2)** Previews must not weaken the existing download-hardening policy: uploaded
+  SVG and HTML stay non-inline on the cookie origin, and bytes are fetched through the
+  authenticated client, never a bare URL.
+
 ### UI
 
 - **FR-22 (v1)** Left-hand sidebar modeled on the **shadcn/ui sidebar** (use the
