@@ -15,3 +15,6 @@ uploads/
 *.db-shm
 coverage/
 .turbo/
+
+# Playwright CLI session artifacts
+.playwright-cli/
