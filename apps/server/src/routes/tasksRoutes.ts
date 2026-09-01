@@ -12,6 +12,7 @@ import { conflict, validationError } from "../errors";
 import { taskToApi, type StatusRow, type TagRow, type TaskRow, type UserRow } from "../serialize";
 import { newId, now } from "../util";
 import { associate, recordActivity } from "./engagement";
+import { loadLinksForTask } from "./linksRoutes";
 import { requireTask, requireWorkspace } from "./resolve";
 import { body, currentUser, query, type AppContext, type Handlers } from "./types";
 
@@ -222,7 +223,10 @@ export function tasksHandlers(
         .orderBy(asc(attachments.createdAt), asc(attachments.id))
         .all();
       const tagRows = loadTagsForTasks(ctx.db, [task.id]).get(task.id) ?? [];
-      return c.json({ task: taskToApi(task, workspace.key, status, assignee, tagRows, attachmentRows) });
+      // Links are embedded on tasks.get only (attachments precedent): list/mine/create/update
+      // stay a single query per task.
+      const links = loadLinksForTask(ctx.db, task.id);
+      return c.json({ task: taskToApi(task, workspace.key, status, assignee, tagRows, attachmentRows, links) });
     },
 
     "tasks.update": (c) => {

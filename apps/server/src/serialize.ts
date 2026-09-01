@@ -1,3 +1,4 @@
+import { LINK_INVERSE, type LinkType } from "@temujira/shared";
 import type {
   ActivityEvent,
   ApiKey,
@@ -7,6 +8,7 @@ import type {
   Status,
   Tag,
   Task,
+  TaskLink,
   User,
   Workspace,
 } from "@temujira/shared";
@@ -18,6 +20,7 @@ import type {
   inboxItems,
   statuses,
   tags,
+  taskLinks,
   tasks,
   users,
   workspaces,
@@ -33,6 +36,7 @@ export type AttachmentRow = typeof attachments.$inferSelect;
 export type TagRow = typeof tags.$inferSelect;
 export type ActivityEventRow = typeof activityEvents.$inferSelect;
 export type InboxItemRow = typeof inboxItems.$inferSelect;
+export type TaskLinkRow = typeof taskLinks.$inferSelect;
 
 export function userToApi(u: UserRow): User {
   return {
@@ -105,6 +109,34 @@ export function attachmentToApi(a: AttachmentRow): Attachment {
   };
 }
 
+/**
+ * Serialize one stored link from the viewpoint of `perspectiveTaskId`.
+ * The row is canonical ("src <type> dst"); the viewer on the dst side sees the inverse
+ * relation. `other` MUST carry the far task's OWN workspace key — reusing the viewpoint
+ * task's workspace key would mint wrong keys for cross-workspace links.
+ */
+export function taskLinkToApi(
+  row: TaskLinkRow,
+  perspectiveTaskId: string,
+  other: { task: TaskRow; workspaceKey: string; status: StatusRow },
+): TaskLink {
+  const outward = row.srcTaskId === perspectiveTaskId;
+  return {
+    id: row.id,
+    type: outward ? (row.type as LinkType) : LINK_INVERSE[row.type as LinkType],
+    task: {
+      id: other.task.id,
+      key: `${other.workspaceKey}-${other.task.number}`,
+      workspace_id: other.task.workspaceId,
+      title: other.task.title,
+      status: statusToApi(other.status),
+      archived_at: other.task.archivedAt,
+    },
+    created_by: row.createdBy,
+    created_at: row.createdAt,
+  };
+}
+
 export function taskToApi(
   t: TaskRow,
   workspaceKey: string,
@@ -112,6 +144,7 @@ export function taskToApi(
   assignee: UserRow | null,
   tagRows?: TagRow[],
   attachmentRows?: AttachmentRow[],
+  links?: TaskLink[],
 ): Task {
   return {
     id: t.id,
@@ -130,6 +163,7 @@ export function taskToApi(
     updated_at: t.updatedAt,
     ...(tagRows ? { tags: tagRows.map(tagToApi) } : { tags: [] }),
     ...(attachmentRows ? { attachments: attachmentRows.map(attachmentToApi) } : {}),
+    ...(links ? { links } : {}),
   };
 }
 

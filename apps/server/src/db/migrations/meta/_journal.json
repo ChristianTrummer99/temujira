@@ -15,6 +15,13 @@
       "when": 1788236351222,
       "tag": "0001_lying_sentry",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788275560048,
+      "tag": "0002_huge_hemingway",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,7 @@ import { attachmentsHandlers } from "./routes/attachmentsRoutes";
 import { authHandlers } from "./routes/authRoutes";
 import { commentsHandlers } from "./routes/commentsRoutes";
 import { inboxHandlers } from "./routes/inboxRoutes";
+import { linksHandlers } from "./routes/linksRoutes";
 import { metaHandlers } from "./routes/meta";
 import { statusesHandlers } from "./routes/statusesRoutes";
 import { tagsHandlers } from "./routes/tagsRoutes";
@@ -89,6 +90,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     ...statusesHandlers(ctx),
     ...tagsHandlers(ctx),
     ...tasksHandlers(ctx),
+    ...linksHandlers(ctx),
     ...commentsHandlers(ctx),
     ...attachmentsHandlers(ctx),
     ...activityHandlers(ctx),

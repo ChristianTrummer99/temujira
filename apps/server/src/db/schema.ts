@@ -270,6 +270,39 @@ export const taskTags = sqliteTable(
 );
 
 /**
+ * Typed edge between two tasks: "src <type> dst" (e.g. src absorbs dst).
+ * Only canonical types are stored (relates/blocks/absorbs); inverse spellings
+ * (blocked_by/absorbed_by) exist only on the wire, computed per viewpoint at
+ * serialization. `relates` rows are stored src < dst (ULID order) so the unique
+ * index dedupes both directions. Links are pure metadata: no side effects,
+ * no enforcement, task rows untouched.
+ */
+export const taskLinks = sqliteTable(
+  "task_links",
+  {
+    id: text("id").primaryKey(),
+    srcTaskId: text("src_task_id")
+      .notNull()
+      .references(() => tasks.id),
+    type: text("type").notNull(),
+    dstTaskId: text("dst_task_id")
+      .notNull()
+      .references(() => tasks.id),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("task_links_edge_unique").on(t.srcTaskId, t.type, t.dstTaskId),
+    index("task_links_src_idx").on(t.srcTaskId),
+    index("task_links_dst_idx").on(t.dstTaskId),
+    check("task_links_type_check", sql`${t.type} IN ('relates','blocks','absorbs')`),
+    check("task_links_no_self_check", sql`${t.srcTaskId} != ${t.dstTaskId}`),
+  ],
+);
+
+/**
  * Catch-all association: a user is "associated" with a task when they created it, are
  * assigned, commented on it, or were mentioned. Used by the per-user "my activity" feed.
  */
