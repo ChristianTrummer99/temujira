@@ -22,7 +22,7 @@ import { useAuth } from '@/lib/auth';
 import { formatRelative, initialsOf } from '@/lib/format';
 import { DEFAULT_GROUP_BY, groupTasks, type GroupBy, type TaskGroup } from '@/lib/group-tasks';
 import { useResource } from '@/lib/use-resource';
-import type { Status, Tag, Task, User } from '@temujira/client';
+import type { FieldDef, Status, Tag, Task, User } from '@temujira/client';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ActivityIcon,
@@ -57,11 +57,11 @@ type WebGlobals = {
 };
 
 /** Collapsed groups are remembered per workspace AND per grouping dimension. */
-function collapsedStorageKey(workspaceKey: string, groupBy: GroupBy) {
+function collapsedStorageKey(workspaceKey: string, groupBy: GroupBy | string) {
   return `temujira.collapsed.${workspaceKey}.${groupBy}`;
 }
 
-function readCollapsed(workspaceKey: string, groupBy: GroupBy): Set<string> {
+function readCollapsed(workspaceKey: string, groupBy: GroupBy | string): Set<string> {
   if (Platform.OS !== 'web') return new Set();
   try {
     const raw = (globalThis as WebGlobals).localStorage?.getItem(
@@ -77,7 +77,7 @@ function readCollapsed(workspaceKey: string, groupBy: GroupBy): Set<string> {
   }
 }
 
-function persistCollapsed(workspaceKey: string, groupBy: GroupBy, ids: Set<string>) {
+function persistCollapsed(workspaceKey: string, groupBy: GroupBy | string, ids: Set<string>) {
   if (Platform.OS !== 'web') return;
   try {
     (globalThis as WebGlobals).localStorage?.setItem(
@@ -99,6 +99,8 @@ export default function WorkspaceTasksScreen() {
   const [statusFilter, setStatusFilter] = React.useState<Option>(undefined);
   const [assigneeFilter, setAssigneeFilter] = React.useState<Option>(undefined);
   const [tagFilter, setTagFilter] = React.useState<Option>(undefined);
+  const [fieldFilter, setFieldFilter] = React.useState<Option>(undefined);
+  const [fieldValueFilter, setFieldValueFilter] = React.useState<Option>(undefined);
   const [groupOption, setGroupOption] = React.useState<Option>(DEFAULT_GROUP_OPTION);
   const [includeArchived, setIncludeArchived] = React.useState(false);
 
@@ -112,20 +114,28 @@ export default function WorkspaceTasksScreen() {
   const statusId = statusFilter?.value && statusFilter.value !== 'all' ? statusFilter.value : '';
   const assigneeValue = assigneeFilter?.value ?? 'all';
   const tagId = tagFilter?.value && tagFilter.value !== 'all' ? tagFilter.value : '';
-  const groupBy = (groupOption?.value ?? DEFAULT_GROUP_BY) as GroupBy;
+  const fieldId = fieldFilter?.value && fieldFilter.value !== 'all' ? fieldFilter.value : '';
+  const fieldValue =
+    fieldId && fieldValueFilter?.value && fieldValueFilter.value !== 'all'
+      ? fieldValueFilter.value
+      : '';
+  const groupBy = (groupOption?.value ?? DEFAULT_GROUP_BY) as GroupBy | string;
 
   const resource = useResource(
     async () => {
-      const [statusRes, userRes, tagRes, taskRes] = await Promise.all([
+      const [statusRes, userRes, tagRes, fieldRes, taskRes] = await Promise.all([
         client.listStatuses(workspaceKey),
         client.listUsers(),
         client.listTags(workspaceKey),
+        client.listFields(workspaceKey),
         client.listTasks(workspaceKey, {
           q: debouncedSearch || undefined,
           status_id: statusId || undefined,
           assignee_id:
             assigneeValue !== 'all' && assigneeValue !== 'unassigned' ? assigneeValue : undefined,
           tag_id: tagId || undefined,
+          field_id: fieldId || undefined,
+          field_value: fieldValue || undefined,
           include_archived: includeArchived || undefined,
           sort: 'created_at',
           order: 'desc',
@@ -137,6 +147,7 @@ export default function WorkspaceTasksScreen() {
         statuses: statusRes.items,
         users: userRes.items,
         tags: tagRes.items,
+        fields: fieldRes.items,
         tasks: taskRes.items,
       };
     },
@@ -147,6 +158,8 @@ export default function WorkspaceTasksScreen() {
       statusId,
       assigneeValue,
       tagId,
+      fieldId,
+      fieldValue,
       includeArchived,
       groupBy,
     ]
@@ -155,6 +168,8 @@ export default function WorkspaceTasksScreen() {
   const statuses = resource.data?.statuses ?? [];
   const users = resource.data?.users ?? [];
   const tags = resource.data?.tags ?? [];
+  const fields = resource.data?.fields ?? [];
+  const selectFields = React.useMemo(() => fields.filter((f) => f.type === 'select'), [fields]);
 
   // "Unassigned" has no server-side representation (assignee_id is a ulid) — filter locally.
   const tasks = React.useMemo(() => {
@@ -162,9 +177,14 @@ export default function WorkspaceTasksScreen() {
     return assigneeValue === 'unassigned' ? all.filter((t) => t.assignee_id === null) : all;
   }, [resource.data, assigneeValue]);
 
+  const groupField = React.useMemo(
+    () => (GROUP_OPTIONS.some((o) => o.value === groupBy) ? undefined : fields.find((f) => f.id === groupBy)),
+    [groupBy, fields]
+  );
+
   const groups = React.useMemo(
-    () => groupTasks(tasks, groupBy, { statuses, tags }),
-    [tasks, groupBy, statuses, tags]
+    () => groupTasks(tasks, groupBy, { statuses, tags, field: groupField }),
+    [tasks, groupBy, statuses, tags, groupField]
   );
 
   // Groups start expanded; only the ids the user has explicitly collapsed live here.
@@ -182,6 +202,19 @@ export default function WorkspaceTasksScreen() {
     setCollapsed(next);
     persistCollapsed(workspaceKey, groupBy, next);
   }
+
+  const groupOptions = React.useMemo(() => {
+    const fieldItems = selectFields.map((f) => ({
+      value: f.id,
+      label: `Field: ${f.name}`,
+    }));
+    return [...GROUP_OPTIONS, ...fieldItems];
+  }, [selectFields]);
+
+  const activeField = React.useMemo(
+    () => selectFields.find((f) => f.id === fieldId),
+    [selectFields, fieldId]
+  );
 
   return (
     <View className="flex-1">
@@ -231,12 +264,43 @@ export default function WorkspaceTasksScreen() {
             ))}
           </SelectContent>
         </Select>
+        {selectFields.length > 0 || groupField ? (
+          <Select
+            value={fieldFilter}
+            onValueChange={(o) => {
+              setFieldFilter(o);
+              setFieldValueFilter(undefined);
+            }}>
+            <SelectTrigger className="min-w-36">
+              <SelectValue placeholder="All fields" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" label="All fields" />
+              {selectFields.map((f) => (
+                <SelectItem key={f.id} value={f.id} label={f.name} />
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+        {activeField ? (
+          <Select value={fieldValueFilter} onValueChange={setFieldValueFilter}>
+            <SelectTrigger className="min-w-32">
+              <SelectValue placeholder={`All ${activeField.name} values`} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" label={`All ${activeField.name} values`} />
+              {activeField.options.map((option) => (
+                <SelectItem key={option} value={option} label={option} />
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
         <Select value={groupOption} onValueChange={setGroupOption}>
           <SelectTrigger className="min-w-40">
             <SelectValue placeholder="Group by status" />
           </SelectTrigger>
           <SelectContent>
-            {GROUP_OPTIONS.map((o) => (
+            {groupOptions.map((o) => (
               <SelectItem key={o.value} value={o.value} label={o.label} />
             ))}
           </SelectContent>
@@ -261,6 +325,7 @@ export default function WorkspaceTasksScreen() {
           statuses={statuses}
           users={users}
           tags={tags}
+          fields={fields}
           onCreated={() => resource.reload()}
         />
       </View>
@@ -286,6 +351,7 @@ export default function WorkspaceTasksScreen() {
               workspaceKey={workspaceKey}
               expanded={!collapsed.has(group.id)}
               onToggle={() => toggleGroup(group.id)}
+              field={groupField}
             />
           ))}
           {groups.length === 0 ? (
@@ -310,11 +376,13 @@ function TaskGroupCard({
   workspaceKey,
   expanded,
   onToggle,
+  field,
 }: {
   group: TaskGroup;
   workspaceKey: string;
   expanded: boolean;
   onToggle: () => void;
+  field?: FieldDef;
 }) {
   const count = group.tasks.length;
   return (
@@ -350,6 +418,7 @@ function TaskGroupCard({
               task={task}
               workspaceKey={workspaceKey}
               last={i === count - 1}
+              field={field}
             />
           ))
         : null}
@@ -361,14 +430,18 @@ function TaskRow({
   task,
   workspaceKey,
   last,
+  field,
 }: {
   task: Task;
   workspaceKey: string;
   /** The last row in a card skips its hairline so the card's own border is the only line. */
   last?: boolean;
+  /** Set when the list is grouped by a custom field — show that field's value as a pill. */
+  field?: FieldDef;
 }) {
   const router = useRouter();
   const archived = task.archived_at != null;
+  const fieldValue = field ? (task.field_values ?? {})[field.id] : undefined;
 
   // Archiving lives in the task view, not here: a control that only appears on hover
   // changes the row's height as the pointer crosses it, which reads as a flicker.
@@ -386,6 +459,11 @@ function TaskRow({
       <Text numberOfLines={1} className="min-w-0 flex-1 text-sm">
         {task.title}
       </Text>
+      {fieldValue ? (
+        <Badge variant="outline">
+          <Text className="text-xs">{fieldValue}</Text>
+        </Badge>
+      ) : null}
       {archived ? (
         <Badge variant="outline">
           <Text>Archived</Text>
@@ -418,12 +496,14 @@ function NewTaskDialog({
   statuses,
   users,
   tags,
+  fields,
   onCreated,
 }: {
   workspaceKey: string;
   statuses: Status[];
   users: User[];
   tags: Tag[];
+  fields: FieldDef[];
   onCreated: () => void;
 }) {
   const { client } = useAuth();
@@ -433,11 +513,13 @@ function NewTaskDialog({
   const [statusOption, setStatusOption] = React.useState<Option>(undefined);
   const [assigneeOption, setAssigneeOption] = React.useState<Option>(undefined);
   const [tagIds, setTagIds] = React.useState<string[]>([]);
+  const [fieldValues, setFieldValues] = React.useState<Record<string, string>>({});
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   function close() {
     setOpen(false);
+    setFieldValues({});
     setError(null);
   }
 
@@ -456,12 +538,14 @@ function NewTaskDialog({
         status_id: statusOption?.value,
         assignee_id: assigneeOption?.value ?? undefined,
         tag_ids: tagIds.length > 0 ? tagIds : undefined,
+        field_values: Object.keys(fieldValues).length > 0 ? fieldValues : undefined,
       });
       setTitle('');
       setDescription('');
       setStatusOption(undefined);
       setAssigneeOption(undefined);
       setTagIds([]);
+      setFieldValues({});
       setOpen(false);
       onCreated();
     } catch (e) {
@@ -586,6 +670,27 @@ function NewTaskDialog({
                 </View>
               ) : null}
 
+              {fields.length > 0 ? (
+                <View className="gap-2.5">
+                  <Text className="text-sm font-medium">Fields</Text>
+                  {fields.map((field) => (
+                    <FieldValueControl
+                      key={field.id}
+                      field={field}
+                      value={fieldValues[field.id] ?? ''}
+                      onValue={(value) =>
+                        setFieldValues((prev) => {
+                          const next = { ...prev };
+                          if (value) next[field.id] = value;
+                          else delete next[field.id];
+                          return next;
+                        })
+                      }
+                    />
+                  ))}
+                </View>
+              ) : null}
+
               {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
 
               <View className="flex-row justify-end gap-2 pt-2">
@@ -601,5 +706,49 @@ function NewTaskDialog({
         </View>
       ) : null}
     </>
+  );
+}
+
+/** One custom-field editor: select → dropdown (with a clear option), text/number → input. */
+function FieldValueControl({
+  field,
+  value,
+  onValue,
+}: {
+  field: FieldDef;
+  value: string;
+  onValue: (v: string) => void;
+}) {
+  if (field.type === 'select') {
+    const selected: Option | undefined = value ? { value, label: value } : undefined;
+    return (
+      <View className="gap-1.5">
+        <Label>{field.name}</Label>
+        <Select
+          value={selected}
+          onValueChange={(o) => onValue(o?.value ?? '')}>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder={`Select ${field.name}`} />
+          </SelectTrigger>
+          <SelectContent>
+            {field.options.map((option) => (
+              <SelectItem key={option} value={option} label={option} />
+            ))}
+            <SelectItem value="" label="— None —" />
+          </SelectContent>
+        </Select>
+      </View>
+    );
+  }
+  return (
+    <View className="gap-1.5">
+      <Label>{field.name}</Label>
+      <Input
+        value={value}
+        onChangeText={onValue}
+        placeholder={field.type === 'number' ? `e.g. 5` : `${field.name}…`}
+        keyboardType={field.type === 'number' ? 'numeric' : 'default'}
+      />
+    </View>
   );
 }

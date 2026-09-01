@@ -44,7 +44,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
 import { useWorkspaceList } from '@/lib/workspaces';
-import type { Status, Tag, Workspace } from '@temujira/client';
+import type { FieldDef, Status, Tag, Workspace } from '@temujira/client';
 import {
   ArchiveIcon,
   ChevronDownIcon,
@@ -229,6 +229,8 @@ function WorkspaceCard({
         </View>
 
         <TagsSection workspaceKey={workspace.key} client={client} isAdmin={isAdmin} />
+
+        <FieldsSection workspaceKey={workspace.key} client={client} />
       </CardContent>
     </Card>
   );
@@ -743,6 +745,378 @@ function EditStatusDialog({
             </Button>
           </DialogClose>
           <Button onPress={onSave} disabled={saving}>
+            <Text>{saving ? 'Saving...' : 'Save'}</Text>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Custom field definitions (FR-31..35). Any member may maintain them, matching the
+ * statuses model: the field list is a per-workspace shape definition, and values live
+ * on tasks. Type is immutable once created; options are editable for select fields.
+ */
+function FieldsSection({
+  workspaceKey,
+  client,
+}: {
+  workspaceKey: string;
+  client: ReturnType<typeof useAuth>['client'];
+}) {
+  const [fields, setFields] = React.useState<FieldDef[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    try {
+      const { items } = await client.listFields(workspaceKey);
+      setFields(items);
+      setError(null);
+    } catch (e) {
+      setFields([]);
+      setError(e instanceof Error ? e.message : 'Failed to load custom fields');
+    }
+  }, [client, workspaceKey]);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function onMove(id: string, dir: -1 | 1) {
+    if (!fields) return;
+    const idx = fields.findIndex((f) => f.id === id);
+    const swap = idx + dir;
+    if (idx < 0 || swap < 0 || swap >= fields.length) return;
+    const next = [...fields];
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    try {
+      const { items } = await client.reorderFields(workspaceKey, next.map((f) => f.id));
+      setFields(items);
+    } catch {
+      // ignore
+    }
+  }
+
+  return (
+    <View className="gap-2">
+      <View className="flex-row items-center justify-between">
+        <Text className="text-sm font-medium">Custom fields</Text>
+        <AddFieldDialog
+          workspaceKey={workspaceKey}
+          client={client}
+          onAdded={(f) => setFields((prev) => [...(prev ?? []), f])}
+        />
+      </View>
+      {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
+      {fields === null ? (
+        <Skeleton className="h-9 w-full" />
+      ) : fields.length === 0 ? (
+        <Text className="text-muted-foreground text-sm">
+          No custom fields yet. Add one (select, text, or number) to capture structured
+          data on tasks — select fields can also group and filter the task list.
+        </Text>
+      ) : (
+        <View className="gap-2">
+          {fields.map((field, i) => (
+            <View
+              key={field.id}
+              className="border-border bg-card flex-row items-center gap-3 rounded-md border p-2.5">
+              <Text className="w-28 shrink-0 text-sm font-medium">{field.name}</Text>
+              <Badge variant="outline">
+                <Text className="text-xs">{field.type}</Text>
+              </Badge>
+              {field.type === 'select' ? (
+                <View className="min-w-0 flex-1 flex-row flex-wrap items-center gap-1">
+                  {field.options.slice(0, 3).map((option) => (
+                    <Badge key={option} variant="secondary">
+                      <Text className="text-xs">{option}</Text>
+                    </Badge>
+                  ))}
+                  {field.options.length > 3 ? (
+                    <Text className="text-muted-foreground text-xs">
+                      +{field.options.length - 3} more
+                    </Text>
+                  ) : null}
+                </View>
+              ) : (
+                <View className="flex-1" />
+              )}
+              <View className="flex-row gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  disabled={i === 0}
+                  onPress={() => onMove(field.id, -1)}>
+                  <Icon as={ChevronUpIcon} className="text-muted-foreground size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  disabled={i === fields.length - 1}
+                  onPress={() => onMove(field.id, 1)}>
+                  <Icon as={ChevronDownIcon} className="text-muted-foreground size-3.5" />
+                </Button>
+              </View>
+              <EditFieldDialog
+                field={field}
+                client={client}
+                onUpdated={(updated) =>
+                  setFields((prev) =>
+                    (prev ?? []).map((x) => (x.id === updated.id ? updated : x))
+                  )
+                }
+                onDeleted={(id) => setFields((prev) => (prev ?? []).filter((x) => x.id !== id))}
+              />
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const FIELD_TYPES = ['select', 'text', 'number'] as const;
+
+function AddFieldDialog({
+  workspaceKey,
+  client,
+  onAdded,
+}: {
+  workspaceKey: string;
+  client: ReturnType<typeof useAuth>['client'];
+  onAdded: (f: FieldDef) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState('');
+  const [type, setType] = React.useState<(typeof FIELD_TYPES)[number]>('text');
+  const [optionsText, setOptionsText] = React.useState('');
+  const [creating, setCreating] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  function parseOptions(): string[] {
+    return [...new Set(optionsText.split(',').map((o) => o.trim()).filter(Boolean))];
+  }
+
+  async function onCreate() {
+    if (creating || !name.trim()) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const options = parseOptions();
+      const { field } = await client.createField(workspaceKey, {
+        name: name.trim(),
+        type,
+        options: type === 'select' ? options : undefined,
+      });
+      onAdded(field);
+      setName('');
+      setType('text');
+      setOptionsText('');
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create field');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7 gap-1">
+          <Icon as={PlusIcon} className="text-muted-foreground size-3.5" />
+          <Text className="text-xs">Add</Text>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="w-full max-w-sm">
+        <DialogHeader>
+          <DialogTitle>New custom field</DialogTitle>
+          <DialogDescription>
+            A named field every task in this workspace can carry a value for.
+          </DialogDescription>
+        </DialogHeader>
+        <View className="gap-4">
+          <View className="gap-1.5">
+            <Label>Name</Label>
+            <Input value={name} onChangeText={setName} placeholder="Priority" />
+          </View>
+          <View className="gap-1.5">
+            <Label>Type (can&apos;t change later)</Label>
+            <View className="flex-row gap-2">
+              {FIELD_TYPES.map((t) => (
+                <Button
+                  key={t}
+                  variant={type === t ? 'default' : 'outline'}
+                  size="sm"
+                  className="flex-1"
+                  onPress={() => setType(t)}>
+                  <Text>{t === 'select' ? 'select' : t}</Text>
+                </Button>
+              ))}
+            </View>
+          </View>
+          {type === 'select' ? (
+            <View className="gap-1.5">
+              <Label>Options (comma-separated)</Label>
+              <Input
+                value={optionsText}
+                onChangeText={setOptionsText}
+                placeholder="low, medium, high"
+                autoCapitalize="none"
+              />
+              <Text className="text-muted-foreground text-xs">
+                Select fields power grouping and filtering on the task list.
+              </Text>
+            </View>
+          ) : null}
+          {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
+        </View>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">
+              <Text>Cancel</Text>
+            </Button>
+          </DialogClose>
+          <Button
+            onPress={onCreate}
+            disabled={
+              creating ||
+              !name.trim() ||
+              (type === 'select' && parseOptions().length === 0)
+            }>
+            <Text>{creating ? 'Creating...' : 'Create'}</Text>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditFieldDialog({
+  field,
+  client,
+  onUpdated,
+  onDeleted,
+}: {
+  field: FieldDef;
+  client: ReturnType<typeof useAuth>['client'];
+  onUpdated: (f: FieldDef) => void;
+  onDeleted: (id: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState(field.name);
+  const [optionsText, setOptionsText] = React.useState(field.options.join(', '));
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const isSelect = field.type === 'select';
+
+  function parseOptions(): string[] {
+    return [...new Set(optionsText.split(',').map((o) => o.trim()).filter(Boolean))];
+  }
+
+  async function onSave() {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const { field: updated } = await client.updateField(field.id, {
+        name: name.trim() || field.name,
+        options: isSelect ? parseOptions() : undefined,
+      });
+      onUpdated(updated);
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save field');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onDelete() {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await client.deleteField(field.id);
+      onDeleted(field.id);
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete field');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" accessibilityLabel={`Edit ${field.name}`}>
+          <Icon as={PencilIcon} className="text-muted-foreground size-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="w-full max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Edit field</DialogTitle>
+        </DialogHeader>
+        <View className="gap-4">
+          <View className="gap-1.5">
+            <Label>Name</Label>
+            <Input value={name} onChangeText={setName} />
+          </View>
+          {isSelect ? (
+            <View className="gap-1.5">
+              <Label>Options (comma-separated)</Label>
+              <Input
+                value={optionsText}
+                onChangeText={setOptionsText}
+                autoCapitalize="none"
+              />
+              <Text className="text-muted-foreground text-xs">
+                Tasks already carrying a removed option keep their value until it&apos;s
+                cleared on the task.
+              </Text>
+            </View>
+          ) : null}
+          {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
+        </View>
+        <DialogFooter className="flex-row justify-between">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" size="sm" disabled={saving}>
+                <Icon as={TrashIcon} className="size-3.5" />
+                <Text>Delete</Text>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete &quot;{field.name}&quot;?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This removes the field and every task value recorded for it in this
+                  workspace. This can&apos;t be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>
+                  <Text>Cancel</Text>
+                </AlertDialogCancel>
+                <AlertDialogAction onPress={onDelete}>
+                  <Text>Delete field</Text>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <DialogClose asChild>
+            <Button variant="outline">
+              <Text>Cancel</Text>
+            </Button>
+          </DialogClose>
+          <Button
+            onPress={onSave}
+            disabled={saving || (isSelect && parseOptions().length === 0)}>
             <Text>{saving ? 'Saving...' : 'Save'}</Text>
           </Button>
         </DialogFooter>

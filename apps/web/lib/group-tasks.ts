@@ -1,10 +1,13 @@
-import type { Status, Tag, Task } from '@temujira/client';
+import type { FieldDef, Status, Tag, Task } from '@temujira/client';
 
 /** The list is always grouped — there is no "no grouping" mode. */
 export const GROUP_BY_VALUES = ['status', 'tag', 'assignee'] as const;
 export type GroupBy = (typeof GROUP_BY_VALUES)[number];
 
 export const DEFAULT_GROUP_BY: GroupBy = 'status';
+
+/** Spill label for tasks with no value for the grouped field. */
+export const NO_VALUE_LABEL = 'No value';
 
 export interface TaskGroup {
   id: string;
@@ -24,11 +27,12 @@ export interface TaskGroup {
  * - status: workspace status order (`position`), colored.
  * - tag: `listTags` order; a task with two tags appears in BOTH groups, plus "No tag".
  * - assignee: alphabetical, plus "Unassigned".
+ * - <fieldId>: a custom select field; tasks with no value land in "No value".
  */
 export function groupTasks(
   tasks: Task[],
-  groupBy: GroupBy,
-  opts: { statuses: Status[]; tags: Tag[] }
+  groupBy: GroupBy | string,
+  opts: { statuses: Status[]; tags: Tag[]; field?: FieldDef }
 ): TaskGroup[] {
   if (groupBy === 'status') {
     const ordered = [...opts.statuses].sort((a, b) => a.position - b.position);
@@ -61,6 +65,27 @@ export function groupTasks(
       groups.push({ id: '__untagged', label: 'No tag', tasks: untagged });
     }
     return groups;
+  }
+
+  if (groupBy !== 'assignee') {
+    // Group by a custom select field. Buckets follow the field's option order, then
+    // any values not in the definition (retired options) alphabetically, then "No value".
+    const field = opts.field;
+    const buckets = new Map<string, Task[]>();
+    for (const task of tasks) {
+      const value = (task.field_values ?? {})[groupBy] || NO_VALUE_LABEL;
+      const list = buckets.get(value);
+      if (list) list.push(task);
+      else buckets.set(value, [task]);
+    }
+    const known = new Set(field?.options ?? []);
+    const orderedNames = [...(field?.options ?? [])].filter((o) => buckets.has(o));
+    const orphanNames = [...buckets.keys()]
+      .filter((name) => name !== NO_VALUE_LABEL && !known.has(name))
+      .sort((a, b) => a.localeCompare(b));
+    const names = [...orderedNames, ...orphanNames];
+    if (buckets.has(NO_VALUE_LABEL)) names.push(NO_VALUE_LABEL);
+    return names.map((name) => ({ id: name, label: name, tasks: buckets.get(name)! }));
   }
 
   // assignee

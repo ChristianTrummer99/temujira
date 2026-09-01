@@ -39,7 +39,17 @@ import { saveAttachment } from '@/lib/download';
 import { formatAbsolute, formatBytes, initialsOf, splitTaskKey } from '@/lib/format';
 import { evictPreview, isPreviewable } from '@/lib/preview';
 import { useResource } from '@/lib/use-resource';
-import type { Attachment, Comment, Status, Tag, Task, TaskLink, User } from '@temujira/client';
+import type {
+  Attachment,
+  Comment,
+  FieldDef,
+  QueueEntry,
+  Status,
+  Tag,
+  Task,
+  TaskLink,
+  User,
+} from '@temujira/client';
 import { LINK_RELATIONS, TaskKeyPattern, linkRelationLabel } from '@temujira/shared';
 import type { LinkRelation } from '@temujira/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -50,6 +60,7 @@ import {
   FileIcon,
   Link2Icon,
   ListChecksIcon,
+  ListOrderedIcon,
   Maximize2Icon,
   Minimize2Icon,
   PaperclipIcon,
@@ -67,6 +78,9 @@ interface TaskPageData {
   statuses: Status[];
   users: User[];
   tags: Tag[];
+  fields: FieldDef[];
+  /** The current user's queue, so the screen knows whether this task is already in it. */
+  queue: QueueEntry[];
   comments: Comment[];
 }
 
@@ -83,11 +97,13 @@ export default function TaskDetailScreen() {
   const [previewAtt, setPreviewAtt] = React.useState<Attachment | null>(null);
 
   const resource = useResource<TaskPageData>(async () => {
-    const [taskRes, statusRes, userRes, tagRes, commentRes] = await Promise.all([
+    const [taskRes, statusRes, userRes, tagRes, fieldRes, queueRes, commentRes] = await Promise.all([
       client.getTask(idOrKey),
       client.listStatuses(workspaceKey),
       client.listUsers(),
       client.listTags(workspaceKey),
+      client.listFields(workspaceKey),
+      client.getQueue(),
       client.listComments(idOrKey),
     ]);
     return {
@@ -95,6 +111,8 @@ export default function TaskDetailScreen() {
       statuses: statusRes.items,
       users: userRes.items,
       tags: tagRes.items,
+      fields: fieldRes.items,
+      queue: queueRes.items,
       comments: commentRes.items,
     };
   }, [client, idOrKey, workspaceKey]);
@@ -180,7 +198,9 @@ export default function TaskDetailScreen() {
     );
   }
 
-  const { task, statuses, users, tags, comments } = resource.data;
+  const { task, statuses, users, tags, fields, queue, comments } = resource.data;
+
+  const queueEntry = queue.find((e) => e.task.id === task.id) ?? null;
 
   return (
     <View className="absolute inset-0 flex-row bg-black/30">
@@ -246,6 +266,22 @@ export default function TaskDetailScreen() {
           <View className="flex-row flex-wrap gap-6">
             <StatusPicker task={task} statuses={statuses} onChanged={setTask} />
             <AssigneePicker task={task} users={users} onChanged={setTask} />
+            <QueueButton
+              task={task}
+              entry={queueEntry}
+              onChanged={(entry) =>
+                resource.setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        queue: entry
+                          ? [...prev.queue.filter((e) => e.id !== entry.id), entry]
+                          : prev.queue.filter((e) => e.task.id !== task.id),
+                      }
+                    : prev
+                )
+              }
+            />
             <ArchiveControl task={task} onChanged={setTask} />
           </View>
 
@@ -257,6 +293,8 @@ export default function TaskDetailScreen() {
             onChanged={setTask}
             onMentionPress={setMentionedUser}
           />
+
+          <FieldsSection task={task} fields={fields} onChanged={setTask} />
 
           <LinksSection task={task} onChanged={setTask} />
 
@@ -451,6 +489,202 @@ function ArchiveControl({ task, onChanged }: { task: Task; onChanged: (t: Task) 
         <Text className="text-muted-foreground text-sm">{archived ? 'Unarchive' : 'Archive'}</Text>
       </Button>
       {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
+    </View>
+  );
+}
+
+/**
+ * Adds/removes this task on the current user's personal queue (FR-36..40). State
+ * transitions (queued/ready/running/complete) are driven from the Queue screen.
+ */
+function QueueButton({
+  task,
+  entry,
+  onChanged,
+}: {
+  task: Task;
+  entry: QueueEntry | null;
+  onChanged: (entry: QueueEntry | null) => void;
+}) {
+  const { client } = useAuth();
+  const [working, setWorking] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function toggle() {
+    if (working) return;
+    setWorking(true);
+    setError(null);
+    try {
+      if (entry) {
+        await client.removeFromQueue(entry.id);
+        onChanged(null);
+      } else {
+        const { entry: added } = await client.addToQueue(task.key);
+        onChanged(added);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update queue');
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <View className="justify-end gap-0.5">
+      <Button variant={entry ? 'secondary' : 'outline'} onPress={toggle} className="h-9 gap-1.5">
+        <Icon
+          as={ListOrderedIcon}
+          className={entry ? 'text-muted-foreground size-4' : 'text-foreground size-4'}
+        />
+        <Text className="text-sm">
+          {entry ? `In queue · ${entry.state}` : working ? 'Adding…' : 'Add to queue'}
+        </Text>
+      </Button>
+      {error ? <Text className="text-destructive max-w-40 text-xs">{error}</Text> : null}
+    </View>
+  );
+}
+
+/** Per-field value editors for a task (FR-32/33). Changes save immediately. */
+function FieldsSection({
+  task,
+  fields,
+  onChanged,
+}: {
+  task: Task;
+  fields: FieldDef[];
+  onChanged: (t: Task) => void;
+}) {
+  const { client } = useAuth();
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function saveValues(fieldId: string, raw: string) {
+    const value = raw.trim();
+    setError(null);
+    try {
+      const { task: updated } = await client.updateTask(task.id, {
+        field_values: { ...(task.field_values ?? {}), [fieldId]: value },
+      });
+      onChanged(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save field');
+    }
+  }
+
+  if (fields.length === 0) return null;
+
+  return (
+    <View className="gap-2">
+      <Text className="text-sm font-medium">Custom fields</Text>
+      <View className="border-border bg-card gap-3 rounded-md border p-3">
+        {fields.map((field) => {
+          const current = task.field_values?.[field.id] ?? '';
+          if (field.type === 'select') {
+            return (
+              <SelectEditor
+                key={field.id}
+                field={field}
+                value={current}
+                onSave={(v) => saveValues(field.id, v)}
+              />
+            );
+          }
+          return (
+            <TextEditor key={field.id} field={field} value={current} onSave={(v) => saveValues(field.id, v)} />
+          );
+        })}
+        {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+function SelectEditor({
+  field,
+  value,
+  onSave,
+}: {
+  field: FieldDef;
+  value: string;
+  onSave: (v: string) => void;
+}) {
+  const [saving, setSaving] = React.useState(false);
+  const selected: Option | undefined = value ? { value, label: value } : undefined;
+
+  async function onChange(next: Option | undefined) {
+    const v = next?.value ?? '';
+    if (v === value) return;
+    setSaving(true);
+    try {
+      await onSave(v);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <View className="gap-1.5">
+      <View className="flex-row items-center justify-between">
+        <Label>{field.name}</Label>
+        {saving ? <Text className="text-muted-foreground text-xs">Saving…</Text> : null}
+      </View>
+      <Select value={selected} onValueChange={onChange}>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder={`Select ${field.name}`} />
+        </SelectTrigger>
+        <SelectContent>
+          {field.options.map((option) => (
+            <SelectItem key={option} value={option} label={option} />
+          ))}
+          <SelectItem value="" label="— None —" />
+        </SelectContent>
+      </Select>
+    </View>
+  );
+}
+
+function TextEditor({
+  field,
+  value,
+  onSave,
+}: {
+  field: FieldDef;
+  value: string;
+  onSave: (v: string) => void;
+}) {
+  const [draft, setDraft] = React.useState(value);
+  const [saving, setSaving] = React.useState(false);
+  const [touched, setTouched] = React.useState(false);
+
+  React.useEffect(() => setDraft(value), [value]);
+
+  async function save() {
+    if (!touched || draft.trim() === value) return;
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setTouched(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <View className="gap-1.5">
+      <View className="flex-row items-center justify-between">
+        <Label>{field.name}</Label>
+        {saving ? <Text className="text-muted-foreground text-xs">Saving…</Text> : null}
+      </View>
+      <Input
+        value={draft}
+        onChangeText={(v) => {
+          setDraft(v);
+          setTouched(true);
+        }}
+        onBlur={() => void save()}
+        keyboardType={field.type === 'number' ? 'numeric' : 'default'}
+        placeholder={field.type === 'number' ? 'Number…' : `${field.name}…`}
+      />
     </View>
   );
 }

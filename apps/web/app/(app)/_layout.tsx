@@ -41,6 +41,7 @@ import {
   CircleUserIcon,
   FolderIcon,
   InboxIcon,
+  ListOrderedIcon,
   LogOutIcon,
   PlusIcon,
   SettingsIcon,
@@ -166,6 +167,21 @@ function AppSidebar() {
                     }
                   />
                   <Text className="flex-1 pr-6">My Tasks</Text>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname === '/queue'}
+                  onPress={() => navigate('/queue')}>
+                  <Icon
+                    as={ListOrderedIcon}
+                    className={
+                      pathname === '/queue'
+                        ? 'text-sidebar-accent-foreground size-4'
+                        : 'text-sidebar-foreground size-4'
+                    }
+                  />
+                  <Text className="flex-1 pr-6">My Queue</Text>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -341,6 +357,16 @@ function TopBar() {
         <BreadcrumbLink onPress={() => router.push('/')}>Overview</BreadcrumbLink>
         <BreadcrumbSep />
         <Breadcrumb active>My Tasks</Breadcrumb>
+      </TopBarShell>
+    );
+  }
+
+  if (pathname === '/queue') {
+    return (
+      <TopBarShell>
+        <BreadcrumbLink onPress={() => router.push('/')}>Overview</BreadcrumbLink>
+        <BreadcrumbSep />
+        <Breadcrumb active>My Queue</Breadcrumb>
       </TopBarShell>
     );
   }
