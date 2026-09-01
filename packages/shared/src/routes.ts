@@ -1,27 +1,38 @@
 import { z } from "zod";
 import {
+  ActivityEventSchema,
   ApiKeySchema,
   AttachmentSchema,
   CommentSchema,
   CreateApiKeyInputSchema,
   CreateCommentInputSchema,
   CreateStatusInputSchema,
+  CreateTagInputSchema,
   CreateTaskInputSchema,
   CreateUserInputSchema,
   CreateWorkspaceInputSchema,
   DeleteStatusQuerySchema,
+  InboxItemSchema,
+  ListActivityQuerySchema,
   ListApiKeysQuerySchema,
+  ListInboxQuerySchema,
+  ListMyTasksQuerySchema,
+  ListTagsQuerySchema,
   ListTasksQuerySchema,
   ListUsersQuerySchema,
   ListWorkspacesQuerySchema,
   LoginInputSchema,
+  MentionSearchQuerySchema,
   ReorderStatusesInputSchema,
   SetupInputSchema,
   StatusSchema,
+  TagSchema,
   TaskSchema,
   UpdateCommentInputSchema,
+  UpdateInboxQuerySchema,
   UpdateMeInputSchema,
   UpdateStatusInputSchema,
+  UpdateTagInputSchema,
   UpdateTaskInputSchema,
   UpdateUserInputSchema,
   UpdateWorkspaceInputSchema,
@@ -169,6 +180,16 @@ export const ROUTES = {
     body: CreateUserInputSchema,
     response: z.object({ user: UserSchema }),
   },
+  // Declared before users.get: routes mount in registry order and Hono dispatches by
+  // registration order, so the literal /users/search must precede /users/:id.
+  "users.search": {
+    method: "GET",
+    path: "/users/search",
+    auth: "user",
+    summary: "Mention/assignee autocomplete: search active users by name or email",
+    query: MentionSearchQuerySchema,
+    response: listOf(UserSchema),
+  },
   "users.get": {
     method: "GET",
     path: "/users/:id",
@@ -266,7 +287,53 @@ export const ROUTES = {
     response: okResponse,
   },
 
+  // ---- tags ----
+  "tags.list": {
+    method: "GET",
+    path: "/workspaces/:idOrKey/tags",
+    auth: "user",
+    summary: "List a workspace's tags",
+    query: ListTagsQuerySchema,
+    response: listOf(TagSchema),
+  },
+  "tags.create": {
+    method: "POST",
+    path: "/workspaces/:idOrKey/tags",
+    auth: "admin",
+    summary: "Create a per-workspace tag (admin)",
+    body: CreateTagInputSchema,
+    response: z.object({ tag: TagSchema }),
+  },
+  "tags.update": {
+    method: "PATCH",
+    path: "/tags/:id",
+    auth: "admin",
+    summary: "Rename or recolor a tag (admin)",
+    body: UpdateTagInputSchema,
+    response: z.object({ tag: TagSchema }),
+  },
+  "tags.delete": {
+    method: "DELETE",
+    path: "/tags/:id",
+    auth: "admin",
+    summary: "Delete a tag and unlink it from all tasks (admin)",
+    response: okResponse,
+  },
+
   // ---- tasks ----
+  "tasks.mine": {
+    method: "GET",
+    path: "/tasks/mine",
+    auth: "user",
+    summary: "Tasks the current user is associated with (created/assigned/commented/mentioned)",
+    query: ListMyTasksQuerySchema,
+    response: z.object({
+      items: z.array(TaskSchema),
+      total: z.number().int(),
+      limit: z.number().int(),
+      offset: z.number().int(),
+    }),
+  },
   "tasks.list": {
     method: "GET",
     path: "/workspaces/:idOrKey/tasks",
@@ -373,6 +440,40 @@ export const ROUTES = {
     auth: "user",
     summary: "Delete an attachment and its bytes (uploader or admin)",
     response: okResponse,
+  },
+
+  // ---- activity ----
+  "activity.list": {
+    method: "GET",
+    path: "/workspaces/:idOrKey/activity",
+    auth: "user",
+    summary: "Workspace action feed (create/assign/comment/mention), newest first; ?mine=1 filters to the current user's tasks",
+    query: ListActivityQuerySchema,
+    response: listOf(ActivityEventSchema),
+  },
+
+  // ---- inbox ----
+  "inbox.list": {
+    method: "GET",
+    path: "/inbox",
+    auth: "user",
+    summary: "Unified cross-workspace inbox: mentions and replies directed at the current user",
+    query: ListInboxQuerySchema,
+    response: z.object({
+      items: z.array(InboxItemSchema),
+      unread: z.number().int(),
+      total: z.number().int(),
+      limit: z.number().int(),
+      offset: z.number().int(),
+    }),
+  },
+  "inbox.update": {
+    method: "POST",
+    path: "/inbox/read",
+    auth: "user",
+    summary: "Mark all of the current user's inbox items as read (?mark_read=1)",
+    query: UpdateInboxQuerySchema,
+    response: z.object({ ok: z.literal(true), updated: z.number().int() }),
   },
 } as const satisfies Record<string, RouteDef>;
 

@@ -74,6 +74,29 @@ export const StatusSchema = z.object({
 });
 export type Status = z.infer<typeof StatusSchema>;
 
+export const TagSchema = z.object({
+  id: UlidSchema,
+  workspace_id: UlidSchema,
+  name: z.string(),
+  color: z.string(),
+  created_at: TimestampSchema,
+});
+export type Tag = z.infer<typeof TagSchema>;
+
+export const ActivityEventSchema = z.object({
+  id: UlidSchema,
+  workspace_id: UlidSchema,
+  task_id: UlidSchema.nullable(),
+  task_key: z.string().nullable(),
+  task_title: z.string().nullable(),
+  actor_id: UlidSchema,
+  actor: UserSchema,
+  action: z.string(),
+  metadata: z.record(z.string(), z.unknown()),
+  created_at: TimestampSchema,
+});
+export type ActivityEvent = z.infer<typeof ActivityEventSchema>;
+
 export const AttachmentSchema = z.object({
   id: UlidSchema,
   task_id: UlidSchema.nullable(),
@@ -105,20 +128,62 @@ export const TaskSchema = z.object({
   updated_at: TimestampSchema,
   /** Embedded on tasks.get only. */
   attachments: z.array(AttachmentSchema).optional(),
+  /** Embedded tags (always present on list/get). */
+  tags: z.array(TagSchema),
 });
 export type Task = z.infer<typeof TaskSchema>;
 
-export const CommentSchema = z.object({
+export type Comment = {
+  id: string;
+  task_id: string;
+  parent_id: string | null;
+  author_id: string;
+  author: User;
+  body: string;
+  question: { options: string[]; answer_option_index: number | null } | null;
+  replies: Comment[];
+  attachments: Attachment[];
+  created_at: number;
+  updated_at: number;
+};
+
+export const CommentSchema: z.ZodType<Comment> = z.object({
   id: UlidSchema,
   task_id: UlidSchema,
+  parent_id: UlidSchema.nullable(),
   author_id: UlidSchema,
   author: UserSchema,
   body: z.string(),
+  question: z
+    .object({
+      options: z.array(z.string()),
+      answer_option_index: z.number().int().nullable(),
+    })
+    .nullable(),
+  replies: z.lazy(() => z.array(CommentSchema)),
   attachments: z.array(AttachmentSchema),
   created_at: TimestampSchema,
   updated_at: TimestampSchema,
 });
-export type Comment = z.infer<typeof CommentSchema>;
+
+export const InboxItemSchema = z.object({
+  id: UlidSchema,
+  user_id: UlidSchema,
+  workspace_id: UlidSchema,
+  workspace: WorkspaceSchema,
+  task_id: UlidSchema,
+  task_key: z.string(),
+  task_title: z.string(),
+  actor_id: UlidSchema,
+  actor: UserSchema,
+  kind: z.enum(["mention", "reply"]),
+  /** The comment that triggered the inbox entry (the mentioned or reply comment). */
+  source_comment: CommentSchema,
+  parent_comment: CommentSchema.nullable(),
+  read_at: TimestampSchema.nullable(),
+  created_at: TimestampSchema,
+});
+export type InboxItem = z.infer<typeof InboxItemSchema>;
 
 // ---------- request bodies ----------
 
@@ -194,12 +259,26 @@ export const ReorderStatusesInputSchema = z.object({
   status_ids: z.array(UlidSchema).min(1),
 });
 
+export const TagNameSchema = z.string().trim().min(1).max(50);
+
+export const CreateTagInputSchema = z.object({
+  name: TagNameSchema,
+  color: HexColorSchema.default("#6b7280"),
+});
+
+export const UpdateTagInputSchema = z.object({
+  name: TagNameSchema.optional(),
+  color: HexColorSchema.optional(),
+});
+
 export const CreateTaskInputSchema = z.object({
   title: TitleSchema,
   description: DescriptionSchema.default(""),
   /** Defaults to the workspace's first status. */
   status_id: UlidSchema.optional(),
   assignee_id: UlidSchema.nullable().optional(),
+  /** Replaces the task's full tag set with this list. */
+  tag_ids: z.array(UlidSchema).optional(),
 });
 
 export const UpdateTaskInputSchema = z.object({
@@ -209,10 +288,37 @@ export const UpdateTaskInputSchema = z.object({
   /** null unassigns. */
   assignee_id: UlidSchema.nullable().optional(),
   archived: z.boolean().optional(),
+  /** Replaces the task's full tag set with this list. */
+  tag_ids: z.array(UlidSchema).optional(),
 });
 
-export const CreateCommentInputSchema = z.object({ body: MarkdownBodySchema });
-export const UpdateCommentInputSchema = z.object({ body: MarkdownBodySchema });
+export const CreateCommentInputSchema = z.object({
+  body: MarkdownBodySchema,
+  /** Reply to this root comment id (one level of depth). */
+  parent_id: UlidSchema.optional(),
+  /** Pose a multiple-choice question on a root comment. */
+  question_options: z.array(z.string().trim().min(1).max(200)).min(2).max(10).optional(),
+  /** When replying to a question comment, the 0-based option index chosen. */
+  answer_option_index: z.number().int().min(0).optional(),
+  /** @-mention user ids to notify (resolved from @tokens by the client). */
+  mention_ids: z.array(UlidSchema).optional(),
+});
+
+export const UpdateCommentInputSchema = z.object({
+  body: MarkdownBodySchema.optional(),
+  question_options: z.array(z.string().trim().min(1).max(200)).min(2).max(10).nullable().optional(),
+});
+
+export const ListInboxQuerySchema = z.object({
+  include_read: QueryBoolSchema,
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const UpdateInboxQuerySchema = z.object({
+  /** Mark all of the current user's inbox items as read. */
+  mark_read: QueryBoolSchema,
+});
 
 // ---------- queries ----------
 
@@ -236,9 +342,12 @@ export const DeleteStatusQuerySchema = z.object({
 
 export const TASK_SORT_FIELDS = ["created_at", "updated_at", "number", "title"] as const;
 
+export const TASK_GROUP_FIELDS = ["none", "status", "tag", "assignee"] as const;
+
 export const ListTasksQuerySchema = z.object({
   status_id: UlidSchema.optional(),
   assignee_id: UlidSchema.optional(),
+  tag_id: UlidSchema.optional(),
   /** Substring match on title. */
   q: z.string().optional(),
   include_archived: QueryBoolSchema,
@@ -246,4 +355,29 @@ export const ListTasksQuerySchema = z.object({
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+  /**
+   * Presentational hint for the client to group tasks client-side.
+   * "status" | "tag" | "assignee" | "none" (default).
+   */
+  group_by: z.enum(TASK_GROUP_FIELDS).default("none"),
+});
+
+export const ListTagsQuerySchema = z.object({});
+
+export const ListActivityQuerySchema = z.object({
+  /** Filter to the current user's associated tasks when true (my activity). */
+  mine: QueryBoolSchema,
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const ListMyTasksQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const MentionSearchQuerySchema = z.object({
+  /** Substring match on name or email; min 1 char. */
+  q: z.string().min(1).max(100),
+  limit: z.coerce.number().int().min(1).max(50).default(10),
 });
