@@ -8,12 +8,21 @@ import { createDb } from "./db";
 import { attachments } from "./db/schema";
 import { HttpError } from "./errors";
 import { createFirstAdmin, needsSetup, setupHandlers } from "./routes/setup";
+import { activityHandlers } from "./routes/activityRoutes";
 import { apiKeyHandlers } from "./routes/apiKeysRoutes";
+import { attachmentsHandlers } from "./routes/attachmentsRoutes";
 import { authHandlers } from "./routes/authRoutes";
+import { commentsHandlers } from "./routes/commentsRoutes";
+import { inboxHandlers } from "./routes/inboxRoutes";
 import { metaHandlers } from "./routes/meta";
-import { stubHandlers } from "./routes/stubs";
+import { statusesHandlers } from "./routes/statusesRoutes";
+import { tagsHandlers } from "./routes/tagsRoutes";
+import { tasksHandlers } from "./routes/tasksRoutes";
+import { usersHandlers } from "./routes/usersRoutes";
+import { workspacesHandlers } from "./routes/workspacesRoutes";
 import type { AppContext, AppEnv, Handlers } from "./routes/types";
 import { LocalStorage } from "./storage";
+import { staticMiddleware } from "./static";
 
 const JSON_BODY_LIMIT = 2 * 1024 * 1024;
 
@@ -75,10 +84,20 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     ...setupHandlers(ctx),
     ...authHandlers(ctx),
     ...apiKeyHandlers(ctx),
-    ...stubHandlers(ctx),
+    ...usersHandlers(ctx),
+    ...workspacesHandlers(ctx),
+    ...statusesHandlers(ctx),
+    ...tagsHandlers(ctx),
+    ...tasksHandlers(ctx),
+    ...commentsHandlers(ctx),
+    ...attachmentsHandlers(ctx),
+    ...activityHandlers(ctx),
+    ...inboxHandlers(ctx),
   };
 
   const app = new Hono<AppEnv>();
+
+  const serveWeb = staticMiddleware(config.webDist);
 
   app.onError((err, c) => {
     if (err instanceof HttpError) {
@@ -91,15 +110,20 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     return c.json({ error: { code: "server_error", message: "internal server error" } }, 500);
   });
 
-  app.notFound((c) =>
-    c.json({ error: { code: "not_found", message: `no route for ${c.req.method} ${c.req.path}` } }, 404),
-  );
+  app.notFound((c) => serveWeb(c));
 
   if (config.devOrigins.length > 0) {
     app.use("/api/*", cors({ origin: config.devOrigins, credentials: true }));
   }
 
-  for (const id of ROUTE_IDS) {
+  // Hono resolves overlapping matches in registration order, so mount fully literal paths
+  // before parameterized ones: /users/search must win over /users/:id, /tasks/mine over
+  // /tasks/:idOrKey. Sorting by path-param count is stable, so registry order is otherwise
+  // preserved (and route parity is a set diff, unaffected by order).
+  const paramCount = (path: string) => (path.match(/:[A-Za-z]+/g) ?? []).length;
+  const mountOrder = [...ROUTE_IDS].sort((a, b) => paramCount(ROUTES[a].path) - paramCount(ROUTES[b].path));
+
+  for (const id of mountOrder) {
     const def: RouteDef = ROUTES[id];
     const middlewares: MiddlewareHandler<AppEnv>[] = [];
     if (def.auth !== "public") middlewares.push(requireAuth(def.auth, db, config));

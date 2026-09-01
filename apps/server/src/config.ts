@@ -12,6 +12,8 @@ export interface ServerConfig {
   adminEmail?: string;
   adminPassword?: string;
   adminName?: string;
+  /** Absolute/relative directory of the statically-exported Expo web app (served with SPA fallback). */
+  webDist?: string;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -27,5 +29,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ServerConfi
     adminEmail: env.TEMUJIRA_ADMIN_EMAIL,
     adminPassword: env.TEMUJIRA_ADMIN_PASSWORD,
     adminName: env.TEMUJIRA_ADMIN_NAME,
+    webDist: env.WEB_DIST,
   };
 }

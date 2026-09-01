@@ -7,5 +7,5 @@ export default defineConfig({
   clean: true,
   // Workspace packages ship as TS source; bundle them into the server build.
   noExternal: [/^@temujira\//],
-  onSuccess: "cp -R src/db/migrations dist/migrations",
+  onSuccess: "mkdir -p dist/migrations && cp -R src/db/migrations/. dist/migrations/",
 });

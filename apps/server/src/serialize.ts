@@ -1,13 +1,27 @@
 import type {
+  ActivityEvent,
   ApiKey,
   Attachment,
   Comment,
+  InboxItem,
   Status,
+  Tag,
   Task,
   User,
   Workspace,
 } from "@temujira/shared";
-import type { apiKeys, attachments, comments, statuses, tasks, users, workspaces } from "./db/schema";
+import type {
+  activityEvents,
+  apiKeys,
+  attachments,
+  comments,
+  inboxItems,
+  statuses,
+  tags,
+  tasks,
+  users,
+  workspaces,
+} from "./db/schema";
 
 export type UserRow = typeof users.$inferSelect;
 export type ApiKeyRow = typeof apiKeys.$inferSelect;
@@ -16,6 +30,9 @@ export type StatusRow = typeof statuses.$inferSelect;
 export type TaskRow = typeof tasks.$inferSelect;
 export type CommentRow = typeof comments.$inferSelect;
 export type AttachmentRow = typeof attachments.$inferSelect;
+export type TagRow = typeof tags.$inferSelect;
+export type ActivityEventRow = typeof activityEvents.$inferSelect;
+export type InboxItemRow = typeof inboxItems.$inferSelect;
 
 export function userToApi(u: UserRow): User {
   return {
@@ -64,6 +81,16 @@ export function statusToApi(s: StatusRow): Status {
   };
 }
 
+export function tagToApi(t: TagRow): Tag {
+  return {
+    id: t.id,
+    workspace_id: t.workspaceId,
+    name: t.name,
+    color: t.color,
+    created_at: t.createdAt,
+  };
+}
+
 export function attachmentToApi(a: AttachmentRow): Attachment {
   return {
     id: a.id,
@@ -83,6 +110,7 @@ export function taskToApi(
   workspaceKey: string,
   status: StatusRow,
   assignee: UserRow | null,
+  tagRows?: TagRow[],
   attachmentRows?: AttachmentRow[],
 ): Task {
   return {
@@ -100,19 +128,92 @@ export function taskToApi(
     archived_at: t.archivedAt,
     created_at: t.createdAt,
     updated_at: t.updatedAt,
+    ...(tagRows ? { tags: tagRows.map(tagToApi) } : { tags: [] }),
     ...(attachmentRows ? { attachments: attachmentRows.map(attachmentToApi) } : {}),
   };
 }
 
-export function commentToApi(c: CommentRow, author: UserRow, attachmentRows: AttachmentRow[]): Comment {
+export function commentToApi(
+  c: CommentRow,
+  author: UserRow,
+  attachmentRows: AttachmentRow[],
+  replies?: Comment[],
+  replyTo?: Comment | null,
+): Comment {
   return {
     id: c.id,
     task_id: c.taskId,
+    parent_id: c.parentId ?? null,
     author_id: c.authorId,
     author: userToApi(author),
     body: c.body,
+    question:
+      c.questionOptions !== null && c.questionOptions !== undefined
+        ? { options: asStringArray(c.questionOptions), answer_option_index: c.answerOptionIndex ?? null }
+        : null,
+    replies: replies ?? [],
     attachments: attachmentRows.map(attachmentToApi),
     created_at: c.createdAt,
     updated_at: c.updatedAt,
   };
+}
+
+function asStringArray(json: string): string[] {
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.map((s) => String(s)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function activityEventToApi(e: ActivityEventRow, actor: UserRow, task?: { key?: string; title?: string } | null): ActivityEvent {
+  return {
+    id: e.id,
+    workspace_id: e.workspaceId,
+    task_id: e.taskId,
+    task_key: e.taskId ? (task?.key ?? null) : null,
+    task_title: e.taskId ? (task?.title ?? null) : null,
+    actor_id: e.actorId,
+    actor: userToApi(actor),
+    action: e.action,
+    metadata: parseJsonRecord(e.metadata),
+    created_at: e.createdAt,
+  };
+}
+
+export function inboxItemToApi(
+  item: InboxItemRow,
+  actor: UserRow,
+  workspace: WorkspaceRow,
+  task: TaskRow,
+  workspaceKey: string,
+  sourceComment: Comment,
+  parentComment: Comment | null,
+): InboxItem {
+  return {
+    id: item.id,
+    user_id: item.userId,
+    workspace_id: item.workspaceId,
+    workspace: workspaceToApi(workspace),
+    task_id: item.taskId,
+    task_key: `${workspaceKey}-${task.number}`,
+    task_title: task.title,
+    actor_id: item.actorId,
+    actor: userToApi(actor),
+    kind: item.kind as "mention" | "reply",
+    source_comment: sourceComment,
+    parent_comment: parentComment,
+    read_at: item.readAt,
+    created_at: item.createdAt,
+  };
+}
+
+function parseJsonRecord(json: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(json);
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
+  }
 }
