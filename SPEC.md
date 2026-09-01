@@ -59,6 +59,30 @@ email/password authentication, API key management, and every feature below marke
 - **FR-20 (v1)** Comments support file attachments too.
 - **FR-21 (v1)** Markdown renders anywhere prose appears (task descriptions, comments).
 
+### Task list presentation
+
+- **FR-29 (v2)** The task list renders as **collapsible list-groups** (JIRA-backlog style):
+  each group is a card with a header showing a collapse chevron, the group name and a
+  count, and the task rows sit inside it.
+- **FR-30 (v2)** There is **always a grouping** — "no grouping" is not an option. Default is
+  group by status; the user can switch the grouping key (status, tag, assignee, or a custom
+  select field).
+
+### Custom fields
+
+- **FR-31 (v2)** Users can define **their own fields on tasks, per workspace** — the same
+  way statuses are user-defined rather than a hardcoded enum. Creating a field is a
+  first-class action, not a code change.
+- **FR-32 (v2)** A field definition has a name and a type. At minimum a **select** type with
+  user-defined options (mirroring how statuses work, which is the model the user pointed
+  at), alongside simple scalar types.
+- **FR-33 (v2)** Custom field values are set per task, displayed as **columns in the task
+  list**, and editable in the task detail.
+- **FR-34 (v2)** Select-type custom fields can be used as the **grouping key** and as a
+  filter, like status/tag/assignee.
+- **FR-35 (v2)** Field definitions and values are available via the API and CLI, like every
+  other action (the parity contract).
+
 ### Linked tickets
 
 - **FR-24 (v2)** A task can be linked to other tasks with a relationship modifier — e.g.
