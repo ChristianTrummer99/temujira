@@ -4,10 +4,13 @@ import {
   ROUTES,
   type RouteId,
   type ErrorCode,
+  type ActivityEvent,
   type ApiKey,
   type Attachment,
   type Comment,
+  type InboxItem,
   type Status,
+  type Tag,
   type Task,
   type User,
   type Workspace,
@@ -59,7 +62,9 @@ export class TemujiraClient {
     this.baseUrl = (opts.baseUrl ?? "").replace(/\/+$/, "");
     this.token = opts.token;
     this.useCookies = opts.useCookies ?? false;
-    this.fetchFn = opts.fetch ?? fetch;
+    // Bind to the global so `window.fetch` keeps its required `this` (avoids
+    // "Failed to execute 'fetch' on 'Window': Illegal invocation" in browsers).
+    this.fetchFn = opts.fetch ?? ((input, init) => fetch(input, init));
   }
 
   setToken(token: string | undefined) {
@@ -189,6 +194,10 @@ export class TemujiraClient {
   deactivateUser(id: string) {
     return this.call("users.deactivate", { id }) as Promise<{ user: User }>;
   }
+  /** Mention/assignee autocomplete over active users. */
+  searchUsers(query: { q: string; limit?: number }) {
+    return this.call("users.search", {}, { query }) as Promise<{ items: User[] }>;
+  }
 
   // ---- workspaces ----
   listWorkspaces(query: { include_archived?: boolean } = {}) {
@@ -221,18 +230,34 @@ export class TemujiraClient {
     return this.call("statuses.delete", { id }, { query }) as Promise<{ ok: true }>;
   }
 
+  // ---- tags (admin-managed, per workspace) ----
+  listTags(workspace: string) {
+    return this.call("tags.list", { idOrKey: workspace }) as Promise<{ items: Tag[] }>;
+  }
+  createTag(workspace: string, body: { name: string; color?: string }) {
+    return this.call("tags.create", { idOrKey: workspace }, { body }) as Promise<{ tag: Tag }>;
+  }
+  updateTag(id: string, body: { name?: string; color?: string }) {
+    return this.call("tags.update", { id }, { body }) as Promise<{ tag: Tag }>;
+  }
+  deleteTag(id: string) {
+    return this.call("tags.delete", { id }) as Promise<{ ok: true }>;
+  }
+
   // ---- tasks ----
   listTasks(
     workspace: string,
     query: {
       status_id?: string;
       assignee_id?: string;
+      tag_id?: string;
       q?: string;
       include_archived?: boolean;
       sort?: "created_at" | "updated_at" | "number" | "title";
       order?: "asc" | "desc";
       limit?: number;
       offset?: number;
+      group_by?: "none" | "status" | "tag" | "assignee";
     } = {},
   ) {
     return this.call("tasks.list", { idOrKey: workspace }, { query }) as Promise<{
@@ -242,9 +267,24 @@ export class TemujiraClient {
       offset: number;
     }>;
   }
+  /** Tasks the current user is associated with, across workspaces. */
+  listMyTasks(query: { limit?: number; offset?: number } = {}) {
+    return this.call("tasks.mine", {}, { query }) as Promise<{
+      items: Task[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>;
+  }
   createTask(
     workspace: string,
-    body: { title: string; description?: string; status_id?: string; assignee_id?: string | null },
+    body: {
+      title: string;
+      description?: string;
+      status_id?: string;
+      assignee_id?: string | null;
+      tag_ids?: string[];
+    },
   ) {
     return this.call("tasks.create", { idOrKey: workspace }, { body }) as Promise<{ task: Task }>;
   }
@@ -259,19 +299,29 @@ export class TemujiraClient {
       status_id?: string;
       assignee_id?: string | null;
       archived?: boolean;
+      tag_ids?: string[];
     },
   ) {
     return this.call("tasks.update", { idOrKey }, { body }) as Promise<{ task: Task }>;
   }
 
-  // ---- comments ----
+  // ---- comments (one level of threading; questions answered via child replies) ----
   listComments(task: string) {
     return this.call("comments.list", { idOrKey: task }) as Promise<{ items: Comment[] }>;
   }
-  createComment(task: string, body: { body: string }) {
+  createComment(
+    task: string,
+    body: {
+      body: string;
+      parent_id?: string;
+      question_options?: string[];
+      answer_option_index?: number;
+      mention_ids?: string[];
+    },
+  ) {
     return this.call("comments.create", { idOrKey: task }, { body }) as Promise<{ comment: Comment }>;
   }
-  updateComment(id: string, body: { body: string }) {
+  updateComment(id: string, body: { body?: string; question_options?: string[] | null }) {
     return this.call("comments.update", { id }, { body }) as Promise<{ comment: Comment }>;
   }
   deleteComment(id: string) {
@@ -311,6 +361,25 @@ export class TemujiraClient {
   deleteAttachment(id: string) {
     return this.call("attachments.delete", { id }) as Promise<{ ok: true }>;
   }
+
+  // ---- activity ----
+  listActivity(workspace: string, query: { mine?: boolean; limit?: number; offset?: number } = {}) {
+    return this.call("activity.list", { idOrKey: workspace }, { query }) as Promise<{ items: ActivityEvent[] }>;
+  }
+
+  // ---- inbox (unified, cross-workspace) ----
+  listInbox(query: { include_read?: boolean; limit?: number; offset?: number } = {}) {
+    return this.call("inbox.list", {}, { query }) as Promise<{
+      items: InboxItem[];
+      unread: number;
+      total: number;
+      limit: number;
+      offset: number;
+    }>;
+  }
+  markInboxRead(query: { mark_read?: boolean } = { mark_read: true }) {
+    return this.call("inbox.update", {}, { query }) as Promise<{ ok: true; updated: number }>;
+  }
 }
 
 /**
@@ -334,6 +403,7 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "users.get": "getUser",
   "users.update": "updateUser",
   "users.deactivate": "deactivateUser",
+  "users.search": "searchUsers",
   "workspaces.list": "listWorkspaces",
   "workspaces.create": "createWorkspace",
   "workspaces.get": "getWorkspace",
@@ -343,6 +413,11 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "statuses.update": "updateStatus",
   "statuses.reorder": "reorderStatuses",
   "statuses.delete": "deleteStatus",
+  "tags.list": "listTags",
+  "tags.create": "createTag",
+  "tags.update": "updateTag",
+  "tags.delete": "deleteTag",
+  "tasks.mine": "listMyTasks",
   "tasks.list": "listTasks",
   "tasks.create": "createTask",
   "tasks.get": "getTask",
@@ -356,8 +431,11 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "attachments.get": "getAttachment",
   "attachments.download": "downloadAttachment",
   "attachments.delete": "deleteAttachment",
+  "activity.list": "listActivity",
+  "inbox.list": "listInbox",
+  "inbox.update": "markInboxRead",
 };
 
-export type { ApiKey, Attachment, Comment, Status, Task, User, Workspace, RouteId };
+export type { ActivityEvent, ApiKey, Attachment, Comment, InboxItem, Status, Tag, Task, User, Workspace, RouteId };
 export { ROUTES, buildPath };
 export { z };
