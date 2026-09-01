@@ -1,5 +1,14 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  check,
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+  type AnySQLiteColumn,
+} from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable(
   "users",
@@ -121,14 +130,86 @@ export const comments = sqliteTable(
     taskId: text("task_id")
       .notNull()
       .references(() => tasks.id),
+    /** Root comment when NULL. Only one level of depth: replies have a root parent. */
+    parentId: text("parent_id").references((): AnySQLiteColumn => comments.id),
     authorId: text("author_id")
       .notNull()
       .references(() => users.id),
     body: text("body").notNull(),
+    /** When set, this comment is a multiple-choice question (JSON string array of options). */
+    questionOptions: text("question_options"),
+    /** On a reply: the 0-based option index chosen from the parent's question. */
+    answerOptionIndex: integer("answer_option_index"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
-  (t) => [index("comments_task_id_idx").on(t.taskId)],
+  (t) => [
+    index("comments_task_id_idx").on(t.taskId),
+    index("comments_parent_id_idx").on(t.parentId),
+  ],
+);
+
+export const mentions = sqliteTable(
+  "mentions",
+  {
+    id: text("id").primaryKey(),
+    commentId: text("comment_id")
+      .notNull()
+      .references(() => comments.id),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    mentionedId: text("mentioned_id")
+      .notNull()
+      .references(() => users.id),
+    /** The user who wrote the mentioning comment. */
+    byId: text("by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    index("mentions_mentioned_id_idx").on(t.mentionedId),
+    index("mentions_comment_id_idx").on(t.commentId),
+    index("mentions_task_id_idx").on(t.taskId),
+  ],
+);
+
+/**
+ * Unified cross-workspace inbox: a row per (user, source comment) directed at them.
+ * kind: "mention" (someone mentioned me) or "reply" (someone replied to my comment).
+ * sourceCommentId is the comment that triggered the inbox entry (the mentioned/reply comment).
+ * parentCommentId is the conversation root the reply/mention sits under.
+ */
+export const inboxItems = sqliteTable(
+  "inbox_items",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind").notNull(),
+    sourceCommentId: text("source_comment_id")
+      .notNull()
+      .references(() => comments.id),
+    parentCommentId: text("parent_comment_id").references(() => comments.id),
+    readAt: integer("read_at"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    index("inbox_items_user_id_idx").on(t.userId),
+    index("inbox_items_source_comment_id_idx").on(t.sourceCommentId),
+    index("inbox_items_workspace_id_idx").on(t.workspaceId),
+  ],
 );
 
 export const attachments = sqliteTable(
@@ -150,5 +231,88 @@ export const attachments = sqliteTable(
     index("attachments_task_id_idx").on(t.taskId),
     index("attachments_comment_id_idx").on(t.commentId),
     check("attachments_one_parent_check", sql`(${t.taskId} IS NULL) != (${t.commentId} IS NULL)`),
+  ],
+);
+
+/** Per-workspace tag (e.g. "Epic", "Bug", "P1"). Created/managed by admins. */
+export const tags = sqliteTable(
+  "tags",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    name: text("name").notNull(),
+    color: text("color").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("tags_workspace_name_unique").on(t.workspaceId, t.name),
+    index("tags_workspace_id_idx").on(t.workspaceId),
+  ],
+);
+
+/** Many-to-many tags ↔ tasks. */
+export const taskTags = sqliteTable(
+  "task_tags",
+  {
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    tagId: text("tag_id")
+      .notNull()
+      .references(() => tags.id),
+  },
+  (t) => [
+    index("task_tags_task_id_idx").on(t.taskId),
+    index("task_tags_tag_id_idx").on(t.tagId),
+  ],
+);
+
+/**
+ * Catch-all association: a user is "associated" with a task when they created it, are
+ * assigned, commented on it, or were mentioned. Used by the per-user "my activity" feed.
+ */
+export const taskAssociations = sqliteTable(
+  "task_associations",
+  {
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    /** When the user first became associated, for ordering. */
+    associatedAt: integer("associated_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.taskId, t.userId] }),
+    index("task_associations_task_id_idx").on(t.taskId),
+    index("task_associations_user_id_idx").on(t.userId),
+  ],
+);
+
+/** Append-only action stream per workspace, powering the Activity view. */
+export const activityEvents = sqliteTable(
+  "activity_events",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    taskId: text("task_id").references(() => tasks.id),
+    /** The user who performed the action. */
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => users.id),
+    action: text("action").notNull(),
+    /** Optional target user(s) / detail, stored as JSON. */
+    metadata: text("metadata").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    index("activity_events_workspace_id_idx").on(t.workspaceId),
+    index("activity_events_task_id_idx").on(t.taskId),
+    index("activity_events_actor_id_idx").on(t.actorId),
   ],
 );
