@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
-# End-to-end acceptance test: builds the Docker image, boots it, and drives the REAL tmj
-# CLI through the full product narrative. Exit 0 = v1 acceptance passes.
+# End-to-end acceptance test: boots the server and drives the REAL tmj CLI through the full
+# product narrative. Exit 0 = acceptance passes.
+#
+#   scripts/e2e.sh              # docker mode: builds the image and runs it (full acceptance)
+#   E2E_MODE=local scripts/e2e.sh   # local mode: runs the built server directly (fast)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 PORT="${E2E_PORT:-3789}"
+MODE="${E2E_MODE:-docker}"
 IMG=temujira:e2e
 CTR=temujira-e2e
 export HOME_DIR="$(mktemp -d)" # isolated CLI config
 DATA_TMP="$(mktemp -d)"
-FAILED=0
+SERVER_PID=""
 
 say() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 die() { printf '\033[31mE2E FAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 
 cleanup() {
+  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
   docker rm -f "$CTR" >/dev/null 2>&1 || true
   rm -rf "$HOME_DIR" "$DATA_TMP" 2>/dev/null || true
 }
@@ -26,12 +31,19 @@ tmj() { HOME="$HOME_DIR" XDG_CONFIG_HOME="$HOME_DIR/.config" node apps/cli/dist/
 say "Build CLI"
 pnpm --filter @temujira/cli build >/dev/null
 
-say "Build Docker image"
-docker build -t "$IMG" . >/dev/null || die "docker build"
+if [ "$MODE" = "local" ]; then
+  say "Build and boot server locally"
+  pnpm --filter @temujira/server build >/dev/null || die "server build"
+  DATA_DIR="$DATA_TMP" PORT="$PORT" WEB_DIST=apps/web/dist node apps/server/dist/index.js >"$HOME_DIR/server.log" 2>&1 &
+  SERVER_PID=$!
+else
+  say "Build Docker image"
+  docker build -t "$IMG" . >/dev/null || die "docker build"
 
-say "Boot container"
-docker rm -f "$CTR" >/dev/null 2>&1 || true
-docker run -d --name "$CTR" -p "$PORT:3000" -v "$DATA_TMP:/data" "$IMG" >/dev/null
+  say "Boot container"
+  docker rm -f "$CTR" >/dev/null 2>&1 || true
+  docker run -d --name "$CTR" -p "$PORT:3000" -v "$DATA_TMP:/data" "$IMG" >/dev/null
+fi
 
 say "Wait for health"
 for i in $(seq 1 60); do
