@@ -1,3 +1,8 @@
+import {
+  AttachmentPreviewDialog,
+  AttachmentThumb,
+  attachmentIcon,
+} from '@/components/attachment-preview';
 import { Markdown } from '@/components/markdown';
 import { MentionInput } from '@/components/mention-input';
 import { TagPill } from '@/components/tag-pill';
@@ -6,6 +11,13 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,18 +36,24 @@ import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth';
 import { saveAttachment } from '@/lib/download';
-import { formatAbsolute, formatBytes, initialsOf } from '@/lib/format';
+import { formatAbsolute, formatBytes, initialsOf, splitTaskKey } from '@/lib/format';
+import { evictPreview, isPreviewable } from '@/lib/preview';
 import { useResource } from '@/lib/use-resource';
-import type { Comment, Status, Tag, Task, User } from '@temujira/client';
+import type { Attachment, Comment, Status, Tag, Task, TaskLink, User } from '@temujira/client';
+import { LINK_RELATIONS, TaskKeyPattern, linkRelationLabel } from '@temujira/shared';
+import type { LinkRelation } from '@temujira/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ArchiveIcon,
   CheckIcon,
+  DownloadIcon,
   FileIcon,
+  Link2Icon,
   ListChecksIcon,
   Maximize2Icon,
   Minimize2Icon,
   PaperclipIcon,
+  PlusIcon,
   ReplyIcon,
   TagIcon,
   TrashIcon,
@@ -62,6 +80,7 @@ export default function TaskDetailScreen() {
 
   const [expanded, setExpanded] = React.useState(false);
   const [mentionedUser, setMentionedUser] = React.useState<User | null>(null);
+  const [previewAtt, setPreviewAtt] = React.useState<Attachment | null>(null);
 
   const resource = useResource<TaskPageData>(async () => {
     const [taskRes, statusRes, userRes, tagRes, commentRes] = await Promise.all([
@@ -82,7 +101,20 @@ export default function TaskDetailScreen() {
 
   const setTask = React.useCallback(
     (updated: Task) => {
-      resource.setData((prev) => (prev ? { ...prev, task: updated } : prev));
+      resource.setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              task: {
+                ...updated,
+                // tasks.update embeds neither links nor attachments; keep what tasks.get
+                // gave us so a status/assignee change doesn't blank those sections.
+                links: updated.links ?? prev.task.links,
+                attachments: updated.attachments ?? prev.task.attachments,
+              },
+            }
+          : prev
+      );
     },
     [resource]
   );
@@ -226,10 +258,13 @@ export default function TaskDetailScreen() {
             onMentionPress={setMentionedUser}
           />
 
+          <LinksSection task={task} onChanged={setTask} />
+
           <TaskAttachments
             task={task}
             currentUserId={currentUser?.id ?? ''}
             onChanged={setTask}
+            onPreview={setPreviewAtt}
           />
 
           <Separator />
@@ -243,10 +278,17 @@ export default function TaskDetailScreen() {
             onReload={reloadComments}
             onPatch={patchComment}
             onMentionPress={setMentionedUser}
+            onPreview={setPreviewAtt}
           />
         </ScrollView>
       </View>
 
+      <AttachmentPreviewDialog
+        attachment={previewAtt}
+        users={users}
+        onClose={() => setPreviewAtt(null)}
+        onMentionPress={setMentionedUser}
+      />
       <UserInfoDialog user={mentionedUser} onClose={() => setMentionedUser(null)} />
     </View>
   );
@@ -571,14 +613,281 @@ function InlineDescriptionEditor({
   );
 }
 
+// ------------------------------------------------------------------ links
+
+/**
+ * A task's typed links to other tasks (see docs/plans/task-links.md). Links are pure
+ * metadata — no side effects. Relation labels read from this task's viewpoint ("blocks"
+ * here shows as "blocked by" on the far task's page).
+ */
+function LinksSection({ task, onChanged }: { task: Task; onChanged: (t: Task) => void }) {
+  const { client } = useAuth();
+  const router = useRouter();
+  const links = task.links ?? [];
+  const workspaceKey = splitTaskKey(task.key)?.workspaceKey ?? '';
+  const [error, setError] = React.useState<string | null>(null);
+  const [relation, setRelation] = React.useState<LinkRelation>('relates');
+  const [query, setQuery] = React.useState('');
+  const [results, setResults] = React.useState<Task[]>([]);
+  const [searching, setSearching] = React.useState(false);
+  const [working, setWorking] = React.useState(false);
+  // After an outward `absorbs` link to a non-archived task, offer to archive it —
+  // explicit composition, never implicit (same rule as `tmj task link ... --archive`).
+  const [absorbTarget, setAbsorbTarget] = React.useState<TaskLink['task'] | null>(null);
+
+  // debounce search into the API query (same pattern as the list screen)
+  const [debouncedQuery, setDebouncedQuery] = React.useState('');
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  React.useEffect(() => {
+    let alive = true;
+    if (!debouncedQuery.trim()) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    client
+      .listTasks(workspaceKey, { q: debouncedQuery.trim(), limit: 10, sort: 'number' })
+      .then((res) => {
+        if (!alive) return;
+        setResults(res.items.filter((t) => t.id !== task.id));
+      })
+      .catch(() => {
+        if (alive) setResults([]);
+      })
+      .finally(() => {
+        if (alive) setSearching(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [client, workspaceKey, debouncedQuery, task.id]);
+
+  async function addLink(target: string) {
+    if (working) return;
+    setWorking(true);
+    setError(null);
+    try {
+      const { link } = await client.createTaskLink(task.key, {
+        type: relation,
+        task: target,
+      });
+      onChanged({ ...task, links: [...links, link] });
+      // Outward absorbs → offer explicit archive of the absorbed task.
+      if (relation === 'absorbs' && link.task.archived_at == null) setAbsorbTarget(link.task);
+      setQuery('');
+      setResults([]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to link task');
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function removeLink(link: TaskLink) {
+    setError(null);
+    try {
+      await client.deleteTaskLink(link.id);
+      onChanged({ ...task, links: links.filter((l) => l.id !== link.id) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to unlink');
+    }
+  }
+
+  function navigate(ref: TaskLink['task']) {
+    const split = splitTaskKey(ref.key);
+    // Cross-workspace keys carry their own prefix, so this always lands on the right task.
+    if (split) router.push(`/w/${split.workspaceKey}/t/${split.number}`);
+  }
+
+  const typedKey = query.trim().toUpperCase();
+
+  return (
+    <View className="gap-2">
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center gap-2">
+          <Text className="text-sm font-medium">Links</Text>
+          {links.length > 0 ? (
+            <Badge variant="secondary">
+              <Text>{links.length}</Text>
+            </Badge>
+          ) : null}
+        </View>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-8 gap-1.5">
+              <Icon as={Link2Icon} className="text-muted-foreground size-3.5" />
+              <Text className="text-sm">Link</Text>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 p-3">
+            <View className="gap-2">
+              <Text className="text-xs font-medium">Link this task to another</Text>
+              <Select
+                value={{ value: relation, label: linkRelationLabel(relation) }}
+                onValueChange={(o) => {
+                  if (o?.value) setRelation(o.value as LinkRelation);
+                }}>
+                <SelectTrigger className="h-8 w-full">
+                  <SelectValue placeholder="Relation" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LINK_RELATIONS.map((r) => (
+                    <SelectItem key={r} value={r} label={linkRelationLabel(r)} />
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search, or type a key (e.g. START-2)"
+                autoCapitalize="characters"
+                className="h-8"
+              />
+              <View className="max-h-48">
+                {searching ? (
+                  <Text className="text-muted-foreground p-1 text-xs">Searching…</Text>
+                ) : results.length > 0 ? (
+                  results.map((t) => (
+                    <Pressable
+                      key={t.id}
+                      disabled={working}
+                      onPress={() => addLink(t.key)}
+                      accessibilityRole="button"
+                      className="hover:bg-accent flex-row items-center gap-2 rounded-md px-2 py-1.5">
+                      <View
+                        style={{ backgroundColor: t.status.color }}
+                        className="h-2 w-2 shrink-0 rounded-full"
+                      />
+                      <Text className="w-20 shrink-0 font-mono text-xs">{t.key}</Text>
+                      <Text numberOfLines={1} className="min-w-0 flex-1 text-xs">
+                        {t.title}
+                      </Text>
+                      {t.archived_at ? (
+                        <Text className="text-muted-foreground text-xs">archived</Text>
+                      ) : null}
+                    </Pressable>
+                  ))
+                ) : debouncedQuery.trim().length > 0 && TaskKeyPattern.test(typedKey) ? (
+                  // Verbatim key row: links the far task by key even when it lives in another
+                  // workspace (the search above is workspace-scoped).
+                  <Pressable
+                    disabled={working}
+                    onPress={() => addLink(typedKey)}
+                    accessibilityRole="button"
+                    className="hover:bg-accent flex-row items-center gap-2 rounded-md px-2 py-1.5">
+                    <Icon as={Link2Icon} className="text-muted-foreground size-3.5" />
+                    <Text className="font-mono text-xs">{typedKey}</Text>
+                    <Text className="text-muted-foreground text-xs">link by key</Text>
+                  </Pressable>
+                ) : // keep space clear
+                null}
+              </View>
+              {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
+              {working ? <Text className="text-muted-foreground text-xs">Linking…</Text> : null}
+            </View>
+          </PopoverContent>
+        </Popover>
+      </View>
+
+      {links.length === 0 ? (
+        <Text className="text-muted-foreground text-sm">No links yet.</Text>
+      ) : (
+        <View className="gap-1.5">
+          {links.map((link) => (
+            <View
+              key={link.id}
+              className="border-border bg-card flex-row items-center gap-3 rounded-md border p-2.5">
+              <Pressable
+                onPress={() => navigate(link.task)}
+                accessibilityRole="button"
+                className={`min-w-0 flex-1 ${link.task.archived_at != null ? 'opacity-55' : ''}`}>
+                <View className="flex-row items-center gap-2">
+                  <Text className="w-24 shrink-0 text-xs">{linkRelationLabel(link.type)}</Text>
+                  <Text
+                    numberOfLines={1}
+                    className={`w-20 shrink-0 font-mono text-xs ${
+                      link.task.archived_at != null ? 'line-through' : ''
+                    }`}>
+                    {link.task.key}
+                  </Text>
+                  <Text numberOfLines={1} className="min-w-0 flex-1 text-xs">
+                    {link.task.title}
+                  </Text>
+                  <Badge variant="secondary" className="hidden sm:flex">
+                    <View className="flex-row items-center gap-1.5">
+                      <View
+                        style={{ backgroundColor: link.task.status.color }}
+                        className="h-2 w-2 rounded-full"
+                      />
+                      <Text>{link.task.status.name}</Text>
+                    </View>
+                  </Badge>
+                </View>
+              </Pressable>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onPress={() => removeLink(link)}
+                accessibilityLabel={`Unlink ${link.task.key}`}>
+                <Icon as={TrashIcon} className="text-muted-foreground size-3.5" />
+              </Button>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {absorbTarget ? (
+        <View className="border-border bg-card flex-row items-center gap-2 rounded-md border p-2.5">
+          <Text numberOfLines={1} className="min-w-0 flex-1 text-sm">
+            Absorbed {absorbTarget.key} — archive it?
+          </Text>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7"
+            onPress={async () => {
+              setError(null);
+              try {
+                await client.updateTask(absorbTarget.key, { archived: true });
+                onChanged({
+                  ...task,
+                  links: links.map((l) =>
+                    l.task.id === absorbTarget.id
+                      ? { ...l, task: { ...l.task, archived_at: Date.now() } }
+                      : l
+                  ),
+                });
+                setAbsorbTarget(null);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'Failed to archive');
+              }
+            }}>
+            <Text className="text-xs">Archive</Text>
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7" onPress={() => setAbsorbTarget(null)}>
+            <Text className="text-xs">Dismiss</Text>
+          </Button>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function TaskAttachments({
   task,
   currentUserId,
   onChanged,
+  onPreview,
 }: {
   task: Task;
   currentUserId: string;
   onChanged: (t: Task) => void;
+  onPreview: (a: Attachment) => void;
 }) {
   const { client } = useAuth();
   const [uploading, setUploading] = React.useState(false);
@@ -657,13 +966,23 @@ function TaskAttachments({
             <View
               key={a.id}
               className="border-border bg-card flex-row items-center gap-3 rounded-md border p-2.5">
-              <Icon as={FileIcon} className="text-muted-foreground size-4" />
-              <Pressable onPress={() => onDownload(a.id, a.filename)} className="min-w-0 flex-1">
+              <AttachmentThumb attachment={a} />
+              <Pressable
+                onPress={() => (isPreviewable(a) ? onPreview(a) : onDownload(a.id, a.filename))}
+                className="min-w-0 flex-1">
                 <Text numberOfLines={1} className="text-sm underline">
                   {a.filename}
                 </Text>
               </Pressable>
               <Text className="text-muted-foreground text-xs">{formatBytes(a.size)}</Text>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onPress={() => onDownload(a.id, a.filename)}
+                accessibilityLabel={`Download ${a.filename}`}>
+                <Icon as={DownloadIcon} className="text-muted-foreground size-3.5" />
+              </Button>
               {canDelete || currentUserId === a.uploader_id ? (
                 <Button
                   variant="ghost"
@@ -672,6 +991,7 @@ function TaskAttachments({
                   onPress={async () => {
                     try {
                       await client.deleteAttachment(a.id);
+                      evictPreview(a.id);
                       onChanged({
                         ...task,
                         attachments: attachments.filter((x) => x.id !== a.id),
@@ -706,6 +1026,7 @@ function CommentsSection({
   onReload,
   onPatch,
   onMentionPress,
+  onPreview,
 }: {
   taskKey: string;
   comments: Comment[];
@@ -715,6 +1036,7 @@ function CommentsSection({
   onReload: () => Promise<void>;
   onPatch: (c: Comment) => void;
   onMentionPress: (u: User) => void;
+  onPreview: (a: Attachment) => void;
 }) {
   const { client } = useAuth();
   const [body, setBody] = React.useState('');
@@ -800,6 +1122,7 @@ function CommentsSection({
           onReload={onReload}
           onPatch={onPatch}
           onMentionPress={onMentionPress}
+          onPreview={onPreview}
         />
       ))}
 
@@ -909,6 +1232,7 @@ function CommentThread({
   onReload,
   onPatch,
   onMentionPress,
+  onPreview,
 }: {
   root: Comment;
   taskKey: string;
@@ -918,6 +1242,7 @@ function CommentThread({
   onReload: () => Promise<void>;
   onPatch: (c: Comment) => void;
   onMentionPress: (u: User) => void;
+  onPreview: (a: Attachment) => void;
 }) {
   const [replyingTo, setReplyingTo] = React.useState<string | null>(null);
 
@@ -931,6 +1256,7 @@ function CommentThread({
         onReload={onReload}
         onPatch={onPatch}
         onMentionPress={onMentionPress}
+        onPreview={onPreview}
         onReply={() => setReplyingTo(replyingTo === root.id ? null : root.id)}
       />
 
@@ -958,6 +1284,7 @@ function CommentThread({
               onReload={onReload}
               onPatch={onPatch}
               onMentionPress={onMentionPress}
+              onPreview={onPreview}
               // A reply to a reply targets the root (the server coerces anyway).
               onReply={() => setReplyingTo(replyingTo === root.id ? null : root.id)}
             />
@@ -1114,6 +1441,7 @@ function CommentCard({
   onReload,
   onPatch,
   onMentionPress,
+  onPreview,
   onReply,
 }: {
   comment: Comment;
@@ -1124,6 +1452,7 @@ function CommentCard({
   onReload: () => Promise<void>;
   onPatch: (c: Comment) => void;
   onMentionPress: (u: User) => void;
+  onPreview: (a: Attachment) => void;
   onReply: () => void;
 }) {
   const { client } = useAuth();
@@ -1222,8 +1551,11 @@ function CommentCard({
               <View
                 key={a.id}
                 className="border-border bg-card flex-row items-center gap-1.5 rounded-md border px-2 py-1">
-                <Icon as={FileIcon} className="text-muted-foreground size-3.5" />
-                <Pressable onPress={() => onDownload(a.id, a.filename)}>
+                <Icon as={attachmentIcon(a)} className="text-muted-foreground size-3.5" />
+                <Pressable
+                  onPress={() =>
+                    isPreviewable(a) ? onPreview(a) : onDownload(a.id, a.filename)
+                  }>
                   <Text className="text-xs underline">{a.filename}</Text>
                 </Pressable>
                 <Text className="text-muted-foreground text-xs">{formatBytes(a.size)}</Text>
@@ -1235,6 +1567,7 @@ function CommentCard({
                     onPress={async () => {
                       try {
                         await client.deleteAttachment(a.id);
+                        evictPreview(a.id);
                         onPatch({
                           ...comment,
                           attachments: comment.attachments.filter((x) => x.id !== a.id),

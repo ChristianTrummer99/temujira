@@ -25,6 +25,8 @@ const ACTION_LABELS: Record<string, string> = {
   'task.archived': 'archived',
   'task.unarchived': 'unarchived',
   'task.tags_updated': 'retagged',
+  'task.linked': 'linked',
+  'task.unlinked': 'unlinked',
   'comment.created': 'commented on',
   'comment.replied': 'replied on',
   'comment.mentioned': 'mentioned someone in',
