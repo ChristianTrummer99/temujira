@@ -1,0 +1,122 @@
+# Attachment previews — build spec
+
+## Summary
+
+Attachment previews are a web-only rendering feature built entirely on the existing authenticated download pipeline. Two new web files (apps/web/lib/preview.ts, apps/web/components/attachment-preview.tsx) plus edits to the task detail screen add: inline image thumbnails in the task attachment list, a click-to-open preview Dialog (lightbox) for images, rendered markdown via the existing Markdown component, escaped source view for plain text and SVG, an iframe-embedded PDF view, and a graceful download-only fallback for everything else. Bytes always travel through client.downloadAttachment (packages/client/src/index.ts:355-360) → blob/text → module-level cache keyed by attachment id, with object URLs owned and revoked by the cache under a byte budget. Size gates use the server-computed `size` field before any fetch (never slurp a 50MB file). Zero server, shared, client, or CLI changes: no new RouteId, so route-parity.test.ts, authz-matrix.test.ts, and CLI parity all pass untouched. The server's SVG exclusion and Content-Disposition/nosniff policy (apps/server/src/routes/attachmentsRoutes.ts:173-181) are preserved exactly; every preview path is safe even when the uploader-supplied mime_type lies.
+
+## Supported Types
+
+Five preview kinds, resolved by a pure `previewKind(att: Attachment): 'image'|'markdown'|'text'|'pdf'|'none'` helper:
+
+1. IMAGE — mime `image/*` EXCEPT `image/svg+xml`. Rendered as an `<img>` thumbnail (size-10, rounded) in the task attachment row and full-size (max 70vh, object-fit contain) in the preview dialog. This is exactly the server's inline safelist (attachmentsRoutes.ts:176), so the response Content-Type is the real image type and the blob decodes natively.
+
+2. MARKDOWN — extension `.md`/`.markdown` OR mime `text/markdown`. Fetched as text, rendered through the existing `<Markdown>` component (apps/web/components/markdown.tsx:29-40), passing the task screen's already-loaded `users` for mention chips. react-markdown without rehype-raw never renders raw HTML — embedded `<script>` in a malicious .md renders as escaped/skipped text.
+
+3. TEXT — mime `text/*` (including text/html — shown as SOURCE, never parsed), `application/json`, `application/xml`, or extension in {txt, log, csv, tsv, json, yml, yaml, xml, svg}. Rendered inside `<Text className="font-mono text-xs">` in a ScrollView — React escapes everything; inert by construction.
+
+4. SVG — `image/svg+xml` by mime OR `.svg` by extension resolves to kind 'text' (checked FIRST, before the image/* test). The server deliberately excludes SVG from inline because uploaded SVG can carry script (attachmentsRoutes.ts:174-176, pinned by test apps/server/test/attachments.test.ts:214-218). We do NOT undo that: no `<img>` rasterization, and critically we never manufacture a Blob typed `image/svg+xml` — a blob: URL is same-origin with the app, so navigating to an svg-typed blob would execute its script on the app origin. Instead SVG previews as read-only source text (useful — it's XML) with a caption "SVG previews as source; download to view rendered."
+
+5. PDF — mime `application/pdf` ONLY (extension is not enough: a `.pdf` with non-pdf mime is served `application/octet-stream` by attachmentsRoutes.ts:180 and an octet-stream blob in an iframe triggers a download prompt, not a render). Shown in a web-only `<iframe src={objectUrl}>` (70vh) inside the dialog. This mirrors the server's own judgment that inline PDF on this origin is acceptable (it's already in the inline safelist); browser PDF viewers don't execute page-context script, and nosniff + authoritative Content-Type means HTML bytes mislabeled application/pdf will not be parsed as HTML.
+
+6. EVERYTHING ELSE — kind 'none': row/chip keeps today's behavior exactly (click = saveAttachment download, apps/web/lib/download.ts:11); no dialog, FileIcon unchanged.
+
+Size gates checked against `att.size` BEFORE fetching (size is server-computed from actual bytes in storage.ts:38-46, i.e. trusted): PREVIEW_MAX_BYTES = 20MB for image/pdf, TEXT_PREVIEW_MAX_BYTES = 1MB for markdown/text. Oversize → dialog shows "Too large to preview (X MB)" + Download button; no bytes fetched.
+
+## Detection
+
+Attachments carry both `filename` and `mime_type` (packages/shared/src/entities.ts:100-110). The mime_type is UNTRUSTED: it is stored verbatim from the uploader's multipart part header (attachmentsRoutes.ts:79 `mimeType: info.mimeType || "application/octet-stream"`), never validated server-side; the CLI merely guesses it from the extension (apps/cli/src/mime.ts:28-33), and `tmj api` or curl can claim anything. The filename is sanitized (basename, control chars, 255 cap — attachmentsRoutes.ts:23-29) but its extension is equally uploader-chosen. So NEITHER signal is trusted; the design principle is that detection only picks a rendering path, and every rendering path must be safe when the signal lies:
+
+- `bareMime = mime_type.split(';')[0].trim().toLowerCase()` — mirrors the server's own normalization (attachmentsRoutes.ts:173) so client and server always agree about what will be served inline.
+- Resolution order (first match wins): (1) svg-by-mime-or-ext → 'text'; (2) `bareMime.startsWith('image/')` → 'image'; (3) markdown by mime or ext → 'markdown'; (4) `bareMime === 'application/pdf'` → 'pdf'; (5) text-ish by mime or ext → 'text'; (6) 'none'.
+- Image and PDF are MIME-ONLY on purpose: those kinds depend on the server serving the real Content-Type (only safelisted mimes get it; everything else is octet-stream per attachmentsRoutes.ts:180), and the blob created from the Response inherits that type. Widening by extension would just produce broken octet-stream blobs.
+- Markdown/text accept extension OR mime because those paths use `res.text()` and never depend on blob type; the server serves them octet-stream regardless, which is irrelevant to fetch+text.
+
+Failure modes when mime lies: claimed image/png but actually HTML → server serves Content-Type image/png (it trusts the row) with nosniff; `<img>` fails to decode (img decode is content-based and never a scripting context) → onError fires → error state with Download fallback; no XSS possible because image decoding cannot execute script. Claimed application/pdf but actually HTML → Content-Type application/pdf is authoritative for the iframe navigation, nosniff forbids sniffing, PDF parse fails → blank/error iframe, no HTML execution. Claimed text/markdown but actually binary → garbage escaped text, ugly but inert. Claimed text/html → source view, escaped, inert.
+
+## Bytes And Auth
+
+The download URL requires auth (route `attachments.download`, auth: "user" — packages/shared/src/routes.ts:430-436) and the web app is Bearer-token based, so a bare `<a href>`/`<img src>` to `/api/v1/attachments/:id/download` sends no Authorization header — it 401s on the :8081 dev origin and only works in prod by cookie accident, exactly as documented in apps/web/lib/download.ts:7-9. Every preview byte therefore goes through `client.downloadAttachment(id)` (packages/client/src/index.ts:355-360, returns the raw Response), which also satisfies the client-is-the-only-transport rule.
+
+New file `apps/web/lib/preview.ts` (download.ts stays focused on save-to-disk; this is its read-into-memory sibling):
+- `fetchPreview(client, att)`: cache hit → return; miss → `client.downloadAttachment(att.id)` then for image/pdf `res.blob()` → `URL.createObjectURL(blob)` (blob keeps the server's Content-Type, which is correct for safelisted types); for markdown/text `res.text()` (defensively sliced to the cap even though size was pre-checked).
+- Module-level cache `Map<string, {kind:'url', url, bytes} | {kind:'text', text}>` keyed by attachment id. Attachments are immutable by contract — there is no attachments.update route (routes.ts:406-443), and sha256 is fixed at upload — so entries never go stale except on delete. Eviction policy: insertion-ordered (Map preserves order), evict-oldest when total cached url bytes exceed 64MB or entries exceed 20, revoking each evicted object URL.
+- `evictPreview(id)`: revoke + delete; called from both attachment-delete handlers in the task screen (t/[num].tsx:672-682 task rows, 1235-1245 comment chips).
+
+Object-URL lifecycle: URLs are created ONLY inside fetchPreview on cache miss, and revoked ONLY by cache eviction / evictPreview — the cache owns them. Components never revoke on unmount, which (a) prevents the classic bug of one mount revoking a URL a concurrent mount (thumbnail + open dialog showing the same attachment) still displays, and (b) makes reopening the dialog instant with zero refetch. Leakage is bounded by the 64MB/20-entry budget and ends with the document (SPA page unload frees all blob URLs). This deliberately differs from saveAttachment's per-call URL + 10s setTimeout revoke (download.ts:24-36), which remains correct for one-shot downloads.
+
+Re-render/unmount race safety: a `usePreview(att)` hook in preview.ts wraps fetchPreview with the same generation-counter idiom as use-resource.ts:34-54 — a stale resolution never writes state after deps changed or unmount. Hook returns `{status: 'loading'|'ready'|'error'|'toolarge'|'unsupported', url?, text?, error?, retry}`; it short-circuits to 'toolarge' from `att.size` without fetching, and to 'unsupported' on native without fetching.
+
+Thumbnails: image rows fetch lazily on mount (only kind 'image' AND size within cap), sharing the cache with the dialog — a visible thumbnail means the lightbox opens with zero additional network.
+
+## Ux
+
+All new UI in `apps/web/components/attachment-preview.tsx`, using ONLY installed RNR components (verified directory apps/web/components/ui/: dialog, card, skeleton, button, badge, icon, text, tooltip, separator...) — no new npm deps, no new RNR ports. Icons ImageIcon/FileTextIcon/DownloadIcon confirmed present in the installed lucide-react-native (node_modules/lucide-react-native/dist/types/icons/{image,file-text,download}.d.ts), same import style as FileIcon/PaperclipIcon already used (t/[num].tsx:31-43).
+
+1. Task attachment rows (t/[num].tsx:655-688): kind 'image' replaces the FileIcon with `<AttachmentThumb>` — a size-10 rounded `<img>` from usePreview (Skeleton placeholder while loading; ImageIcon on error/toolarge). Kind 'markdown'/'text' get FileTextIcon, 'pdf'/'none' keep FileIcon. Filename press: previewable kinds open the dialog; kind 'none' keeps today's direct download (t/[num].tsx:661). Because filename-press previously meant download, each row gains an explicit DownloadIcon ghost button (h-7 w-7, beside the existing TrashIcon) calling the existing onDownload — download stays one click.
+
+2. Preview dialog: ONE `<AttachmentPreviewDialog attachment={previewAtt} users={users} onClose={...}>` mounted at TaskDetailScreen level beside the existing UserInfoDialog (t/[num].tsx:250), following the exact same "selected entity in screen state" pattern; `setPreviewAtt` threads down via props like onMentionPress does. Built from Dialog/DialogContent/DialogTitle/DialogFooter (components/ui/dialog.tsx — DialogContent accepts className, line 65-78, so `sm:max-w-3xl` widens it). Content by kind: image `<img style={{maxWidth:'100%', maxHeight:'70vh', objectFit:'contain'}}>`; markdown `<ScrollView className="max-h-[70vh]"><Markdown mentionUsers={users} onMentionPress={...}>` (reuses markdown.tsx wholesale, including TEM-42 task-link rewriting); text ScrollView + monospace Text, with the SVG caption when applicable and a "truncated at 1MB" Badge when sliced; pdf `<iframe title={filename} src={url} style={{width:'100%', height:'70vh', border:0}}>`. Footer: filename (numberOfLines={1}), formatBytes(size) (lib/format.ts:27-31), mime badge, sha256 first-12 chars in font-mono muted, and a Download button calling saveAttachment (web only).
+
+3. Comment attachment chips (t/[num].tsx:1219-1252): stay compact chips — no thumbnails in threads. Changes: icon becomes ImageIcon/FileTextIcon by kind; chip filename press opens the same screen-level dialog for previewable kinds (previously download, t/[num].tsx:1226) and keeps download for kind 'none'. Download remains reachable in two clicks via the dialog's Download button; the chip's delete button is untouched.
+
+4. States: loading = centered Skeleton block (h-64) in the dialog and Skeleton square in thumbs; error = destructive Text ("Preview failed: …") + Retry (usePreview.retry) + Download buttons; toolarge = muted explanation + Download; a lying-mime image thumb falls back to ImageIcon silently (row stays functional). Upload/delete flows are untouched except evictPreview on delete.
+
+## Server Changes
+
+NONE — argued affirmatively:
+
+(a) The bytes are already reachable with the right semantics: attachments.download streams authenticated bytes (attachmentsRoutes.ts:167-185), and for every type we render richly (image, pdf) it already serves the true Content-Type inline; for text kinds we use res.text() where headers are irrelevant. Content-Disposition only affects navigation, not fetch+blob, so the existing `attachment` disposition on markdown/text costs the preview nothing.
+
+(b) The metadata is already sufficient: filename, mime_type, size, sha256 all in AttachmentSchema (entities.ts:100-110) and embedded on tasks.get (entities.ts:129-130, serialize.ts:132) and on every comment (entities.ts:164, serialize.ts:155). Detection and pre-fetch size gating need nothing more. A "preview_kind" metadata field server-side would just duplicate a pure function and cost the full 5-place contract touch (registry routes.ts → handler → serialize.ts → client method + ROUTE_METHOD_MAP → CLI command, per ARCHITECTURE.md:44-57) plus migration 0002 — for zero information gain.
+
+(c) Thumbnail endpoint: rejected. It would add a native image-processing dependency (sharp) to a deliberately dependency-light one-process server (ARCHITECTURE.md:8-19), server-side decode of untrusted images (decompression-bomb surface), a disk cache to manage, and a new RouteId rippling through route-parity.test.ts, authz-matrix.test.ts, and apps/cli parity (a RouteId with no CLI command fails apps/cli/test/parity.test.ts:21-25 — and what is `tmj attach thumbnail` even for?). Client-side downscaling of ≤20MB originals in `<img>` is fully adequate at self-hosted-tracker scale.
+
+(d) Header relaxation (SVG into the safelist, or inline for text/markdown): rejected. The safelist exists to close stored-XSS-via-uploaded-HTML/SVG on the cookie origin (attachmentsRoutes.ts:174-176; ARCHITECTURE.md:123-125) and is pinned by tests (attachments.test.ts:201-222). The web preview never navigates to the download URL, so it gains nothing from relaxing headers; the only beneficiary would be raw curl/browser-tab users, which is not worth reopening a deliberately closed hole. The design treats those headers as immutable and works entirely within them.
+
+## Parity
+
+Preview is a UI-only affordance, not a new capability, under the standing rule's own wording: "Every action a user can take in the web UI must also be available via the API and the CLI" (SPEC.md:14-15). The parity contract governs ACTIONS — state changes and data retrievals against the server. Preview performs exactly one action, "retrieve attachment bytes," which is the existing `attachments.download` route; the CLI already mirrors it as `tmj attach download` with sha256 verification (apps/cli/src/commands/attach.ts:118-159, claimed in COMMAND_ROUTES at attach.ts:19), and metadata via `tmj attach` get. What the browser adds is client-side RENDERING of those bytes — the same category as the web app rendering task descriptions as formatted markdown (markdown.tsx) while `tmj task` prints raw markdown text: nobody considers that a parity gap, because a terminal cannot render pixels and the underlying data is equally retrievable. The CLI-native equivalent of "preview" is `tmj attach download` + open locally, which exists today.
+
+Mechanically: no new RouteId means ROUTE_IDS is unchanged (routes.ts:480-481), so the server's exhaustive Handlers record, route-parity two-way diff, authz-matrix iteration, client ROUTE_METHOD_MAP (client/src/index.ts:389-437), and CLI COMMAND_ROUTE_MAP coverage (parity.test.ts:21-25) are all untouched and stay green by construction.
+
+Noted but explicitly out of scope (not required by parity, purely a convenience): `tmj attach download --stdout` for piping bytes into a terminal image viewer. Do not build it as part of this feature.
+
+## Native
+
+The web app already contains web-only DOM branches as established precedent: raw `<label>`/`<input type="file">` in the task screen (t/[num].tsx:632-649, 868-897), `Platform.OS === 'web'` style guards (t/[num].tsx:167), the Markdown component's explicit native fallback (markdown.tsx:30-32), and saveAttachment throwing "Downloads are only supported on web" off-web (download.ts:19-21). The preview follows the same pattern:
+
+- `usePreview` returns status 'unsupported' immediately when `Platform.OS !== 'web'` — no fetch, no URL.createObjectURL (a web API), no blob handling on RN's partial fetch implementation.
+- `<img>` and `<iframe>` are only ever RETURNED from render behind `Platform.OS === 'web'` checks. They typecheck for native builds because the repo's TS config already accepts DOM intrinsics (proven by the existing raw `<label>`/`<input>` in this very file), and they can never mount at native runtime because the guard short-circuits first.
+- Native degradation: AttachmentThumb renders the kind icon (ImageIcon/FileTextIcon/FileIcon) exactly as today; the preview dialog on native shows metadata (filename, size, mime, sha256 prefix) plus "Preview is available on the web app" — and hides the Download button, since saveAttachment throws on native anyway.
+- No new native dependencies, no expo-image, no react-native-blob-util: the build stays exactly as safe as it is today, and the native path is byte-for-byte the current behavior plus an informational dialog.
+
+## Files
+
+1. NEW /Users/christiantrummer/temujira/apps/web/lib/preview.ts — `previewKind(att: Attachment)` pure detector (mime-first, extension-supplement rules as specified, SVG→'text' checked before image/*); constants PREVIEW_MAX_BYTES = 20*1024*1024 and TEXT_PREVIEW_MAX_BYTES = 1024*1024 with comments explaining the MAX_UPLOAD_MB=50 relationship (apps/server/src/config.ts:25); module-level preview cache (Map, 64MB/20-entry eviction with URL.revokeObjectURL); `fetchPreview(client, att)`; `evictPreview(id)`; `usePreview(att)` hook using the generation-counter idiom from use-resource.ts:34-54 and the shared client from useAuth.
+
+2. NEW /Users/christiantrummer/temujira/apps/web/components/attachment-preview.tsx — `AttachmentThumb` (size-10 img thumbnail with Skeleton/icon fallback, web-guarded) and `AttachmentPreviewDialog` (controlled by `attachment: Attachment | null`, `users: User[]`, `onClose`; per-kind bodies image/markdown/text/pdf; loading/error/toolarge/native-unsupported states; footer with metadata + Download via saveAttachment). Imports only components/ui/{dialog,skeleton,button,badge,icon,text}, components/markdown, lib/{preview,download,format}.
+
+3. EDIT /Users/christiantrummer/temujira/apps/web/app/(app)/w/[key]/t/[num].tsx — add `previewAtt` state + `<AttachmentPreviewDialog>` beside UserInfoDialog (line 250); thread `onPreview` into TaskAttachments and CommentsSection→CommentThread→CommentCard (same threading style as onMentionPress); TaskAttachments rows (655-688): AttachmentThumb/kind icons, filename press → preview when previewable, new per-row DownloadIcon button, `evictPreview(a.id)` in the delete handler (672-682); CommentCard chips (1219-1252): kind icons, chip press → preview when previewable else download, `evictPreview(a.id)` in the chip delete handler (1235-1245); extend the lucide import (31-43) with ImageIcon, FileTextIcon, DownloadIcon.
+
+No changes to packages/shared, apps/server, packages/client, apps/cli, migrations, or any test file's expectations.
+
+## Tests
+
+Automated: (1) `pnpm -r typecheck` — all 5 packages, including native-target typecheck of the web app. (2) Full existing suites unchanged and green — `pnpm --filter server test` (253) and `pnpm --filter cli test` (47): must pass untouched since no contract surface moved; specifically attachments.test.ts:187-222 (inline PNG, octet-stream HTML, SVG-out/PDF-in) still pins the server policy this design depends on, and cli parity.test.ts:62's no-raw-fetch grep is unaffected (all I/O via TemujiraClient). (3) No web unit-test harness exists in apps/web (verified: no test files, no vitest config) and adding vitest would be a new dev dependency — keep previewKind table-driven and small so review + browser verification carry it; note adding a web vitest harness as a follow-up requiring explicit dependency approval.
+
+Browser verification with playwright-cli against `pnpm dev` (server :3000, Expo :8081), after setup/login:
+1. Upload to one task: a real PNG, a .md with headings/lists/task-key "START-1"/`<script>alert(1)</script>`, a .txt, an .svg (CLI upload so mime is image/svg+xml per mime.ts:8), a real PDF, a .zip.
+2. PNG: row shows a blob thumbnail — assert `img[src^="blob:"]` appears; click filename → dialog with full-size image; count requests to `/attachments/.*/download` via page request events: exactly 1 for that id across thumb+dialog+reopen (cache proof).
+3. MD: dialog shows RENDERED markdown (assert styled heading text present, literal "#" absent, "START-1" is a task link) and NO alert dialog fires (XSS regression check).
+4. TXT and SVG: monospace source view; SVG shows `<svg` as text, no rendered graphic, caption present.
+5. PDF: `iframe[src^="blob:"]` present in dialog.
+6. ZIP: click triggers download (no dialog opens).
+7. Lying mime: `tmj attach add` a file named fake.png containing HTML (CLI guesses image/png) → thumb falls back to icon, dialog shows error state, Download still works.
+8. Oversize: upload a ~25MB PNG (under the 50MB cap, over the 20MB preview cap) → "Too large to preview" + working Download; assert NO download request was made on dialog open.
+9. Comment flow: attach an image to a comment → chip press opens the same dialog.
+10. Delete a previewed attachment → re-render clean; upload again → fresh preview (evict proof).
+11. Per-row DownloadIcon button still saves the file; screenshot pass over the tray in normal + expanded (Maximize2) modes and dark mode.
+Finally `pnpm --filter web build` (expo export) to prove the static bundle still builds.
+
+## Risks
+
+1. Memory growth from cached object URLs — bounded by the 64MB/20-entry eviction budget and page lifetime; worst case is a user opening many 20MB images, which evicts oldest with revocation. 2. Blob-URL origin sharing: blob: URLs are same-origin with the SPA, so the design bans ever creating text/html- or image/svg+xml-typed blobs; image blobs and the server-typed pdf blob are non-scriptable when navigated. 3. PDF-in-iframe rendering varies (Safari shows first page, some mobile browsers download) — Download button is always adjacent; acceptable degradation. 4. Muscle-memory change (filename click previously downloaded) — mitigated by the explicit per-row DownloadIcon and the dialog's Download button; chips keep two-click download. 5. react-markdown is lazy-imported (markdown.tsx:119-127) so the dialog's markdown path may flash plain text on first ever use — existing behavior, unchanged. 6. Large text render cost — 1MB cap plus defensive slice; a 1MB markdown render can still take ~a second; if it bites, lower the markdown cap to 512KB (single constant). 7. The 1257-line task screen grows further — mitigated by putting all new UI in attachment-preview.tsx and only wiring in [num].tsx. 8. usePreview per image row issues one GET per image attachment on task open — bounded by list sizes here (attachments per task are few); if a pathological task has dozens, the cache cap converts extras into refetch-on-open, still correct. 9. ARCHITECTURE.md:47-48 claims a no-raw-fetch grep over apps/web; the only grep test found lives in apps/cli/test/parity.test.ts:62 over CLI src — moot for this design (client-only I/O), but worth flagging to the maintainer as a docs/test gap, not something this feature should fix.

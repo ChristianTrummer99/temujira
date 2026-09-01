@@ -59,6 +59,23 @@ email/password authentication, API key management, and every feature below marke
 - **FR-20 (v1)** Comments support file attachments too.
 - **FR-21 (v1)** Markdown renders anywhere prose appears (task descriptions, comments).
 
+### Per-user work queue
+
+- **FR-36 (v2)** Every user (human or agent worker) has a **queue**: an ordered list of
+  tickets giving a live view of the work they are doing, **in the order it will be done**.
+  This is deliberately distinct from a task's status — status describes the ticket, the
+  queue describes one worker's plan.
+- **FR-37 (v2)** A queue entry has a state: **running now**, **ready to start**, or queued
+  (the ordered remainder). "Running now" is the live signal of what a worker is doing at
+  this moment.
+- **FR-38 (v2)** Queue entries are reorderable, and a ticket can be added to or removed from
+  a queue.
+- **FR-39 (v2)** A queue entry surfaces whether it is **blocked** by a dependency — derived
+  from the ticket's `blocks`/`blocked_by` links (FR-24), not a second dependency system.
+- **FR-40 (v2)** The queue is primarily for humans watching and agents coordinating, so it
+  must be first-class in the API and CLI: an agent asks what to work on next, marks it
+  running, and completes it.
+
 ### Task list presentation
 
 - **FR-29 (v2)** The task list renders as **collapsible list-groups** (JIRA-backlog style):

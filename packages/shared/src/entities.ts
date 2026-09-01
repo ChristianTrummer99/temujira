@@ -110,6 +110,77 @@ export const AttachmentSchema = z.object({
 });
 export type Attachment = z.infer<typeof AttachmentSchema>;
 
+// ---------- task links ----------
+
+/**
+ * Link types as STORED: one canonical row per link, read as "src <type> dst".
+ * The inverse spelling is computed per viewpoint at serialization, never stored, so the
+ * two ends of a link can never disagree.
+ */
+export const LINK_TYPES = ["relates", "blocks", "absorbs"] as const;
+export type LinkType = (typeof LINK_TYPES)[number];
+
+/** Link relations as seen ON THE WIRE, from the viewpoint of the task you asked about. */
+export const LINK_RELATIONS = ["relates", "blocks", "blocked_by", "absorbs", "absorbed_by"] as const;
+export const LinkRelationSchema = z.enum(LINK_RELATIONS);
+export type LinkRelation = (typeof LINK_RELATIONS)[number];
+
+/** Wire relation → the canonical row to store, and whether src/dst swap. */
+export const LINK_CANONICAL: Record<LinkRelation, { type: LinkType; flip: boolean }> = {
+  relates: { type: "relates", flip: false },
+  blocks: { type: "blocks", flip: false },
+  blocked_by: { type: "blocks", flip: true },
+  absorbs: { type: "absorbs", flip: false },
+  absorbed_by: { type: "absorbs", flip: true },
+};
+
+/** Stored type → the relation shown on the destination side. */
+export const LINK_INVERSE: Record<LinkType, LinkRelation> = {
+  relates: "relates",
+  blocks: "blocked_by",
+  absorbs: "absorbed_by",
+};
+
+/** Human label for a relation, e.g. "blocked by". */
+export const linkRelationLabel = (r: LinkRelation): string => r.replace(/_/g, " ");
+
+/** A task referenced by ULID or by its human key (e.g. "START-2"). */
+export const TaskRefSchema = z
+  .string()
+  .trim()
+  .refine((s) => /^[0-9A-HJKMNP-TV-Z]{26}$/.test(s) || TaskKeyPattern.test(s), {
+    message: "task must be a task id or a key like TEM-42",
+  });
+
+/** The far end of a link, carrying its own workspace's key. */
+export const LinkedTaskRefSchema = z.object({
+  id: UlidSchema,
+  key: z.string(),
+  workspace_id: UlidSchema,
+  title: z.string(),
+  status: StatusSchema,
+  archived_at: TimestampSchema.nullable(),
+});
+export type LinkedTaskRef = z.infer<typeof LinkedTaskRefSchema>;
+
+export const TaskLinkSchema = z.object({
+  id: UlidSchema,
+  /** Relation as seen from the embedding task: "absorbs" on START-1, "absorbed_by" on START-2. */
+  type: LinkRelationSchema,
+  /** The OTHER endpoint. */
+  task: LinkedTaskRefSchema,
+  created_by: UlidSchema,
+  created_at: TimestampSchema,
+});
+export type TaskLink = z.infer<typeof TaskLinkSchema>;
+
+export const CreateTaskLinkInputSchema = z.object({
+  /** Relation as seen from the task in the URL. */
+  type: LinkRelationSchema,
+  /** The other task, by ULID or key. */
+  task: TaskRefSchema,
+});
+
 export const TaskSchema = z.object({
   id: UlidSchema,
   workspace_id: UlidSchema,
@@ -128,6 +199,8 @@ export const TaskSchema = z.object({
   updated_at: TimestampSchema,
   /** Embedded on tasks.get only. */
   attachments: z.array(AttachmentSchema).optional(),
+  /** Embedded on tasks.get only; relations are from this task's viewpoint. */
+  links: z.array(TaskLinkSchema).optional(),
   /** Embedded tags (always present on list/get). */
   tags: z.array(TagSchema),
 });

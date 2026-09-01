@@ -9,8 +9,10 @@ import {
   type Attachment,
   type Comment,
   type InboxItem,
+  type LinkRelation,
   type Status,
   type Tag,
+  type TaskLink,
   type Task,
   type User,
   type Workspace,
@@ -305,6 +307,20 @@ export class TemujiraClient {
     return this.call("tasks.update", { idOrKey }, { body }) as Promise<{ task: Task }>;
   }
 
+  // ---- task links ----
+  /**
+   * Link a task to another, e.g. createTaskLink("START-1", { type: "absorbs", task: "START-2" }).
+   * `type` is the relation as seen from the task in the first argument; the inverse
+   * spellings ("blocked_by", "absorbed_by") create the same canonical link from the far end.
+   */
+  createTaskLink(task: string, body: { type: LinkRelation; task: string }) {
+    return this.call("links.create", { idOrKey: task }, { body }) as Promise<{ link: TaskLink }>;
+  }
+  /** Remove a link by id; it disappears from both tasks. */
+  deleteTaskLink(id: string) {
+    return this.call("links.delete", { id }) as Promise<{ ok: true }>;
+  }
+
   // ---- comments (one level of threading; questions answered via child replies) ----
   listComments(task: string) {
     return this.call("comments.list", { idOrKey: task }) as Promise<{ items: Comment[] }>;
@@ -422,6 +438,8 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "tasks.create": "createTask",
   "tasks.get": "getTask",
   "tasks.update": "updateTask",
+  "links.create": "createTaskLink",
+  "links.delete": "deleteTaskLink",
   "comments.list": "listComments",
   "comments.create": "createComment",
   "comments.update": "updateComment",
@@ -436,6 +454,6 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "inbox.update": "markInboxRead",
 };
 
-export type { ActivityEvent, ApiKey, Attachment, Comment, InboxItem, Status, Tag, Task, User, Workspace, RouteId };
+export type { ActivityEvent, ApiKey, Attachment, Comment, InboxItem, LinkRelation, Status, Tag, Task, TaskLink, User, Workspace, RouteId };
 export { ROUTES, buildPath };
 export { z };

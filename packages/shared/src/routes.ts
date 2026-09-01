@@ -9,6 +9,7 @@ import {
   CreateStatusInputSchema,
   CreateTagInputSchema,
   CreateTaskInputSchema,
+  CreateTaskLinkInputSchema,
   CreateUserInputSchema,
   CreateWorkspaceInputSchema,
   DeleteStatusQuerySchema,
@@ -27,6 +28,7 @@ import {
   SetupInputSchema,
   StatusSchema,
   TagSchema,
+  TaskLinkSchema,
   TaskSchema,
   UpdateCommentInputSchema,
   UpdateInboxQuerySchema,
@@ -369,6 +371,24 @@ export const ROUTES = {
     summary: "Edit title/description, move status, (un)assign, archive/unarchive",
     body: UpdateTaskInputSchema,
     response: z.object({ task: TaskSchema }),
+  },
+
+  // ---- links ----
+  "links.create": {
+    method: "POST",
+    path: "/tasks/:idOrKey/links",
+    auth: "user",
+    summary:
+      "Link this task to another (e.g. absorbs START-2); either-end spellings accepted (blocked_by, absorbed_by)",
+    body: CreateTaskLinkInputSchema,
+    response: z.object({ link: TaskLinkSchema }),
+  },
+  "links.delete": {
+    method: "DELETE",
+    path: "/links/:id",
+    auth: "user",
+    summary: "Remove a link by id; one call removes it from both tasks",
+    response: okResponse,
   },
 
   // ---- comments ----
