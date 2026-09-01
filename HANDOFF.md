@@ -4,10 +4,38 @@
 
 ---
 
-## ⚠️ STATUS UPDATE (2026-09-01) — read this before §3
+## ✅ COMPLETE (2026-09-01) — this handoff is done; §3's TODO list is finished
 
-A later fleet verified this document against the tree and corrected it. Where this section
-and the rest of the doc disagree, **this section wins**.
+Everything in §3 (server, client, CLI) and §6 (web) is implemented, and §9's verification
+checklist passed. Where this section and the rest of the doc disagree, **this section wins**.
+
+**Verification actually performed:**
+
+- `pnpm -r typecheck` — all 5 packages clean.
+- `pnpm --filter @temujira/server test` — **253 passing** (baseline: 186 with 2 failing).
+- `pnpm --filter @temujira/cli test` — **47 passing**, including full route parity.
+- `scripts/e2e.sh` — passes in **both** local and Docker modes, driving the real `tmj`
+  binary through: setup → agent onboarding → key revocation → tags CRUD/filtering →
+  reply-to-reply collapsing → question answered via child reply → mention→inbox →
+  reply→inbox → self-mention suppressed → mark-read → activity → `task mine` →
+  admin-only tag enforcement → attachment upload/download with byte comparison.
+- **Browser (playwright-cli, pristine DB)**: `/` → `/setup` redirect, admin creation,
+  seeded workspace, stacked task list with tag/status/assignee filters and group-by
+  (Backend (1) / No tag (1) headers), task detail with markdown, live `@`-mention
+  autocomplete against `users.search`, mention rendered as an interactive chip and task
+  keys as links, question posted with inline options → answered → "Answered" state with the
+  chosen option checked and disabled, cross-user inbox with unread badge → item →
+  navigation → mark-all-read → "You're all caught up.", My Tasks association via mention,
+  activity feed with readable labels, sign-out/sign-in, and member gating ("Only admins can
+  add users…", tags read-only). **Zero console errors on every screen.**
+
+The remaining known gap is deliberate: **native (iOS/Android) is untested** — `markdown.tsx`,
+`mention-input.tsx`, the row archive control and the file `<input>` uploads have web-only DOM
+branches. That is the accepted v1 tradeoff (SPEC.md FR-05).
+
+---
+
+## Notes from the completion pass (kept for context)
 
 **Corrections to §0/§3 ("client/CLI/web NOT done at all"):**
 
