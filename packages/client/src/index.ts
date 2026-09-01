@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  QUEUE_STATES,
   buildPath,
   ROUTES,
   type RouteId,
@@ -8,8 +9,12 @@ import {
   type ApiKey,
   type Attachment,
   type Comment,
+  type FieldDef,
+  type FieldType,
   type InboxItem,
   type LinkRelation,
+  type QueueEntry,
+  type QueueState,
   type Status,
   type Tag,
   type TaskLink,
@@ -253,13 +258,16 @@ export class TemujiraClient {
       status_id?: string;
       assignee_id?: string;
       tag_id?: string;
+      field_id?: string;
+      field_value?: string;
       q?: string;
       include_archived?: boolean;
       sort?: "created_at" | "updated_at" | "number" | "title";
       order?: "asc" | "desc";
       limit?: number;
       offset?: number;
-      group_by?: "none" | "status" | "tag" | "assignee";
+      /** "none" | "status" | "tag" | "assignee" — or a custom select field id. */
+      group_by?: string;
     } = {},
   ) {
     return this.call("tasks.list", { idOrKey: workspace }, { query }) as Promise<{
@@ -286,6 +294,7 @@ export class TemujiraClient {
       status_id?: string;
       assignee_id?: string | null;
       tag_ids?: string[];
+      field_values?: Record<string, string>;
     },
   ) {
     return this.call("tasks.create", { idOrKey: workspace }, { body }) as Promise<{ task: Task }>;
@@ -302,9 +311,33 @@ export class TemujiraClient {
       assignee_id?: string | null;
       archived?: boolean;
       tag_ids?: string[];
+      /** Field id → value; only present keys are touched; "" clears. */
+      field_values?: Record<string, string>;
     },
   ) {
     return this.call("tasks.update", { idOrKey }, { body }) as Promise<{ task: Task }>;
+  }
+
+  // ---- custom fields ----
+  listFields(workspace: string) {
+    return this.call("fields.list", { idOrKey: workspace }) as Promise<{ items: FieldDef[] }>;
+  }
+  createField(
+    workspace: string,
+    body: { name: string; type?: FieldType; options?: string[] },
+  ) {
+    return this.call("fields.create", { idOrKey: workspace }, { body }) as Promise<{ field: FieldDef }>;
+  }
+  updateField(id: string, body: { name?: string; options?: string[] }) {
+    return this.call("fields.update", { id }, { body }) as Promise<{ field: FieldDef }>;
+  }
+  reorderFields(workspace: string, field_ids: string[]) {
+    return this.call("fields.reorder", { idOrKey: workspace }, { body: { field_ids } }) as Promise<{
+      items: FieldDef[];
+    }>;
+  }
+  deleteField(id: string) {
+    return this.call("fields.delete", { id }) as Promise<{ ok: true }>;
   }
 
   // ---- task links ----
@@ -396,6 +429,27 @@ export class TemujiraClient {
   markInboxRead(query: { mark_read?: boolean } = { mark_read: true }) {
     return this.call("inbox.update", {}, { query }) as Promise<{ ok: true; updated: number }>;
   }
+
+  // ---- queue (the current user's ordered plan) ----
+  getQueue() {
+    return this.call("queue.get", {}) as Promise<{ items: QueueEntry[] }>;
+  }
+  /** The entry to do next (running > ready > queued), or { entry: null }. */
+  queueNext() {
+    return this.call("queue.next", {}) as Promise<{ entry: QueueEntry | null }>;
+  }
+  addToQueue(task: string) {
+    return this.call("queue.add", {}, { body: { task } }) as Promise<{ entry: QueueEntry }>;
+  }
+  setQueueState(id: string, state: QueueState) {
+    return this.call("queue.setState", { id }, { body: { state } }) as Promise<{ entry: QueueEntry }>;
+  }
+  removeFromQueue(id: string) {
+    return this.call("queue.remove", { id }) as Promise<{ ok: true }>;
+  }
+  reorderQueue(entryIds: string[]) {
+    return this.call("queue.reorder", {}, { body: { entry_ids: entryIds } }) as Promise<{ items: QueueEntry[] }>;
+  }
 }
 
 /**
@@ -440,6 +494,17 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "tasks.update": "updateTask",
   "links.create": "createTaskLink",
   "links.delete": "deleteTaskLink",
+  "fields.list": "listFields",
+  "fields.create": "createField",
+  "fields.update": "updateField",
+  "fields.reorder": "reorderFields",
+  "fields.delete": "deleteField",
+  "queue.get": "getQueue",
+  "queue.next": "queueNext",
+  "queue.add": "addToQueue",
+  "queue.setState": "setQueueState",
+  "queue.remove": "removeFromQueue",
+  "queue.reorder": "reorderQueue",
   "comments.list": "listComments",
   "comments.create": "createComment",
   "comments.update": "updateComment",
@@ -454,6 +519,6 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "inbox.update": "markInboxRead",
 };
 
-export type { ActivityEvent, ApiKey, Attachment, Comment, InboxItem, LinkRelation, Status, Tag, Task, TaskLink, User, Workspace, RouteId };
-export { ROUTES, buildPath };
+export type { ActivityEvent, ApiKey, Attachment, Comment, FieldDef, FieldType, InboxItem, LinkRelation, QueueEntry, QueueState, Status, Tag, Task, TaskLink, User, Workspace, RouteId };
+export { QUEUE_STATES, ROUTES, buildPath };
 export { z };

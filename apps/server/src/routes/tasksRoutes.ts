@@ -7,9 +7,28 @@ import type {
   UpdateTaskInputSchema,
 } from "@temujira/shared";
 import type { Db } from "../db";
-import { attachments, statuses, tags, taskAssociations, taskTags, tasks, users, workspaces } from "../db/schema";
+import {
+  attachments,
+  fieldDefs,
+  fieldValues as fieldValuesTable,
+  statuses,
+  tags,
+  taskAssociations,
+  taskTags,
+  tasks,
+  users,
+  workspaces,
+} from "../db/schema";
 import { conflict, validationError } from "../errors";
-import { taskToApi, type StatusRow, type TagRow, type TaskRow, type UserRow } from "../serialize";
+import {
+  asStringArray,
+  taskToApi,
+  type FieldDefRow,
+  type StatusRow,
+  type TagRow,
+  type TaskRow,
+  type UserRow,
+} from "../serialize";
 import { newId, now } from "../util";
 import { associate, recordActivity } from "./engagement";
 import { loadLinksForTask } from "./linksRoutes";
@@ -70,6 +89,78 @@ function validateTagIds(db: Db, workspaceId: string, tagIds: string[]): string[]
   return unique;
 }
 
+/** Field id → value per task (one query for a whole batch). */
+export function loadFieldValuesForTasks(db: Db, taskIds: string[]): Map<string, Record<string, string>> {
+  const byTask = new Map<string, Record<string, string>>();
+  if (taskIds.length === 0) return byTask;
+  const rows = db.select().from(fieldValuesTable).where(inArray(fieldValuesTable.taskId, [...new Set(taskIds)])).all();
+  for (const r of rows) {
+    const map = byTask.get(r.taskId) ?? {};
+    map[r.fieldId] = r.value;
+    byTask.set(r.taskId, map);
+  }
+  return byTask;
+}
+
+/**
+ * Validate + normalize a task's incoming `field_values`. Empty-string values are dropped
+ * (the caller deletes those cells); remaining values are checked per def type: select
+ * must be one of the def's options, number must parse numerically.
+ */
+function validateFieldValues(db: Db, workspaceId: string, fieldValues: Record<string, string>): Record<string, string> {
+  const defs = db.select().from(fieldDefs).where(eq(fieldDefs.workspaceId, workspaceId)).all();
+  const byId = new Map(defs.map((f) => [f.id, f]));
+  const result: Record<string, string> = {};
+  for (const [fieldId, rawValue] of Object.entries(fieldValues)) {
+    const def = byId.get(fieldId);
+    if (!def) throw validationError(`field_values references an unknown field: ${fieldId}`);
+    if (rawValue === "") continue;
+    if (def.type === "select") {
+      if (!new Set(asStringArray(def.options)).has(rawValue)) {
+        throw validationError(`"${rawValue}" is not an allowed value for field "${def.name}"`);
+      }
+      result[fieldId] = rawValue;
+    } else if (def.type === "number") {
+      if (!/^-?\d+(\.\d+)?$/.test(rawValue.trim())) {
+        throw validationError(`"${rawValue}" is not a valid number for field "${def.name}"`);
+      }
+      result[fieldId] = rawValue.trim();
+    } else {
+      result[fieldId] = rawValue.trim();
+    }
+  }
+  return result;
+}
+
+/** Write a task's non-empty field values (upsert on the unique task+field pair). */
+function upsertFieldValues(tx: Db, taskId: string, fieldValues: Record<string, string>, by: string, t: number): void {
+  for (const [fieldId, value] of Object.entries(fieldValues)) {
+    tx.insert(fieldValuesTable)
+      .values({ id: newId(), taskId, fieldId, value, createdBy: by, createdAt: t, updatedAt: t })
+      .onConflictDoUpdate({
+        target: [fieldValuesTable.taskId, fieldValuesTable.fieldId],
+        set: { value, updatedAt: t },
+      })
+      .run();
+  }
+}
+
+/** Delete the cleared (empty-string) cells for a task. */
+function deleteClearedFieldValues(tx: Db, taskId: string, fieldValues: Record<string, string>): void {
+  for (const fieldId of Object.keys(fieldValues)) {
+    tx.delete(fieldValuesTable)
+      .where(and(eq(fieldValuesTable.taskId, taskId), eq(fieldValuesTable.fieldId, fieldId)))
+      .run();
+  }
+}
+
+function sameRecord(a: Record<string, string>, b: Record<string, string>): boolean {
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => a[k] === b[k]);
+}
+
 export function tasksHandlers(
   ctx: AppContext,
 ): Pick<Handlers, "tasks.list" | "tasks.mine" | "tasks.create" | "tasks.get" | "tasks.update"> {
@@ -85,6 +176,14 @@ export function tasksHandlers(
         // Semi-join: keeps `total` honest and never duplicates a task row.
         conds.push(
           sql`EXISTS (SELECT 1 FROM ${taskTags} WHERE ${taskTags.taskId} = ${tasks.id} AND ${taskTags.tagId} = ${q.tag_id})`,
+        );
+      }
+      if (q.field_id !== undefined) {
+        // Custom-field filter (FR-34): field_id alone = "has any value"; plus field_value = exact option.
+        conds.push(
+          q.field_value !== undefined
+            ? sql`EXISTS (SELECT 1 FROM ${fieldValuesTable} WHERE ${fieldValuesTable.taskId} = ${tasks.id} AND ${fieldValuesTable.fieldId} = ${q.field_id} AND ${fieldValuesTable.value} = ${q.field_value})`
+            : sql`EXISTS (SELECT 1 FROM ${fieldValuesTable} WHERE ${fieldValuesTable.taskId} = ${tasks.id} AND ${fieldValuesTable.fieldId} = ${q.field_id})`,
         );
       }
       if (q.q !== undefined && q.q !== "") {
@@ -108,8 +207,20 @@ export function tasksHandlers(
         .all();
       // group_by is a presentational hint for the client; the server always returns a flat list.
       const tagsByTask = loadTagsForTasks(ctx.db, rows.map((r) => r.task.id));
+      const fieldByTask = loadFieldValuesForTasks(ctx.db, rows.map((r) => r.task.id));
       return c.json({
-        items: rows.map((r) => taskToApi(r.task, ws.key, r.status, r.assignee, tagsByTask.get(r.task.id) ?? [])),
+        items: rows.map((r) =>
+          taskToApi(
+            r.task,
+            ws.key,
+            r.status,
+            r.assignee,
+            tagsByTask.get(r.task.id) ?? [],
+            undefined,
+            undefined,
+            fieldByTask.get(r.task.id),
+          ),
+        ),
         total,
         limit: q.limit,
         offset: q.offset,
@@ -143,9 +254,19 @@ export function tasksHandlers(
         .offset(q.offset)
         .all();
       const tagsByTask = loadTagsForTasks(ctx.db, rows.map((r) => r.task.id));
+      const fieldByTask = loadFieldValuesForTasks(ctx.db, rows.map((r) => r.task.id));
       return c.json({
         items: rows.map((r) =>
-          taskToApi(r.task, r.workspace.key, r.status, r.assignee, tagsByTask.get(r.task.id) ?? []),
+          taskToApi(
+            r.task,
+            r.workspace.key,
+            r.status,
+            r.assignee,
+            tagsByTask.get(r.task.id) ?? [],
+            undefined,
+            undefined,
+            fieldByTask.get(r.task.id),
+          ),
         ),
         total,
         limit: q.limit,
@@ -173,6 +294,7 @@ export function tasksHandlers(
       }
       const assignee = input.assignee_id != null ? requireActiveAssignee(ctx.db, input.assignee_id) : null;
       const tagIds = input.tag_ids !== undefined ? validateTagIds(ctx.db, ws.id, input.tag_ids) : [];
+      const fieldValues = input.field_values !== undefined ? validateFieldValues(ctx.db, ws.id, input.field_values) : {};
       // Allocate the task number atomically: read next_task_number, bump it, and insert
       // inside one synchronous transaction so bursts of creates never collide.
       const row = ctx.db.transaction((tx): TaskRow => {
@@ -195,6 +317,7 @@ export function tasksHandlers(
         };
         tx.insert(tasks).values(taskRow).run();
         for (const tagId of tagIds) tx.insert(taskTags).values({ taskId: taskRow.id, tagId }).run();
+        upsertFieldValues(tx, taskRow.id, fieldValues, user.id, t);
         return taskRow;
       });
       // The creator (and any initial assignee) follow the task from birth.
@@ -207,7 +330,7 @@ export function tasksHandlers(
         metadata: { title: row.title, ...(assignee ? { assignee_id: assignee.id } : {}) },
       });
       const tagRows = loadTagsForTasks(ctx.db, [row.id]).get(row.id) ?? [];
-      return c.json({ task: taskToApi(row, ws.key, status, assignee, tagRows) });
+      return c.json({ task: taskToApi(row, ws.key, status, assignee, tagRows, undefined, undefined, fieldValues) });
     },
 
     "tasks.get": (c) => {
@@ -226,7 +349,10 @@ export function tasksHandlers(
       // Links are embedded on tasks.get only (attachments precedent): list/mine/create/update
       // stay a single query per task.
       const links = loadLinksForTask(ctx.db, task.id);
-      return c.json({ task: taskToApi(task, workspace.key, status, assignee, tagRows, attachmentRows, links) });
+      const fieldValues = loadFieldValuesForTasks(ctx.db, [task.id]).get(task.id);
+      return c.json({
+        task: taskToApi(task, workspace.key, status, assignee, tagRows, attachmentRows, links, fieldValues),
+      });
     },
 
     "tasks.update": (c) => {
@@ -270,6 +396,19 @@ export function tasksHandlers(
         const next = new Set(tagIds);
         if (current.size !== next.size || [...next].some((id) => !current.has(id))) changed.push("tags");
       }
+      // Custom field values: only present keys are touched; "" clears the cell.
+      let fieldValuesIn: Record<string, string> | undefined;
+      if (input.field_values !== undefined) {
+        const normalized = validateFieldValues(ctx.db, task.workspaceId, input.field_values);
+        fieldValuesIn = normalized;
+        const before = loadFieldValuesForTasks(ctx.db, [task.id]).get(task.id) ?? {};
+        const after: Record<string, string> = { ...before };
+        for (const [fieldId, value] of Object.entries(normalized)) after[fieldId] = value;
+        for (const fieldId of Object.keys(input.field_values)) {
+          if (input.field_values[fieldId] === "") delete after[fieldId];
+        }
+        if (!sameRecord(before, after)) changed.push("field_value");
+      }
 
       const updated = ctx.db.transaction((tx): TaskRow => {
         const row = tx.update(tasks).set(updates).where(eq(tasks.id, task.id)).returning().get()!;
@@ -277,6 +416,10 @@ export function tasksHandlers(
           // Full replacement of the task's tag set.
           tx.delete(taskTags).where(eq(taskTags.taskId, task.id)).run();
           for (const tagId of tagIds) tx.insert(taskTags).values({ taskId: task.id, tagId }).run();
+        }
+        if (fieldValuesIn !== undefined) {
+          deleteClearedFieldValues(tx, task.id, input.field_values!);
+          upsertFieldValues(tx, task.id, fieldValuesIn, user.id, t);
         }
         return row;
       });
@@ -316,7 +459,8 @@ export function tasksHandlers(
         ? (ctx.db.select().from(users).where(eq(users.id, updated.assigneeId)).get() ?? null)
         : null;
       const tagRows = loadTagsForTasks(ctx.db, [updated.id]).get(updated.id) ?? [];
-      return c.json({ task: taskToApi(updated, workspace.key, status, assignee, tagRows) });
+      const fieldValues = loadFieldValuesForTasks(ctx.db, [updated.id]).get(updated.id);
+      return c.json({ task: taskToApi(updated, workspace.key, status, assignee, tagRows, undefined, undefined, fieldValues) });
     },
   };
 }

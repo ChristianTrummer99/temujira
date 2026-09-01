@@ -349,3 +349,88 @@ export const activityEvents = sqliteTable(
     index("activity_events_actor_id_idx").on(t.actorId),
   ],
 );
+
+/**
+ * Per-workspace user-defined task fields (FR-31..35), modeled on statuses: a definition
+ * row per field, `position` for ordering. type is immutable after create (rename +
+ * recreate to change). Only `select` carries user-defined options; `text`/`number` keep
+ * `options` empty.
+ */
+export const fieldDefs = sqliteTable(
+  "field_defs",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    /** JSON string array of options; only for `select`, else []. */
+    options: text("options").notNull(),
+    position: integer("position").notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("field_defs_workspace_name_unique").on(t.workspaceId, t.name),
+    index("field_defs_workspace_id_idx").on(t.workspaceId),
+    check("field_defs_type_check", sql`${t.type} IN ('select','text','number')`),
+  ],
+);
+
+/** One value per (task, field); a cleared value is a deleted row. */
+export const fieldValues = sqliteTable(
+  "field_values",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    fieldId: text("field_id")
+      .notNull()
+      .references(() => fieldDefs.id),
+    value: text("value").notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("field_values_task_field_unique").on(t.taskId, t.fieldId),
+    index("field_values_field_id_idx").on(t.fieldId),
+  ],
+);
+
+/**
+ * A user's ordered plan: tickets in the order they intend to do them (FR-36..40).
+ * state is pure signal ("running"/"ready"/"queued"); nothing auto-transitions and no
+ * status/filter reads it. A task can sit in a queue in any state — status and queue are
+ * deliberately orthogonal.
+ */
+export const queueEntries = sqliteTable(
+  "queue_entries",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    position: integer("position").notNull(),
+    state: text("state").notNull().default("queued"),
+    addedBy: text("added_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("queue_entries_user_task_unique").on(t.userId, t.taskId),
+    index("queue_entries_user_id_idx").on(t.userId),
+    check("queue_entries_state_check", sql`${t.state} IN ('queued','ready','running')`),
+  ],
+);

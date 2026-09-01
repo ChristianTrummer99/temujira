@@ -203,6 +203,8 @@ export const TaskSchema = z.object({
   links: z.array(TaskLinkSchema).optional(),
   /** Embedded tags (always present on list/get). */
   tags: z.array(TagSchema),
+  /** Field id → value, always present on every serialization ({} when none). */
+  field_values: z.record(UlidSchema, z.string()),
 });
 export type Task = z.infer<typeof TaskSchema>;
 
@@ -257,6 +259,49 @@ export const InboxItemSchema = z.object({
   created_at: TimestampSchema,
 });
 export type InboxItem = z.infer<typeof InboxItemSchema>;
+
+// ---------- custom field definitions ----------
+
+/**
+ * Per-workspace user-defined task fields (FR-31). The "statuses are the model" rule:
+ * definitions are first-class rows, created via API/CLI, not code changes.
+ * Only `select` carries user-defined options; `text`/`number` are simple scalars.
+ */
+export const FieldTypeSchema = z.enum(["select", "text", "number"]);
+export type FieldType = z.infer<typeof FieldTypeSchema>;
+
+export const FieldDefSchema = z.object({
+  id: UlidSchema,
+  workspace_id: UlidSchema,
+  name: z.string(),
+  type: FieldTypeSchema,
+  /** Options for `select`; always [] for other types. */
+  options: z.array(z.string()),
+  position: z.number().int(),
+  created_at: TimestampSchema,
+});
+export type FieldDef = z.infer<typeof FieldDefSchema>;
+
+// ---------- queue ----------
+
+export const QUEUE_STATES = ["queued", "ready", "running"] as const;
+export const QueueStateSchema = z.enum(QUEUE_STATES);
+export type QueueState = (typeof QUEUE_STATES)[number];
+
+/**
+ * One position in a user's ordered plan (FR-36..40). Pure signal: state never
+ * auto-transitions and no task/status query reads it. `blocked` is derived from the
+ * task-links graph (FR-39): true when some task has a `blocks` edge to this entry's task.
+ */
+export const QueueEntrySchema = z.object({
+  id: UlidSchema,
+  task: TaskSchema,
+  state: QueueStateSchema,
+  blocked: z.boolean(),
+  position: z.number().int(),
+  created_at: TimestampSchema,
+});
+export type QueueEntry = z.infer<typeof QueueEntrySchema>;
 
 // ---------- request bodies ----------
 
@@ -352,6 +397,8 @@ export const CreateTaskInputSchema = z.object({
   assignee_id: UlidSchema.nullable().optional(),
   /** Replaces the task's full tag set with this list. */
   tag_ids: z.array(UlidSchema).optional(),
+  /** Field id → value. "" clears. Keys must be this task's workspace's field defs. */
+  field_values: z.record(UlidSchema, z.string().max(500)).optional(),
 });
 
 export const UpdateTaskInputSchema = z.object({
@@ -363,6 +410,37 @@ export const UpdateTaskInputSchema = z.object({
   archived: z.boolean().optional(),
   /** Replaces the task's full tag set with this list. */
   tag_ids: z.array(UlidSchema).optional(),
+  /** Field id → value. Only present keys are touched; "" clears. */
+  field_values: z.record(UlidSchema, z.string().max(500)).optional(),
+});
+
+export const CreateFieldInputSchema = z.object({
+  name: z.string().trim().min(1).max(50),
+  type: FieldTypeSchema.default("select"),
+  /** Unique options for `select`; ignored for `text`/`number`. */
+  options: z.array(z.string().trim().min(1).max(50)).min(1).max(50).optional(),
+});
+
+export const UpdateFieldInputSchema = z.object({
+  name: z.string().trim().min(1).max(50).optional(),
+  /** Replaces the whole option set (`select` only). */
+  options: z.array(z.string().trim().min(1).max(50)).min(1).max(50).optional(),
+});
+
+export const ReorderFieldsInputSchema = z.object({
+  field_ids: z.array(UlidSchema).min(1),
+});
+
+export const AddTaskToQueueInputSchema = z.object({
+  task: TaskRefSchema,
+});
+
+export const QueueStateInputSchema = z.object({
+  state: QueueStateSchema,
+});
+
+export const ReorderQueueInputSchema = z.object({
+  entry_ids: z.array(UlidSchema).min(1),
 });
 
 export const CreateCommentInputSchema = z.object({
@@ -423,6 +501,10 @@ export const ListTasksQuerySchema = z.object({
   tag_id: UlidSchema.optional(),
   /** Substring match on title. */
   q: z.string().optional(),
+  /** Filter to tasks with a value for this custom select field. */
+  field_id: UlidSchema.optional(),
+  /** With field_id: filter to tasks whose value equals this option. */
+  field_value: z.string().max(500).optional(),
   include_archived: QueryBoolSchema,
   sort: z.enum(TASK_SORT_FIELDS).default("created_at"),
   order: z.enum(["asc", "desc"]).default("desc"),
@@ -430,9 +512,9 @@ export const ListTasksQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   /**
    * Presentational hint for the client to group tasks client-side.
-   * "status" | "tag" | "assignee" | "none" (default).
+   * "status" | "tag" | "assignee" | "none" (default) — or a custom select field id.
    */
-  group_by: z.enum(TASK_GROUP_FIELDS).default("none"),
+  group_by: z.string().default("none"),
 });
 
 export const ListTagsQuerySchema = z.object({});

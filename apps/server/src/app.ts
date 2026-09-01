@@ -13,9 +13,11 @@ import { apiKeyHandlers } from "./routes/apiKeysRoutes";
 import { attachmentsHandlers } from "./routes/attachmentsRoutes";
 import { authHandlers } from "./routes/authRoutes";
 import { commentsHandlers } from "./routes/commentsRoutes";
+import { fieldsHandlers } from "./routes/fieldsRoutes";
 import { inboxHandlers } from "./routes/inboxRoutes";
 import { linksHandlers } from "./routes/linksRoutes";
 import { metaHandlers } from "./routes/meta";
+import { queueHandlers } from "./routes/queueRoutes";
 import { statusesHandlers } from "./routes/statusesRoutes";
 import { tagsHandlers } from "./routes/tagsRoutes";
 import { tasksHandlers } from "./routes/tasksRoutes";
@@ -91,6 +93,8 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     ...tagsHandlers(ctx),
     ...tasksHandlers(ctx),
     ...linksHandlers(ctx),
+    ...fieldsHandlers(ctx),
+    ...queueHandlers(ctx),
     ...commentsHandlers(ctx),
     ...attachmentsHandlers(ctx),
     ...activityHandlers(ctx),

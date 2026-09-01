@@ -1,11 +1,13 @@
 import { z } from "zod";
 import {
   ActivityEventSchema,
+  AddTaskToQueueInputSchema,
   ApiKeySchema,
   AttachmentSchema,
   CommentSchema,
   CreateApiKeyInputSchema,
   CreateCommentInputSchema,
+  CreateFieldInputSchema,
   CreateStatusInputSchema,
   CreateTagInputSchema,
   CreateTaskInputSchema,
@@ -13,6 +15,7 @@ import {
   CreateUserInputSchema,
   CreateWorkspaceInputSchema,
   DeleteStatusQuerySchema,
+  FieldDefSchema,
   InboxItemSchema,
   ListActivityQuerySchema,
   ListApiKeysQuerySchema,
@@ -24,6 +27,10 @@ import {
   ListWorkspacesQuerySchema,
   LoginInputSchema,
   MentionSearchQuerySchema,
+  QueueEntrySchema,
+  QueueStateInputSchema,
+  ReorderFieldsInputSchema,
+  ReorderQueueInputSchema,
   ReorderStatusesInputSchema,
   SetupInputSchema,
   StatusSchema,
@@ -31,6 +38,7 @@ import {
   TaskLinkSchema,
   TaskSchema,
   UpdateCommentInputSchema,
+  UpdateFieldInputSchema,
   UpdateInboxQuerySchema,
   UpdateMeInputSchema,
   UpdateStatusInputSchema,
@@ -289,6 +297,46 @@ export const ROUTES = {
     response: okResponse,
   },
 
+  // ---- custom fields ----
+  "fields.list": {
+    method: "GET",
+    path: "/workspaces/:idOrKey/fields",
+    auth: "user",
+    summary: "List a workspace's custom field definitions ordered by position",
+    response: listOf(FieldDefSchema),
+  },
+  "fields.create": {
+    method: "POST",
+    path: "/workspaces/:idOrKey/fields",
+    auth: "user",
+    summary: "Define a custom field (select/text/number) — the statuses model, user-defined",
+    body: CreateFieldInputSchema,
+    response: z.object({ field: FieldDefSchema }),
+  },
+  "fields.update": {
+    method: "PATCH",
+    path: "/fields/:id",
+    auth: "user",
+    summary: "Rename a field or replace its option set (type is immutable)",
+    body: UpdateFieldInputSchema,
+    response: z.object({ field: FieldDefSchema }),
+  },
+  "fields.reorder": {
+    method: "PUT",
+    path: "/workspaces/:idOrKey/fields/order",
+    auth: "user",
+    summary: "Reorder field definitions: full ordered array of all field ids",
+    body: ReorderFieldsInputSchema,
+    response: listOf(FieldDefSchema),
+  },
+  "fields.delete": {
+    method: "DELETE",
+    path: "/fields/:id",
+    auth: "user",
+    summary: "Delete a field definition and all tasks' values for it",
+    response: okResponse,
+  },
+
   // ---- tags ----
   "tags.list": {
     method: "GET",
@@ -389,6 +437,53 @@ export const ROUTES = {
     auth: "user",
     summary: "Remove a link by id; one call removes it from both tasks",
     response: okResponse,
+  },
+
+  // ---- queue ----
+  "queue.get": {
+    method: "GET",
+    path: "/queue",
+    auth: "user",
+    summary: "The current user's queue, ordered (position asc); derived blocked per entry",
+    response: z.object({ items: z.array(QueueEntrySchema) }),
+  },
+  "queue.next": {
+    method: "GET",
+    path: "/queue/next",
+    auth: "user",
+    summary: "The entry to do next (running > ready > queued); {entry:null} when empty",
+    response: z.object({ entry: QueueEntrySchema.nullable() }),
+  },
+  "queue.add": {
+    method: "POST",
+    path: "/queue",
+    auth: "user",
+    summary: "Append a task to the current user's queue (409 when already queued)",
+    body: AddTaskToQueueInputSchema,
+    response: z.object({ entry: QueueEntrySchema }),
+  },
+  "queue.setState": {
+    method: "PATCH",
+    path: "/queue/:id",
+    auth: "user",
+    summary: "Set an entry's state: running | ready | queued (owner only)",
+    body: QueueStateInputSchema,
+    response: z.object({ entry: QueueEntrySchema }),
+  },
+  "queue.remove": {
+    method: "DELETE",
+    path: "/queue/:id",
+    auth: "user",
+    summary: "Remove an entry from the current user's queue (the 'complete' act)",
+    response: okResponse,
+  },
+  "queue.reorder": {
+    method: "PUT",
+    path: "/queue/order",
+    auth: "user",
+    summary: "Reorder the current user's queue: full ordered array of all entry ids",
+    body: ReorderQueueInputSchema,
+    response: z.object({ items: z.array(QueueEntrySchema) }),
   },
 
   // ---- comments ----

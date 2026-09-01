@@ -4,7 +4,9 @@ import type {
   ApiKey,
   Attachment,
   Comment,
+  FieldDef,
   InboxItem,
+  QueueEntry,
   Status,
   Tag,
   Task,
@@ -17,7 +19,10 @@ import type {
   apiKeys,
   attachments,
   comments,
+  fieldDefs,
+  fieldValues,
   inboxItems,
+  queueEntries,
   statuses,
   tags,
   taskLinks,
@@ -37,6 +42,9 @@ export type TagRow = typeof tags.$inferSelect;
 export type ActivityEventRow = typeof activityEvents.$inferSelect;
 export type InboxItemRow = typeof inboxItems.$inferSelect;
 export type TaskLinkRow = typeof taskLinks.$inferSelect;
+export type FieldDefRow = typeof fieldDefs.$inferSelect;
+export type FieldValueRow = typeof fieldValues.$inferSelect;
+export type QueueEntryRow = typeof queueEntries.$inferSelect;
 
 export function userToApi(u: UserRow): User {
   return {
@@ -145,6 +153,7 @@ export function taskToApi(
   tagRows?: TagRow[],
   attachmentRows?: AttachmentRow[],
   links?: TaskLink[],
+  fieldValues?: Record<string, string>,
 ): Task {
   return {
     id: t.id,
@@ -164,6 +173,34 @@ export function taskToApi(
     ...(tagRows ? { tags: tagRows.map(tagToApi) } : { tags: [] }),
     ...(attachmentRows ? { attachments: attachmentRows.map(attachmentToApi) } : {}),
     ...(links ? { links } : {}),
+    field_values: fieldValues ?? {},
+  };
+}
+
+export function fieldDefToApi(f: FieldDefRow): FieldDef {
+  return {
+    id: f.id,
+    workspace_id: f.workspaceId,
+    name: f.name,
+    type: f.type as FieldDef["type"],
+    options: asStringArray(f.options),
+    position: f.position,
+    created_at: f.createdAt,
+  };
+}
+
+export function queueEntryToApi(
+  e: QueueEntryRow,
+  task: Task,
+  blocked: boolean,
+): QueueEntry {
+  return {
+    id: e.id,
+    task,
+    state: e.state as QueueEntry["state"],
+    blocked,
+    position: e.position,
+    created_at: e.createdAt,
   };
 }
 
@@ -192,7 +229,7 @@ export function commentToApi(
   };
 }
 
-function asStringArray(json: string): string[] {
+export function asStringArray(json: string): string[] {
   try {
     const v = JSON.parse(json);
     return Array.isArray(v) ? v.map((s) => String(s)) : [];

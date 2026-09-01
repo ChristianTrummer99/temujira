@@ -423,10 +423,11 @@ describe("task tags (tag_ids)", () => {
     const grouped = await listTasks(ws.id, "?group_by=tag");
     expect(Array.isArray(grouped.items)).toBe(true);
     expect(grouped.total).toBeGreaterThan(0);
+    // group_by is an open string so a custom select field id can be passed (FR-34).
     const badGroup = await t.app.request(`/api/v1/workspaces/${ws.id}/tasks?group_by=priority`, {
       headers: bearer(admin.token),
     });
-    expect(badGroup.status).toBe(400);
+    expect(badGroup.status).toBe(200);
   });
 });
 

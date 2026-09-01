@@ -16,9 +16,9 @@ import { collect, nonNegativeInt, resolveTextOption } from "../util";
 export const COMMAND_ROUTES = {
   "task list": ["tasks.list", "statuses.list", "users.list", "auth.me", "tags.list"],
   "task mine": ["tasks.mine"],
-  "task create": ["tasks.create", "statuses.list", "users.list", "auth.me", "tags.list"],
-  "task get": ["tasks.get"],
-  "task update": ["tasks.update", "tasks.get", "tags.list"],
+  "task create": ["tasks.create", "statuses.list", "users.list", "auth.me", "tags.list", "fields.list", "workspaces.get"],
+  "task get": ["tasks.get", "fields.list"],
+  "task update": ["tasks.update", "tasks.get", "tags.list", "fields.list"],
   "task move": ["tasks.update", "tasks.get", "statuses.list"],
   "task assign": ["tasks.update", "users.list", "auth.me"],
   "task unassign": ["tasks.update"],
@@ -75,10 +75,14 @@ function pageNote(res: { items: unknown[]; total: number; offset: number }): str
     : "";
 }
 
-/** Client-side grouping for --group-by (the API only echoes the hint). */
+/**
+ * Client-side grouping for --group-by (the API only echoes the hint). A custom select
+ * field id groups by task.field_values[<fieldId>]; "(no value)" catches the rest.
+ */
 function groupTasks(
   items: Task[],
   by: "status" | "tag" | "assignee",
+  fieldId?: string,
 ): Array<[string, Task[]]> {
   const groups = new Map<string, Task[]>();
   const push = (key: string, task: Task): void => {
@@ -89,6 +93,7 @@ function groupTasks(
   for (const task of items) {
     if (by === "status") push(task.status.name, task);
     else if (by === "assignee") push(task.assignee ? task.assignee.name : "(unassigned)", task);
+    else if (fieldId) push((task.field_values ?? {})[fieldId] ?? "(no value)", task);
     else {
       const names = tagNames(task);
       if (names.length === 0) push("(untagged)", task);
@@ -98,7 +103,7 @@ function groupTasks(
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
-function renderTask(task: Task): string {
+function renderTask(task: Task, fieldNames?: Map<string, string>): string {
   let out = kv([
     ["key", task.key],
     ["id", task.id],
@@ -110,6 +115,15 @@ function renderTask(task: Task): string {
     ["created", ts(task.created_at)],
     ["updated", ts(task.updated_at)],
   ]);
+  const fieldValues = task.field_values ?? {};
+  if (Object.keys(fieldValues).length > 0) {
+    out += `\n\nfields:\n${indent(
+      Object.entries(fieldValues)
+        .map(([id, v]) => `${fieldNames?.get(id) ?? id}: ${v}`)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .join("\n"),
+    )}`;
+  }
   if (task.description) {
     out += `\n\ndescription:\n${indent(task.description)}`;
   }
@@ -141,11 +155,13 @@ interface TaskListOpts {
   status?: string;
   assignee?: string;
   tag?: string;
+  fieldId?: string;
+  fieldValue?: string;
   search?: string;
   archived?: boolean;
   sort?: (typeof TASK_SORT_FIELDS)[number];
   order?: "asc" | "desc";
-  groupBy?: (typeof TASK_GROUP_FIELDS)[number];
+  groupBy?: string;
   limit?: number;
   offset?: number;
 }
@@ -158,6 +174,7 @@ interface TaskCreateOpts {
   status?: string;
   assignee?: string;
   tag: string[];
+  field: string[];
 }
 
 /** Shared emitter for every command that yields a single task. */
@@ -167,6 +184,55 @@ function emitTask(ctx: Ctx, task: Task, human?: () => string): void {
     human: human ?? (() => renderTask(task)),
     quiet: () => task.id,
   });
+}
+
+/**
+ * Resolve custom-field names (id → name) for a task that carries field values, so the
+ * detail view shows readable field labels. Skipped when the task has no values.
+ */
+async function fieldNamesFor(client: Ctx["client"], task: Task): Promise<Map<string, string> | undefined> {
+  const values = task.field_values ?? {};
+  if (Object.keys(values).length === 0) return undefined;
+  const { items } = await client.listFields(task.workspace_id);
+  return new Map(items.map((f) => [f.id, f.name]));
+}
+
+/**
+ * Resolve `--field <nameOrId>=<value>` specs (names need the workspace the task lives
+ * in). Returns the wire `field_values` map; unknown name → exit 4.
+ */
+async function resolveFieldValues(
+  client: Ctx["client"],
+  workspaceId: string,
+  specs: readonly string[],
+): Promise<Record<string, string>> {
+  const pairs = new Map<string, string>();
+  for (const spec of specs) {
+    const eq = spec.indexOf("=");
+    if (eq <= 0) {
+      throw new CliError(`--field expects <nameOrId>=<value>, got "${spec}"`, EXIT_CODES.usage);
+    }
+    pairs.set(spec.slice(0, eq).trim(), spec.slice(eq + 1));
+  }
+  const out: Record<string, string> = {};
+  const unknown: string[] = [];
+  let byName = new Map<string, string>();
+  if (![...pairs.keys()].every(isUlid)) {
+    const { items } = await client.listFields(workspaceId);
+    byName = new Map(items.map((f) => [f.name.trim().toLowerCase(), f.id]));
+  }
+  for (const [nameOrId, value] of pairs) {
+    const id = isUlid(nameOrId) ? nameOrId : byName.get(nameOrId.trim().toLowerCase());
+    if (!id) unknown.push(nameOrId);
+    else out[id] = value;
+  }
+  if (unknown.length > 0) {
+    throw new CliError(
+      `no field named "${unknown[0]}" in this task's workspace`,
+      EXIT_CODES.notFound,
+    );
+  }
+  return out;
 }
 
 export function registerTask(program: Command): void {
@@ -179,12 +245,15 @@ export function registerTask(program: Command): void {
     .option("--status <idOrName>", "filter by status (id or case-insensitive name)")
     .option("--assignee <idOrEmailOrMe>", 'filter by assignee (id, email, or "me")')
     .option("--tag <idOrName>", "filter by tag (id or case-insensitive name)")
+    .option("--field-id <fieldId>", "filter by a custom select field (tasks with any value)")
+    .option("--field-value <value>", 'with --field-id: filter to this option value')
     .option("--search <q>", "substring match on title")
     .option("--archived", "include archived tasks")
     .addOption(new Option("--sort <field>", "sort field").choices(TASK_SORT_FIELDS))
     .addOption(new Option("--order <dir>", "sort direction").choices(["asc", "desc"]))
-    .addOption(
-      new Option("--group-by <field>", "group the printed rows").choices(TASK_GROUP_FIELDS),
+    .option(
+      "--group-by <key>",
+      'group the printed rows: "status" | "tag" | "assignee" | "none" — or a custom select field id',
     )
     .option("--limit <n>", "page size (max 200)", nonNegativeInt("--limit"))
     .option("--offset <n>", "page offset", nonNegativeInt("--offset"))
@@ -196,6 +265,13 @@ export function registerTask(program: Command): void {
       }
       if (opts.assignee) query.assignee_id = await resolveUserId(ctx.client, opts.assignee);
       if (opts.tag) query.tag_id = await resolveTagId(ctx.client, opts.workspace, opts.tag);
+      if (opts.fieldId) {
+        query.field_id = opts.fieldId;
+        if (!isUlid(opts.fieldId)) {
+          throw new CliError("--field-id must be a field id (use `tmj field list`)", EXIT_CODES.usage);
+        }
+        if (opts.fieldValue) query.field_value = opts.fieldValue;
+      }
       if (opts.search) query.q = opts.search;
       if (opts.archived) query.include_archived = true;
       if (opts.sort) query.sort = opts.sort;
@@ -204,12 +280,17 @@ export function registerTask(program: Command): void {
       if (opts.limit !== undefined) query.limit = opts.limit;
       if (opts.offset !== undefined) query.offset = opts.offset;
       const res = await ctx.client.listTasks(opts.workspace, query);
-      const groupBy = opts.groupBy && opts.groupBy !== "none" ? opts.groupBy : undefined;
+      const groupFieldId =
+        opts.groupBy && opts.groupBy !== "none" && !(TASK_GROUP_FIELDS as readonly string[]).includes(opts.groupBy)
+          ? opts.groupBy
+          : undefined;
+      const groupKey =
+        opts.groupBy && opts.groupBy !== "none" && !groupFieldId ? (opts.groupBy as "status" | "tag" | "assignee") : undefined;
       emit(ctx.mode, {
         json: res,
         human: () => {
-          const body = groupBy
-            ? groupTasks(res.items, groupBy)
+          const body = groupKey || groupFieldId
+            ? groupTasks(res.items, groupKey ?? "tag", groupFieldId)
                 .map(
                   ([name, items]) =>
                     `${name} (${items.length})\n${indent(table(TASK_COLUMNS, items.map(taskRow)))}`,
@@ -255,6 +336,12 @@ export function registerTask(program: Command): void {
       collect,
       [] as string[],
     )
+    .option(
+      "--field <nameOrId=value>",
+      'set a custom field value (repeatable; "" clears), e.g. --field Priority=high',
+      collect,
+      [] as string[],
+    )
     .action(async (opts: TaskCreateOpts, cmd: Command) => {
       const ctx = getCtx(cmd);
       const description = await resolveTextOption(
@@ -271,18 +358,23 @@ export function registerTask(program: Command): void {
       if (opts.tag.length > 0) {
         body.tag_ids = await resolveTagIds(ctx.client, opts.workspace, opts.tag);
       }
+      if (opts.field.length > 0) {
+        const { workspace: current } = await ctx.client.getWorkspace(opts.workspace);
+        body.field_values = await resolveFieldValues(ctx.client, current.id, opts.field);
+      }
       const { task: created } = await ctx.client.createTask(opts.workspace, body);
       emitTask(ctx, created, () => `created ${created.key} (${created.id})  ${truncate(created.title, 60)}`);
     });
 
   task
     .command("get")
-    .description("Show a task (description, status, assignee, links, attachments)")
+    .description("Show a task (description, status, assignee, field values, links, attachments)")
     .argument("<idOrKey>", "task id or key (e.g. TEM-42)")
     .action(async (idOrKey: string, _opts: Record<string, never>, cmd: Command) => {
       const ctx = getCtx(cmd);
       const { task: found } = await ctx.client.getTask(idOrKey);
-      emitTask(ctx, found);
+      const fieldNames = await fieldNamesFor(ctx.client, found);
+      emitTask(ctx, found, () => renderTask(found, fieldNames));
     });
 
   task
@@ -298,10 +390,16 @@ export function registerTask(program: Command): void {
       collect,
       [] as string[],
     )
+    .option(
+      "--field <nameOrId=value>",
+      'set a custom field value (repeatable; "" clears), e.g. --field Priority=high',
+      collect,
+      [] as string[],
+    )
     .action(
       async (
         idOrKey: string,
-        opts: { title?: string; description?: string; descriptionFile?: string; tag: string[] },
+        opts: { title?: string; description?: string; descriptionFile?: string; tag: string[]; field: string[] },
         cmd: Command,
       ) => {
         const ctx = getCtx(cmd);
@@ -310,9 +408,14 @@ export function registerTask(program: Command): void {
           opts.description,
           opts.descriptionFile,
         );
-        if (opts.title === undefined && description === undefined && opts.tag.length === 0) {
+        if (
+          opts.title === undefined &&
+          description === undefined &&
+          opts.tag.length === 0 &&
+          opts.field.length === 0
+        ) {
           throw new CliError(
-            "nothing to update — pass --title, --description, --description-file, or --tag",
+            "nothing to update — pass --title, --description, --description-file, --tag, or --field",
             EXIT_CODES.usage,
           );
         }
@@ -327,6 +430,10 @@ export function registerTask(program: Command): void {
             const { task: current } = await ctx.client.getTask(idOrKey);
             body.tag_ids = await resolveTagIds(ctx.client, current.workspace_id, opts.tag);
           }
+        }
+        if (opts.field.length > 0) {
+          const { task: current } = await ctx.client.getTask(idOrKey);
+          body.field_values = await resolveFieldValues(ctx.client, current.workspace_id, opts.field);
         }
         const { task: updated } = await ctx.client.updateTask(idOrKey, body);
         emitTask(ctx, updated, () => `updated ${updated.key}`);
