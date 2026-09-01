@@ -133,6 +133,75 @@ RC=$?
 set -e
 [ "$RC" = 3 ] || die "revoked key should exit 3, got $RC"
 
+say "Tags: admin CRUD, task tagging, filter by tag"
+TAG_BACKEND=$(tmj tag create --workspace ENG --name Backend --color '#3b82f6' --json | jq -r '.tag.id')
+TAG_URGENT=$(tmj tag create --workspace ENG --name Urgent --color '#ef4444' --json | jq -r '.tag.id')
+[ -n "$TAG_BACKEND" ] && [ -n "$TAG_URGENT" ] || die "tag create"
+tmj tag list --workspace ENG --json | jq -e '.items | length == 2' >/dev/null || die "tag list"
+tmj task update "$T1" --tag Backend --tag Urgent >/dev/null || die "task tagging by name"
+tmj task get "$T1" --json | jq -e '.task.tags | length == 2' >/dev/null || die "task tags not embedded"
+tmj task list --workspace ENG --tag Backend --json | jq -e '.total == 1' >/dev/null || die "tag filter"
+tmj task update "$T1" --tag Backend >/dev/null || die "tag replace"
+tmj task get "$T1" --json | jq -e '.task.tags | length == 1' >/dev/null || die "tag set was not replaced"
+tmj tag update "$TAG_URGENT" --name Critical --json | jq -e '.tag.name == "Critical"' >/dev/null || die "tag rename"
+tmj tag delete "$TAG_URGENT" >/dev/null || die "tag delete"
+tmj tag list --workspace ENG --json | jq -e '.items | length == 1' >/dev/null || die "tag not removed"
+
+say "Comment threading: replies collapse to one level"
+ROOT=$(tmj comment add --task "$T1" --body "Root comment" --json | jq -r '.comment.id')
+REPLY=$(tmj comment add --task "$T1" --body "A reply" --reply-to "$ROOT" --json | jq -r '.comment.parent_id')
+[ "$REPLY" = "$ROOT" ] || die "reply parent mismatch"
+REPLY_ID=$(tmj comment add --task "$T1" --body "Second reply" --reply-to "$ROOT" --json | jq -r '.comment.id')
+NESTED=$(tmj comment add --task "$T1" --body "Reply to a reply" --reply-to "$REPLY_ID" --json | jq -r '.comment.parent_id')
+[ "$NESTED" = "$ROOT" ] || die "reply-to-reply should collapse to root, got $NESTED"
+tmj comment list --task "$T1" --json | jq -e --arg r "$ROOT" '.items | map(select(.id == $r)) | .[0].replies | length == 3' >/dev/null || die "replies not nested"
+tmj comment list --task "$T1" --json | jq -e --arg id "$REPLY_ID" '.items | map(.id) | index($id) == null' >/dev/null || die "reply leaked to top level"
+
+say "Question comments answered via child reply"
+Q=$(tmj comment add --task "$T1" --body "Ship today or tomorrow?" --question "Today" --question "Tomorrow" --json | jq -r '.comment.id')
+tmj comment list --task "$T1" --json | jq -e --arg q "$Q" '.items[] | select(.id == $q) | .question.options | length == 2' >/dev/null || die "question options"
+tmj comment add --task "$T1" --body "Tomorrow works" --reply-to "$Q" --answer 1 >/dev/null || die "answer via reply"
+tmj comment list --task "$T1" --json | jq -e --arg q "$Q" '.items[] | select(.id == $q) | .question.answer_option_index == 1' >/dev/null || die "answer not recorded on question"
+
+say "Mentions land in the mentioned user's inbox"
+MEMBER_PW=member-pass-123
+tmj user create --email dev@e2e.test --name "Dev Human" --password "$MEMBER_PW" >/dev/null || die "member create"
+tmj user search dev --json | jq -e '.items | map(.email) | index("dev@e2e.test") != null' >/dev/null || die "user search"
+tmj comment add --task "$T1" --body "Please review @Dev Human" --mention dev@e2e.test >/dev/null || die "mention comment"
+MEMBER_KEY=$(tmj apikey create --name dev-cli --user "$(tmj user list --json | jq -r '.items[] | select(.email=="dev@e2e.test") | .id')" --json | jq -r '.token')
+[ -n "$MEMBER_KEY" ] || die "member key"
+as_member() { TEMUJIRA_URL="http://localhost:$PORT" TEMUJIRA_API_KEY="$MEMBER_KEY" HOME="$HOME_DIR" node apps/cli/dist/index.js "$@"; }
+as_member inbox list --json | jq -e '.unread >= 1 and (.items[0].kind == "mention")' >/dev/null || die "mention did not reach inbox"
+as_member inbox list --json | jq -e '.items[0].task_key != null and .items[0].workspace.key == "ENG"' >/dev/null || die "inbox item missing task/workspace context"
+
+say "Replies notify the parent author; mark-read clears the inbox"
+MEMBER_ROOT=$(as_member comment add --task "$T1" --body "Member question here" --json | jq -r '.comment.id')
+tmj comment add --task "$T1" --body "Admin answering" --reply-to "$MEMBER_ROOT" >/dev/null || die "admin reply"
+as_member inbox list --json | jq -e '[.items[] | select(.kind == "reply")] | length >= 1' >/dev/null || die "reply did not reach inbox"
+as_member inbox read --json | jq -e '.ok == true and .updated >= 1' >/dev/null || die "mark read"
+as_member inbox list --json | jq -e '.unread == 0 and (.items | length == 0)' >/dev/null || die "inbox not cleared"
+as_member inbox list --all --json | jq -e '.items | length >= 1' >/dev/null || die "--all should show read items"
+
+say "Self-mention does not notify"
+BEFORE=$(tmj inbox list --all --json | jq -r '.total')
+tmj comment add --task "$T1" --body "Note to self @E2E Admin" --mention admin@e2e.test >/dev/null || die "self mention comment"
+AFTER=$(tmj inbox list --all --json | jq -r '.total')
+[ "$BEFORE" = "$AFTER" ] || die "self-mention should not create an inbox item ($BEFORE -> $AFTER)"
+
+say "Activity feed and my tasks"
+tmj activity list --workspace ENG --json | jq -e '[.items[].action] | index("task.created") != null' >/dev/null || die "activity feed missing task.created"
+tmj activity list --workspace ENG --json | jq -e '[.items[].action] | index("comment.created") != null' >/dev/null || die "activity feed missing comment.created"
+tmj activity list --workspace ENG --mine --json | jq -e '.items | length >= 1' >/dev/null || die "mine activity"
+tmj task mine --json | jq -e '.total >= 1' >/dev/null || die "task mine"
+as_member task mine --json | jq -e '[.items[].key] | index("'"$T1"'") != null' >/dev/null || die "mentioned user should be associated with the task"
+
+say "Tag writes are admin-only"
+set +e
+as_member tag create --workspace ENG --name Nope >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" = 3 ] || die "member creating a tag should exit 3, got $RC"
+
 say "Negative paths: wrong password (exit 3), missing task (exit 4)"
 set +e
 tmj api POST /auth/login --body '{"email":"admin@e2e.test","password":"wrong"}' >/dev/null 2>&1; RC1=$?
