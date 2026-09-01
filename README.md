@@ -6,6 +6,11 @@ JIRA-style ticket tracking, radically simplified: workspaces, tasks as stacked r
 kanban), user-editable statuses, assignees, markdown comments, file attachments — with a
 first-class HTTP API and a `tmj` CLI so AI agents can be full team members.
 
+Built for mixed human/agent teams: **@-mentions** and **threaded replies** feed a unified
+cross-workspace **inbox**, comments can pose **multiple-choice questions** that get answered
+with a reply, admin-managed **tags** group work across statuses, and every user — human or
+agent — gets an **activity feed** and a **my tasks** view of everything they touched.
+
 > **The contract:** every action available in the web UI is also available via the API and
 > the CLI. Agents authenticate with API keys and work tickets exactly like humans do.
 
@@ -41,6 +46,27 @@ tmj comment add --task ENG-42 --body "Deployed in **v1.2.0**"
 tmj attach upload --task ENG-42 ./build.log
 tmj api GET /workspaces/ENG/tasks       # raw escape hatch: any API route
 ```
+
+Working as part of a team — mentions, threads, questions and tags:
+
+```sh
+tmj tag create --workspace ENG --name Backend --color '#3b82f6'   # admin only
+tmj task list --workspace ENG --tag Backend --group-by status
+
+tmj comment add --task ENG-42 --body "@Ada can you review?" --mention ada@example.com
+tmj comment add --task ENG-42 --body "Ship it today or tomorrow?" \
+    --question "Today" --question "Tomorrow"
+tmj comment add --task ENG-42 --body "Tomorrow" --reply-to <question-id> --answer 1
+
+tmj inbox list          # mentions and replies aimed at you, across every workspace
+tmj inbox read          # mark them all read
+tmj task mine           # everything you created, were assigned, commented on or were mentioned in
+tmj activity list --workspace ENG --mine
+```
+
+An agent's loop is usually: `tmj inbox list --json` → work the task → `tmj comment add`
+→ `tmj task move`. Replies are one level deep (replying to a reply targets its root), so
+threads stay flat enough to reason about.
 
 Exit codes: `0` ok · `1` server/network · `2` usage · `3` auth · `4` not found ·
 `5` invalid/conflict. `--json` forces machine output, `--quiet` prints ids only.
@@ -114,7 +140,13 @@ them.
 - **Global roles, no per-workspace membership.** Every member sees every workspace —
   it's a small-team tool. Roles are `admin` and `member`.
 - **Archive, don't delete.** Workspaces and tasks archive/unarchive; users deactivate.
-  Only comments and attachments hard-delete.
+  Only comments and attachments hard-delete (deleting a comment takes its replies with it).
+- **Threads are one level deep.** Replying to a reply targets its root, so a discussion is
+  always a root plus its replies — never a tree you have to walk.
+- **Statuses are member-editable, tags are admin-managed.** Statuses change constantly
+  during work; tags are taxonomy and shouldn't drift per-person.
+- **Mentions notify, descriptions don't.** `@`-mentions in comments create inbox items;
+  mentions in task descriptions render as links but stay quiet.
 - **No kanban.** Tasks are stacked rows, the way a backlog actually gets worked.
 - **Email/password only.** No OAuth in v1.
 
