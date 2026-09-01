@@ -1,7 +1,10 @@
 import type { Status, Tag, Task } from '@temujira/client';
 
-export const GROUP_BY_VALUES = ['none', 'status', 'tag', 'assignee'] as const;
+/** The list is always grouped — there is no "no grouping" mode. */
+export const GROUP_BY_VALUES = ['status', 'tag', 'assignee'] as const;
 export type GroupBy = (typeof GROUP_BY_VALUES)[number];
+
+export const DEFAULT_GROUP_BY: GroupBy = 'status';
 
 export interface TaskGroup {
   id: string;
@@ -15,6 +18,9 @@ export interface TaskGroup {
  * Grouping is client-side on purpose: `group_by` is only a presentational hint on
  * `tasks.list` — the server always returns a flat page.
  *
+ * Empty groups are never returned: a group only exists once at least one task
+ * (after filtering) lands in it.
+ *
  * - status: workspace status order (`position`), colored.
  * - tag: `listTags` order; a task with two tags appears in BOTH groups, plus "No tag".
  * - assignee: alphabetical, plus "Unassigned".
@@ -24,10 +30,6 @@ export function groupTasks(
   groupBy: GroupBy,
   opts: { statuses: Status[]; tags: Tag[] }
 ): TaskGroup[] {
-  if (groupBy === 'none') {
-    return [{ id: 'all', label: '', tasks }];
-  }
-
   if (groupBy === 'status') {
     const ordered = [...opts.statuses].sort((a, b) => a.position - b.position);
     const groups: TaskGroup[] = [];

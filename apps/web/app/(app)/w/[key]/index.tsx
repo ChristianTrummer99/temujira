@@ -20,12 +20,14 @@ import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth';
 import { formatRelative, initialsOf } from '@/lib/format';
-import { groupTasks, type GroupBy } from '@/lib/group-tasks';
+import { DEFAULT_GROUP_BY, groupTasks, type GroupBy, type TaskGroup } from '@/lib/group-tasks';
 import { useResource } from '@/lib/use-resource';
 import type { Status, Tag, Task, User } from '@temujira/client';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ActivityIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   ListTodoIcon,
   PlusIcon,
   SearchIcon,
@@ -34,12 +36,58 @@ import {
 import * as React from 'react';
 import { Platform, Pressable, ScrollView, View } from 'react-native';
 
+/** The list is always grouped; "status" is the default. */
 const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
-  { value: 'none', label: 'No grouping' },
   { value: 'status', label: 'Group by status' },
   { value: 'tag', label: 'Group by tag' },
   { value: 'assignee', label: 'Group by assignee' },
 ];
+
+const DEFAULT_GROUP_OPTION = GROUP_OPTIONS.find((o) => o.value === DEFAULT_GROUP_BY);
+
+/**
+ * Minimal structural typing for `localStorage` so this file typechecks without the
+ * DOM lib, mirroring `components/ui/sidebar.tsx`.
+ */
+type WebGlobals = {
+  localStorage?: {
+    getItem: (key: string) => string | null;
+    setItem: (key: string, value: string) => void;
+  };
+};
+
+/** Collapsed groups are remembered per workspace AND per grouping dimension. */
+function collapsedStorageKey(workspaceKey: string, groupBy: GroupBy) {
+  return `temujira.collapsed.${workspaceKey}.${groupBy}`;
+}
+
+function readCollapsed(workspaceKey: string, groupBy: GroupBy): Set<string> {
+  if (Platform.OS !== 'web') return new Set();
+  try {
+    const raw = (globalThis as WebGlobals).localStorage?.getItem(
+      collapsedStorageKey(workspaceKey, groupBy)
+    );
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((id): id is string => typeof id === 'string'));
+  } catch {
+    // Unavailable (private mode, quota, malformed JSON) - start fully expanded.
+    return new Set();
+  }
+}
+
+function persistCollapsed(workspaceKey: string, groupBy: GroupBy, ids: Set<string>) {
+  if (Platform.OS !== 'web') return;
+  try {
+    (globalThis as WebGlobals).localStorage?.setItem(
+      collapsedStorageKey(workspaceKey, groupBy),
+      JSON.stringify([...ids])
+    );
+  } catch {
+    // localStorage unavailable - collapse still works for this session.
+  }
+}
 
 export default function WorkspaceTasksScreen() {
   const { key } = useLocalSearchParams<{ key: string }>();
@@ -51,7 +99,7 @@ export default function WorkspaceTasksScreen() {
   const [statusFilter, setStatusFilter] = React.useState<Option>(undefined);
   const [assigneeFilter, setAssigneeFilter] = React.useState<Option>(undefined);
   const [tagFilter, setTagFilter] = React.useState<Option>(undefined);
-  const [groupOption, setGroupOption] = React.useState<Option>(GROUP_OPTIONS[0]);
+  const [groupOption, setGroupOption] = React.useState<Option>(DEFAULT_GROUP_OPTION);
   const [includeArchived, setIncludeArchived] = React.useState(false);
 
   // debounce search into the API query
@@ -64,7 +112,7 @@ export default function WorkspaceTasksScreen() {
   const statusId = statusFilter?.value && statusFilter.value !== 'all' ? statusFilter.value : '';
   const assigneeValue = assigneeFilter?.value ?? 'all';
   const tagId = tagFilter?.value && tagFilter.value !== 'all' ? tagFilter.value : '';
-  const groupBy = (groupOption?.value ?? 'none') as GroupBy;
+  const groupBy = (groupOption?.value ?? DEFAULT_GROUP_BY) as GroupBy;
 
   const resource = useResource(
     async () => {
@@ -119,6 +167,22 @@ export default function WorkspaceTasksScreen() {
     [tasks, groupBy, statuses, tags]
   );
 
+  // Groups start expanded; only the ids the user has explicitly collapsed live here.
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(() =>
+    readCollapsed(workspaceKey, groupBy)
+  );
+  React.useEffect(() => {
+    setCollapsed(readCollapsed(workspaceKey, groupBy));
+  }, [workspaceKey, groupBy]);
+
+  function toggleGroup(id: string) {
+    const next = new Set(collapsed);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setCollapsed(next);
+    persistCollapsed(workspaceKey, groupBy, next);
+  }
+
   return (
     <View className="flex-1">
       <View className="border-border flex-row flex-wrap items-center gap-2 border-b p-4">
@@ -169,7 +233,7 @@ export default function WorkspaceTasksScreen() {
         </Select>
         <Select value={groupOption} onValueChange={setGroupOption}>
           <SelectTrigger className="min-w-40">
-            <SelectValue placeholder="No grouping" />
+            <SelectValue placeholder="Group by status" />
           </SelectTrigger>
           <SelectContent>
             {GROUP_OPTIONS.map((o) => (
@@ -202,10 +266,9 @@ export default function WorkspaceTasksScreen() {
       </View>
 
       {resource.loading ? (
-        <View className="gap-0 px-4 py-3">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-12 w-full" />
+        <View className="gap-3 p-4">
+          <Skeleton className="h-32 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
         </View>
       ) : resource.error ? (
         <View className="items-center justify-center gap-3 p-12">
@@ -215,29 +278,17 @@ export default function WorkspaceTasksScreen() {
           </Button>
         </View>
       ) : (
-        <ScrollView className="flex-1">
+        <ScrollView className="flex-1" contentContainerClassName="p-4">
           {groups.map((group) => (
-            <View key={group.id}>
-              {groupBy !== 'none' ? (
-                <View className="border-border bg-muted/40 flex-row items-center gap-2 border-b px-4 py-1.5">
-                  {group.color ? (
-                    <View
-                      style={{ backgroundColor: group.color }}
-                      className="h-2.5 w-2.5 rounded-full"
-                    />
-                  ) : null}
-                  <Text className="text-xs font-semibold uppercase tracking-wide">
-                    {group.label}
-                  </Text>
-                  <Text className="text-muted-foreground text-xs">{group.tasks.length}</Text>
-                </View>
-              ) : null}
-              {group.tasks.map((task) => (
-                <TaskRow key={`${group.id}:${task.id}`} task={task} workspaceKey={workspaceKey} />
-              ))}
-            </View>
+            <TaskGroupCard
+              key={group.id}
+              group={group}
+              workspaceKey={workspaceKey}
+              expanded={!collapsed.has(group.id)}
+              onToggle={() => toggleGroup(group.id)}
+            />
           ))}
-          {tasks.length === 0 ? (
+          {groups.length === 0 ? (
             <EmptyState
               icon={ListTodoIcon}
               title="No tasks match the current filters."
@@ -250,7 +301,72 @@ export default function WorkspaceTasksScreen() {
   );
 }
 
-function TaskRow({ task, workspaceKey }: { task: Task; workspaceKey: string }) {
+/**
+ * One grouping bucket, rendered as a JIRA-backlog-style card: a tinted header row
+ * that toggles collapse, and the task rows hairline-separated inside it.
+ */
+function TaskGroupCard({
+  group,
+  workspaceKey,
+  expanded,
+  onToggle,
+}: {
+  group: TaskGroup;
+  workspaceKey: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const count = group.tasks.length;
+  return (
+    <View className="border-border mb-3 overflow-hidden rounded-lg border">
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        // Both: RN Web 0.21 only forwards the ARIA prop to the DOM, native reads the state.
+        accessibilityState={{ expanded }}
+        aria-expanded={expanded}
+        accessibilityLabel={`${group.label}, ${count} ${count === 1 ? 'task' : 'tasks'}`}
+        className={
+          'border-border bg-muted/40 flex-row items-center gap-2 px-3 py-2' +
+          (expanded ? ' border-b' : '') +
+          (Platform.OS === 'web' ? ' hover:bg-muted/70 transition-colors' : '')
+        }>
+        <Icon
+          as={expanded ? ChevronDownIcon : ChevronRightIcon}
+          className="text-muted-foreground size-4"
+        />
+        {group.color ? (
+          <View style={{ backgroundColor: group.color }} className="h-2.5 w-2.5 rounded-full" />
+        ) : null}
+        <Text className="text-sm font-semibold">{group.label}</Text>
+        <Text className="text-muted-foreground text-xs">
+          {count} {count === 1 ? 'task' : 'tasks'}
+        </Text>
+      </Pressable>
+      {expanded
+        ? group.tasks.map((task, i) => (
+            <TaskRow
+              key={`${group.id}:${task.id}`}
+              task={task}
+              workspaceKey={workspaceKey}
+              last={i === count - 1}
+            />
+          ))
+        : null}
+    </View>
+  );
+}
+
+function TaskRow({
+  task,
+  workspaceKey,
+  last,
+}: {
+  task: Task;
+  workspaceKey: string;
+  /** The last row in a card skips its hairline so the card's own border is the only line. */
+  last?: boolean;
+}) {
   const router = useRouter();
   const archived = task.archived_at != null;
 
@@ -260,7 +376,8 @@ function TaskRow({ task, workspaceKey }: { task: Task; workspaceKey: string }) {
     <Pressable
       onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)}
       className={
-        'border-border active:bg-accent/70 flex-row items-center gap-3 border-b px-4 py-3' +
+        'border-border active:bg-accent/70 flex-row items-center gap-3 px-4 py-3' +
+        (last ? '' : ' border-b') +
         (Platform.OS === 'web' ? ' hover:bg-accent/50 transition-colors' : '') +
         (archived ? ' opacity-55' : '')
       }>
