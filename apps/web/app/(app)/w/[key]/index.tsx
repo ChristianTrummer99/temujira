@@ -26,8 +26,6 @@ import type { Status, Tag, Task, User } from '@temujira/client';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ActivityIcon,
-  ArchiveIcon,
-  ArchiveRestoreIcon,
   ListTodoIcon,
   PlusIcon,
   SearchIcon,
@@ -235,12 +233,7 @@ export default function WorkspaceTasksScreen() {
                 </View>
               ) : null}
               {group.tasks.map((task) => (
-                <TaskRow
-                  key={`${group.id}:${task.id}`}
-                  task={task}
-                  workspaceKey={workspaceKey}
-                  onChanged={() => resource.reload()}
-                />
+                <TaskRow key={`${group.id}:${task.id}`} task={task} workspaceKey={workspaceKey} />
               ))}
             </View>
           ))}
@@ -257,47 +250,15 @@ export default function WorkspaceTasksScreen() {
   );
 }
 
-function TaskRow({
-  task,
-  workspaceKey,
-  onChanged,
-}: {
-  task: Task;
-  workspaceKey: string;
-  onChanged: () => void;
-}) {
+function TaskRow({ task, workspaceKey }: { task: Task; workspaceKey: string }) {
   const router = useRouter();
-  const { client } = useAuth();
-  const [hovered, setHovered] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
   const archived = task.archived_at != null;
-  // A nested Pressable still bubbles to the row on web; this suppresses the row's navigate.
-  const suppressRowPress = React.useRef(false);
 
-  async function toggleArchive() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await client.updateTask(task.id, { archived: !archived });
-      onChanged();
-    } catch {
-      // the row simply stays as-is; the list reload would have shown the truth
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  // Archiving lives in the task view, not here: a control that only appears on hover
+  // changes the row's height as the pointer crosses it, which reads as a flicker.
   return (
     <Pressable
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      onPress={() => {
-        if (suppressRowPress.current) {
-          suppressRowPress.current = false;
-          return;
-        }
-        router.push(`/w/${workspaceKey}/t/${task.number}`);
-      }}
+      onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)}
       className={
         'border-border active:bg-accent/70 flex-row items-center gap-3 border-b px-4 py-3' +
         (Platform.OS === 'web' ? ' hover:bg-accent/50 transition-colors' : '') +
@@ -317,54 +278,6 @@ function TaskRow({
       <Badge variant="secondary" className="hidden sm:flex">
         <Text>{task.status.name}</Text>
       </Badge>
-      <View className="w-8 items-center">
-        {hovered ? (
-          Platform.OS === 'web' ? (
-            // A Pressable nested inside the row Pressable never wins the RNW responder,
-            // so its onPress never fires. mousedown does; the ref flag then eats the
-            // row's own press so the tray doesn't open behind the action.
-            <div
-              role="button"
-              aria-label={archived ? `Unarchive ${task.key}` : `Archive ${task.key}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                suppressRowPress.current = true;
-                void toggleArchive();
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 26,
-                height: 26,
-                borderRadius: 4,
-                cursor: 'pointer',
-              }}
-              className="hover:bg-accent">
-              <Icon
-                as={archived ? ArchiveRestoreIcon : ArchiveIcon}
-                className="text-muted-foreground size-4"
-              />
-            </div>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={archived ? `Unarchive ${task.key}` : `Archive ${task.key}`}
-              onPressIn={() => {
-                suppressRowPress.current = true;
-                void toggleArchive();
-              }}
-              className="rounded p-1"
-              hitSlop={6}>
-              <Icon
-                as={archived ? ArchiveRestoreIcon : ArchiveIcon}
-                className="text-muted-foreground size-4"
-              />
-            </Pressable>
-          )
-        ) : null}
-      </View>
       <Text className="text-muted-foreground hidden w-16 text-xs sm:flex">
         {task.updated_at ? formatRelative(task.updated_at) : ''}
       </Text>
