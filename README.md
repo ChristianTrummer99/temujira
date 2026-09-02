@@ -17,18 +17,31 @@ agent — gets an **activity feed** and a **my tasks** view of everything they t
 ## Quick start (Docker)
 
 ```sh
-git clone <this-repo> temujira && cd temujira
-docker compose up -d
-open http://localhost:3000        # first visit walks you through creating the admin account
+git clone https://github.com/ChristianTrummer99/temujira.git && cd temujira
+docker compose up -d --build --wait --wait-timeout 90
+# Visit http://localhost:3000; first visit creates the admin account.
 ```
 
 Everything lives in `./data` (SQLite DB + uploaded files). One directory, one backup target.
+The default Compose port is loopback-only so it can sit safely behind a host reverse proxy.
+Keep it private until the first admin exists; the setup endpoint is public on a fresh
+database.
 
-Headless provisioning (no browser needed): set `TEMUJIRA_ADMIN_EMAIL` and
-`TEMUJIRA_ADMIN_PASSWORD` in the environment before first boot, or run
-`tmj setup --url http://localhost:3000 --email you@example.com --password …`.
+Headless provisioning (no browser needed): copy `.env.example` to `.env`, set
+`TEMUJIRA_ADMIN_EMAIL` and `TEMUJIRA_ADMIN_PASSWORD` before first boot, or follow the
+complete container CLI setup in the [self-hosting guide](docs/self-hosting.md). The guide
+also covers TLS, backups, upgrades, restore, and bare Node.js deployment.
 
 ## The CLI
+
+AI agents working from this checkout should load
+[the Temujira CLI skill](.agents/skills/temujira-cli/SKILL.md). It includes safe operating
+workflows, identifier rules, destructive-action guardrails, and a complete command
+reference.
+
+The Docker image includes the CLI as `docker compose exec app tmj ...`. From a source
+checkout, run it without relying on generated output via
+`pnpm --filter @temujira/cli dev -- ...`. The examples below use `tmj` for readability.
 
 ```sh
 # humans: interactive login stores an API key in ~/.config/temujira/config.json
@@ -60,7 +73,7 @@ tmj comment add --task ENG-42 --body "Tomorrow" --reply-to <question-id> --answe
 
 tmj inbox list          # mentions and replies aimed at you, across every workspace
 tmj inbox read          # mark them all read
-tmj task mine           # everything you created, were assigned, commented on or were mentioned in
+tmj task mine           # active tasks you created, were assigned, commented on or were mentioned in
 tmj activity list --workspace ENG --mine
 ```
 
@@ -69,7 +82,8 @@ An agent's loop is usually: `tmj inbox list --json` → work the task → `tmj c
 threads stay flat enough to reason about.
 
 Exit codes: `0` ok · `1` server/network · `2` usage · `3` auth · `4` not found ·
-`5` invalid/conflict. `--json` forces machine output, `--quiet` prints ids only.
+`5` invalid/conflict. `--json` forces machine output; `--quiet` emits compact,
+command-specific output such as an ID, task key, or downloaded path.
 
 ### Onboarding an agent
 
@@ -85,8 +99,9 @@ else. Deactivate an agent with `tmj user deactivate <id>`; its keys stop working
 
 Everything is under `/api/v1` — plain REST + JSON, documented by the server itself at
 `/api/v1/openapi.json`. Authenticate with `Authorization: Bearer tmj_…` (API key) or
-`Bearer tms_…` (session token from `POST /api/v1/auth/login`). Browsers use the HttpOnly
-session cookie instead.
+`Bearer tms_…` (session token from `POST /api/v1/auth/login`). Browser login also sets an
+HttpOnly cookie; the current web client sends the returned session token as a bearer token.
+Use HTTPS in production.
 
 ## Development
 
@@ -103,35 +118,24 @@ react-native-reusables; web today, iOS/Android later), `apps/cli` (`tmj`),
 `packages/shared` (zod route registry — **the contract**), `packages/client` (typed API
 client used by both the web app and the CLI).
 
-## Deploying on a VPS
+## Self-hosting
 
-Temujira is a single container with a single volume. Run it behind any TLS-terminating
-reverse proxy:
+Temujira is one app process with one persistent data directory. The recommended deployment
+is Docker Compose behind a TLS-terminating reverse proxy:
 
 ```caddyfile
 pm.example.com {
-    reverse_proxy localhost:3000
+    request_body {
+        max_size 55MB
+    }
+    reverse_proxy 127.0.0.1:3000
 }
 ```
 
-nginx equivalent: proxy_pass with `proxy_set_header Host $host;` and
-`proxy_set_header X-Forwarded-Proto $scheme;`. The server uses `X-Forwarded-Proto` to turn
-on Secure cookies and `Host`/`X-Forwarded-Host` for its CSRF origin check — no base-URL
-configuration needed. No Kubernetes required, on purpose.
-
-### Backups
-
-The `data` directory is everything. For a live, consistent snapshot don't copy the DB file
-raw — use SQLite's backup command, then copy uploads:
-
-```sh
-sqlite3 ./data/temujira.db ".backup ./backups/temujira-$(date +%F).db"
-cp -R ./data/uploads ./backups/uploads-$(date +%F)
-```
-
-Upgrades: pull a new image and restart — migrations run automatically at boot, and the
-server snapshots the DB (`temujira.db.pre-migration-*.bak`, last 3 kept) before applying
-them.
+The complete [self-hosting guide](docs/self-hosting.md) covers first-admin provisioning,
+Caddy/nginx headers, Docker and bare Node.js installs, persistent files, consistent backups,
+restore, and source-based upgrades. Keep the web app and API on the same origin, use local
+storage for SQLite, and run only one app process per data directory.
 
 ## Design decisions (v1)
 
@@ -140,7 +144,8 @@ them.
 - **Global roles, no per-workspace membership.** Every member sees every workspace —
   it's a small-team tool. Roles are `admin` and `member`.
 - **Archive, don't delete.** Workspaces and tasks archive/unarchive; users deactivate.
-  Only comments and attachments hard-delete (deleting a comment takes its replies with it).
+  Taxonomy, comments, attachments, links, and queue entries can hard-delete, so inspect
+  targets before destructive CLI/API calls (deleting a root comment also takes its replies).
 - **Threads are one level deep.** Replying to a reply targets its root, so a discussion is
   always a root plus its replies — never a tree you have to walk.
 - **Statuses are member-editable, tags are admin-managed.** Statuses change constantly

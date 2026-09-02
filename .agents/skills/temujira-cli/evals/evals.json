@@ -1,0 +1,41 @@
+{
+  "skill_name": "temujira-cli",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "My Temujira credentials are already configured. Give me the exact tmj command sequence an autonomous agent should use to take the next item from its personal queue, inspect it, mark it running, post a completion note, move the task to Done, and remove it from the queue. Account for a blocked item and use machine-readable output.",
+      "expected_output": "Uses queue next, task get, queue start, comment add, task move with --status, and queue complete with explicit --json; explains that blocked is advisory and that queue completion does not move task status.",
+      "assertions": [
+        "Uses explicit --json for machine-readable reads and mutations.",
+        "Uses task move <task> --status Done rather than a positional status.",
+        "Separately moves task status and completes the queue entry.",
+        "Explains that blocked queue entries require inspecting the blocker rather than automatic execution."
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "In workspace ENG, replace the Priority select field options with urgent and normal, then delete the QA status and move any affected tasks to Done. I do not know any entity IDs. Give a safe tmj plan, not just the final write commands.",
+      "expected_output": "Lists fields and statuses as JSON, resolves exact IDs, verifies scope, treats option update as full replacement, deletes status with --move-to using a same-workspace Done status ID, and verifies afterward without inventing unsupported flags.",
+      "assertions": [
+        "Reads fields and statuses before mutation and captures IDs from JSON.",
+        "States that field update --options replaces the complete option set.",
+        "Uses status delete <qa-id> --move-to <done-id> with IDs from ENG.",
+        "Does not invent field delete --force or another unsupported command."
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Without an interactive TTY, onboard a passwordless Temujira agent called Build Bot at bot@example.com, explain how to hand over its credential safely, then show how that agent should notify ada@example.com in a comment on ENG-42.",
+      "expected_output": "Uses user create --agent --with-key --json without --quiet, warns the token is shown once, recommends TEMUJIRA_URL/TEMUJIRA_API_KEY, and uses both visible mention text and --mention for the comment.",
+      "assertions": [
+        "Creates a passwordless account with user create --agent --with-key --json.",
+        "Does not use --quiet when the one-time token must be captured.",
+        "Recommends environment API-key authentication without logging the secret.",
+        "Uses comment add with both visible @Ada text and --mention ada@example.com."
+      ],
+      "files": []
+    }
+  ]
+}

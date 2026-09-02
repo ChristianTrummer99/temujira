@@ -51,4 +51,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
   CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)+'/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "/app/server/index.js"]
+CMD ["sh", "-c", "umask 077 && exec node /app/server/index.js"]

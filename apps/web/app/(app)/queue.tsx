@@ -3,6 +3,14 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  type Option,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
@@ -14,42 +22,42 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   CircleAlertIcon,
+  GripVerticalIcon,
   ListOrderedIcon,
-  PauseIcon,
-  PlayIcon,
 } from 'lucide-react-native';
 import * as React from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Platform, Pressable, ScrollView, View } from 'react-native';
 
 const SECTION_ORDER: { state: QueueState; label: string }[] = [
   { state: 'running', label: 'Running' },
-  { state: 'ready', label: 'Ready' },
+  { state: 'ready', label: 'Next up' },
   { state: 'queued', label: 'Queued' },
 ];
 
-const STATE_BADGE_VARIANT: Record<QueueState, 'default' | 'secondary' | 'outline'> = {
-  running: 'default',
-  ready: 'secondary',
-  queued: 'outline',
-};
+const GROUP_OPTIONS: NonNullable<Option>[] = [
+  { value: 'running', label: 'Running' },
+  { value: 'ready', label: 'Next up' },
+  { value: 'queued', label: 'Queued' },
+];
 
 /**
  * The current user's personal, ordered work queue (FR-36..40). Pure metadata: state
- * transitions never touch the task. `queue.next` picks running > ready > queued.
+ * transitions never touch the task. State only drives the bucket an entry shows in;
+ * order is what the user controls (drag on web, chevrons on native).
  */
 export default function QueueScreen() {
   const { client } = useAuth();
   const router = useRouter();
   const [entries, setEntries] = React.useState<QueueEntry[] | null>(null);
-  const [next, setNext] = React.useState<QueueEntry | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [working, setWorking] = React.useState<string | null>(null);
+  const [dragId, setDragId] = React.useState<string | null>(null);
+  const [dragOverId, setDragOverId] = React.useState<string | null>(null);
 
   async function load() {
     try {
-      const [{ items }, nextRes] = await Promise.all([client.getQueue(), client.queueNext()]);
+      const { items } = await client.getQueue();
       setEntries(items);
-      setNext(nextRes.entry);
       setError(null);
     } catch (e) {
       setEntries([]);
@@ -84,6 +92,40 @@ export default function QueueScreen() {
     await act(id, () => client.reorderQueue(ordered.map((e) => e.id)));
   }
 
+  async function dropInto(targetId: string, before: boolean) {
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      setDragOverId(null);
+      return;
+    }
+    const ordered = [...(entries ?? [])].sort((a, b) => a.position - b.position);
+    const from = ordered.findIndex((e) => e.id === dragId);
+    if (from < 0) {
+      setDragId(null);
+      setDragOverId(null);
+      return;
+    }
+    const mover = ordered[from];
+    const targetEntry = ordered.find((entry) => entry.id === targetId);
+    if (!targetEntry || mover.state !== targetEntry.state) {
+      setDragId(null);
+      setDragOverId(null);
+      return;
+    }
+    const rest = ordered.filter((_, i) => i !== from);
+    const target = rest.findIndex((e) => e.id === targetId);
+    if (target < 0) {
+      setDragId(null);
+      setDragOverId(null);
+      return;
+    }
+    rest.splice(before ? target : target + 1, 0, mover);
+    const dragged = dragId;
+    setDragId(null);
+    setDragOverId(null);
+    await act(dragged, () => client.reorderQueue(rest.map((e) => e.id)));
+  }
+
   if (entries === null) {
     return (
       <View className="gap-3 p-4">
@@ -96,21 +138,13 @@ export default function QueueScreen() {
   const sections = SECTION_ORDER.map(({ state, label }) => ({
     state,
     label,
-    items: entries
-      .filter((e) => e.state === state)
-      .sort((a, b) => a.position - b.position),
+    items: entries.filter((e) => e.state === state).sort((a, b) => a.position - b.position),
   })).filter((s) => s.items.length > 0);
+  const draggedState = entries.find((entry) => entry.id === dragId)?.state;
 
   return (
     <ScrollView className="flex-1" contentContainerClassName="mx-auto w-full max-w-3xl gap-4 p-4">
-      <NextUpCard
-        entry={next}
-        working={working}
-        onStart={(id) => act(id, () => client.setQueueState(id, 'running'))}
-        onRemove={(id) => act(id, () => client.removeFromQueue(id))}
-      />
-
-      {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
+      {error ? <Text className="text-sm text-destructive">{error}</Text> : null}
 
       {sections.length === 0 ? (
         <EmptyState
@@ -128,7 +162,7 @@ export default function QueueScreen() {
                 <Text>{section.items.length}</Text>
               </Badge>
             </View>
-            <View className="border-border overflow-hidden rounded-lg border">
+            <View className="overflow-hidden rounded-lg border border-border">
               {section.items.map((entry, i) => (
                 <QueueRow
                   key={entry.id}
@@ -137,6 +171,17 @@ export default function QueueScreen() {
                   working={working === entry.id}
                   canUp={entry.position > 0}
                   canDown={entry.position < entries.length - 1}
+                  dragging={dragId === entry.id}
+                  dragOver={
+                    dragOverId === entry.id && entry.id !== dragId && draggedState === entry.state
+                  }
+                  onDragStart={setDragId}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setDragOverId(null);
+                  }}
+                  onDragOverItem={setDragOverId}
+                  onDropInto={dropInto}
                   onMoveUp={() => move(entry.id, -1)}
                   onMoveDown={() => move(entry.id, 1)}
                   onSetState={(state) => act(entry.id, () => client.setQueueState(entry.id, state))}
@@ -155,95 +200,18 @@ export default function QueueScreen() {
   );
 }
 
-function NextUpCard({
-  entry,
-  working,
-  onStart,
-  onRemove,
-}: {
-  entry: QueueEntry | null;
-  working: string | null;
-  onStart: (id: string) => void;
-  onRemove: (id: string) => void;
-}) {
-  const router = useRouter();
-  if (!entry) return null;
-  const alreadyRunning = entry.state === 'running';
-  const busy = working === entry.id;
-  return (
-    <View className="border-border bg-card gap-3 rounded-lg border p-4">
-      <View className="flex-row items-center gap-2">
-        <Icon as={PlayIcon} className="text-foreground size-4" />
-        <Text className="text-sm font-medium">Next up</Text>
-        <Badge variant={STATE_BADGE_VARIANT[entry.state]}>
-          <Text>{entry.state}</Text>
-        </Badge>
-        {entry.blocked ? (
-          <Badge variant="destructive">
-            <View className="flex-row items-center gap-1">
-              <Icon as={CircleAlertIcon} className="size-3" />
-              <Text>Blocked</Text>
-            </View>
-          </Badge>
-        ) : null}
-      </View>
-      <Pressable
-        onPress={() => {
-          const split = splitTaskKey(entry.task.key);
-          if (split) router.push(`/w/${split.workspaceKey}/t/${split.number}`);
-        }}
-        accessibilityRole="link"
-        className="hover:bg-accent/50 -mx-2 rounded-md px-2 py-1">
-        <Text numberOfLines={2} className="text-sm font-medium">
-          {entry.task.key} — {entry.task.title}
-        </Text>
-      </Pressable>
-      <View className="flex-row items-center justify-between gap-2">
-        <View className="flex-row items-center gap-2">
-          {entry.task.assignee ? (
-            <Avatar alt={entry.task.assignee.name} className="size-5">
-              <AvatarFallback>
-                <Text className="text-[9px]">{initialsOf(entry.task.assignee.name)}</Text>
-              </AvatarFallback>
-            </Avatar>
-          ) : null}
-          <Badge variant="outline">
-            <View className="flex-row items-center gap-1">
-              <View
-                style={{ backgroundColor: entry.task.status.color }}
-                className="h-2 w-2 rounded-full"
-              />
-              <Text>{entry.task.status.name}</Text>
-            </View>
-          </Badge>
-        </View>
-        <View className="flex-row gap-2">
-          {alreadyRunning ? null : (
-            <Button size="sm" disabled={busy} onPress={() => onStart(entry.id)}>
-              <Icon as={PlayIcon} className="text-primary-foreground size-3.5" />
-              <Text>Start</Text>
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onPress={() => onRemove(entry.id)}>
-            <Icon as={CheckCircle2Icon} className="text-muted-foreground size-3.5" />
-            <Text>Complete</Text>
-          </Button>
-        </View>
-      </View>
-    </View>
-  );
-}
-
 function QueueRow({
   entry,
   last,
   working,
   canUp,
   canDown,
+  dragging,
+  dragOver,
+  onDragStart,
+  onDragEnd,
+  onDragOverItem,
+  onDropInto,
   onMoveUp,
   onMoveDown,
   onSetState,
@@ -255,38 +223,132 @@ function QueueRow({
   working: boolean;
   canUp: boolean;
   canDown: boolean;
+  dragging: boolean;
+  dragOver: boolean;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onDragOverItem: (id: string) => void;
+  onDropInto: (id: string, before: boolean) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onSetState: (state: QueueState) => void;
   onRemove: () => void;
   onOpen: () => void;
 }) {
-  const isRunning = entry.state === 'running';
-  const isReady = entry.state === 'ready';
-  const isQueued = entry.state === 'queued';
+  const rowRef = React.useRef<View>(null);
+  const handleRef = React.useRef<View>(null);
+
+  const current = GROUP_OPTIONS.find((o) => o.value === entry.state) ?? GROUP_OPTIONS[0];
+
+  // Web-only HTML5 drag & drop: react-native-web doesn't forward drag props, so
+  // attach native listeners to the DOM nodes directly.
+  React.useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const row = rowRef.current as unknown as HTMLElement | null;
+    if (!row) return;
+    const onOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      onDragOverItem(entry.id);
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const r = row.getBoundingClientRect();
+      onDropInto(entry.id, e.clientY < r.top + r.height / 2);
+    };
+    row.addEventListener('dragover', onOver);
+    row.addEventListener('drop', onDrop);
+    return () => {
+      row.removeEventListener('dragover', onOver);
+      row.removeEventListener('drop', onDrop);
+    };
+  }, [entry.id, onDragOverItem, onDropInto]);
+
+  React.useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const handle = handleRef.current as unknown as HTMLElement | null;
+    if (!handle) return;
+    handle.draggable = !working;
+    const onStart = (e: DragEvent) => {
+      if (working) {
+        e.preventDefault();
+        return;
+      }
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', entry.id);
+      }
+      onDragStart(entry.id);
+    };
+    const onEnd = () => onDragEnd();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (working) return;
+      if (e.key === 'ArrowUp' && canUp) {
+        e.preventDefault();
+        onMoveUp();
+      } else if (e.key === 'ArrowDown' && canDown) {
+        e.preventDefault();
+        onMoveDown();
+      }
+    };
+    handle.addEventListener('dragstart', onStart);
+    handle.addEventListener('dragend', onEnd);
+    handle.addEventListener('keydown', onKeyDown);
+    return () => {
+      handle.removeEventListener('dragstart', onStart);
+      handle.removeEventListener('dragend', onEnd);
+      handle.removeEventListener('keydown', onKeyDown);
+    };
+  }, [canDown, canUp, entry.id, onDragEnd, onDragStart, onMoveDown, onMoveUp, working]);
+
+  const rowClass =
+    'border-border bg-card flex-row items-center gap-3 px-4 py-3' +
+    (last ? '' : ' border-b') +
+    (dragging ? ' opacity-40' : '') +
+    (dragOver ? ' bg-accent/60' : '');
 
   return (
-    <View
-      className={
-        'border-border bg-card flex-row items-center gap-3 px-4 py-3' + (last ? '' : ' border-b')
-      }>
-      <Pressable
-        onPress={onOpen}
-        accessibilityRole="link"
-        className="min-w-0 flex-1">
+    <View ref={rowRef} className={rowClass}>
+      {Platform.OS === 'web' ? (
+        <View
+          ref={handleRef}
+          accessibilityRole="button"
+          className="cursor-grab px-0.5 py-2 text-muted-foreground active:cursor-grabbing"
+          accessibilityLabel={`Reorder ${entry.task.key} in queue`}
+          accessibilityHint="Use the up and down arrow keys to reorder">
+          <Icon as={GripVerticalIcon} className="size-4" />
+        </View>
+      ) : (
+        <View className="flex-row items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            disabled={!canUp}
+            onPress={onMoveUp}>
+            <Icon as={ChevronUpIcon} className="size-3.5 text-muted-foreground" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            disabled={!canDown}
+            onPress={onMoveDown}>
+            <Icon as={ChevronDownIcon} className="size-3.5 text-muted-foreground" />
+          </Button>
+        </View>
+      )}
+      <Pressable onPress={onOpen} accessibilityRole="link" className="min-w-0 flex-1">
         <View className="flex-row items-center gap-2">
           <Text className="w-24 shrink-0 font-mono text-xs">{entry.task.key}</Text>
           {entry.blocked ? (
-            <Icon as={CircleAlertIcon} className="text-destructive size-3.5" />
+            <Icon as={CircleAlertIcon} className="size-3.5 text-destructive" />
           ) : null}
         </View>
         <Text numberOfLines={1} className="mt-0.5 text-sm">
           {entry.task.title}
         </Text>
       </Pressable>
-      <Badge variant="outline" className="hidden sm:flex">
-        <Text>{splitTaskKey(entry.task.key)?.workspaceKey ?? ''}</Text>
-      </Badge>
       {entry.task.assignee ? (
         <Avatar alt={entry.task.assignee.name} className="size-6">
           <AvatarFallback>
@@ -294,36 +356,23 @@ function QueueRow({
           </AvatarFallback>
         </Avatar>
       ) : null}
-      <View className="flex-row items-center gap-0.5">
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={!canUp} onPress={onMoveUp}>
-          <Icon as={ChevronUpIcon} className="text-muted-foreground size-3.5" />
-        </Button>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={!canDown} onPress={onMoveDown}>
-          <Icon as={ChevronDownIcon} className="text-muted-foreground size-3.5" />
-        </Button>
-      </View>
-      <View className="flex-row items-center gap-1.5">
-        {!isRunning ? (
-          <Button variant="ghost" size="sm" className="h-7" disabled={working} onPress={() => onSetState('running')}>
-            <Icon as={PlayIcon} className="text-muted-foreground size-3.5" />
-            <Text className="text-xs">Start</Text>
-          </Button>
-        ) : null}
-        {!isReady ? (
-          <Button variant="ghost" size="sm" className="h-7" disabled={working} onPress={() => onSetState('ready')}>
-            <Text className="text-xs">Ready</Text>
-          </Button>
-        ) : null}
-        {!isQueued ? (
-          <Button variant="ghost" size="sm" className="h-7" disabled={working} onPress={() => onSetState('queued')}>
-            <Icon as={PauseIcon} className="text-muted-foreground size-3.5" />
-          </Button>
-        ) : null}
-        <Button variant="ghost" size="sm" className="h-7 gap-1" disabled={working} onPress={onRemove}>
-          <Icon as={CheckCircle2Icon} className="text-muted-foreground size-3.5" />
-          <Text className="text-xs">Done</Text>
-        </Button>
-      </View>
+      <Select
+        value={current}
+        disabled={working}
+        onValueChange={(o) => o && onSetState(o.value as QueueState)}>
+        <SelectTrigger className="h-7 w-32">
+          <SelectValue placeholder="Bucket" />
+        </SelectTrigger>
+        <SelectContent>
+          {GROUP_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value} label={option.label} />
+          ))}
+        </SelectContent>
+      </Select>
+      <Button variant="ghost" size="sm" className="h-7 gap-1" disabled={working} onPress={onRemove}>
+        <Icon as={CheckCircle2Icon} className="size-3.5 text-muted-foreground" />
+        <Text className="text-xs">Done</Text>
+      </Button>
     </View>
   );
 }

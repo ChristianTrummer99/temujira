@@ -19,14 +19,34 @@ describe("setup + auth + api keys", () => {
     expect(await res.json()).toEqual({ needsSetup: true });
   });
 
+  it("rejects oversized JSON without relying on Content-Length", async () => {
+    const res = await t.app.request("/api/v1/setup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "admin@example.com",
+        name: "x".repeat(2 * 1024 * 1024),
+        password: "correct-horse-battery",
+      }),
+    });
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "payload_too_large",
+    );
+  });
+
   it("creates the first admin and returns a usable session token", async () => {
     const { token } = await setupAdmin(t.app);
     sessionToken = token;
     expect(token.startsWith("tms_")).toBe(true);
 
-    const me = await t.app.request("/api/v1/auth/me", { headers: bearer(token) });
+    const me = await t.app.request("/api/v1/auth/me", {
+      headers: bearer(token),
+    });
     expect(me.status).toBe(200);
-    const data = (await me.json()) as { user: { email: string; role: string; is_agent: boolean } };
+    const data = (await me.json()) as {
+      user: { email: string; role: string; is_agent: boolean };
+    };
     expect(data.user.email).toBe("admin@example.com");
     expect(data.user.role).toBe("admin");
     expect(data.user.is_agent).toBe(false);
@@ -34,13 +54,19 @@ describe("setup + auth + api keys", () => {
 
   it("reports needsSetup=false after setup", async () => {
     const res = await t.app.request("/api/v1/setup");
-    expect(((await res.json()) as { needsSetup: boolean }).needsSetup).toBe(false);
+    expect(((await res.json()) as { needsSetup: boolean }).needsSetup).toBe(
+      false,
+    );
   });
 
   it("refuses setup once completed", async () => {
     const res = await t.app.request(
       "/api/v1/setup",
-      jsonReq("POST", { email: "x@example.com", name: "X", password: "12345678" }),
+      jsonReq("POST", {
+        email: "x@example.com",
+        name: "X",
+        password: "12345678",
+      }),
     );
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: { code: string } };
@@ -50,13 +76,19 @@ describe("setup + auth + api keys", () => {
   it("rejects bad credentials and accepts good ones (sets cookie)", async () => {
     const bad = await t.app.request(
       "/api/v1/auth/login",
-      jsonReq("POST", { email: "admin@example.com", password: "wrong-password" }),
+      jsonReq("POST", {
+        email: "admin@example.com",
+        password: "wrong-password",
+      }),
     );
     expect(bad.status).toBe(401);
 
     const good = await t.app.request(
       "/api/v1/auth/login",
-      jsonReq("POST", { email: "admin@example.com", password: "correct-horse-battery" }),
+      jsonReq("POST", {
+        email: "admin@example.com",
+        password: "correct-horse-battery",
+      }),
     );
     expect(good.status).toBe(200);
     const setCookie = good.headers.get("set-cookie") ?? "";
@@ -84,16 +116,23 @@ describe("setup + auth + api keys", () => {
       jsonReq("POST", { name: "test key" }, bearer(sessionToken)),
     );
     expect(create.status).toBe(200);
-    const created = (await create.json()) as { apiKey: { id: string; token_prefix: string }; token: string };
+    const created = (await create.json()) as {
+      apiKey: { id: string; token_prefix: string };
+      token: string;
+    };
     apiKeyToken = created.token;
     apiKeyId = created.apiKey.id;
     expect(apiKeyToken.startsWith("tmj_")).toBe(true);
     expect(created.apiKey.token_prefix).toBe(apiKeyToken.slice(0, 12));
 
-    const me = await t.app.request("/api/v1/auth/me", { headers: bearer(apiKeyToken) });
+    const me = await t.app.request("/api/v1/auth/me", {
+      headers: bearer(apiKeyToken),
+    });
     expect(me.status).toBe(200);
 
-    const list = await t.app.request("/api/v1/api-keys", { headers: bearer(sessionToken) });
+    const list = await t.app.request("/api/v1/api-keys", {
+      headers: bearer(sessionToken),
+    });
     const listData = (await list.json()) as { items: Array<{ id: string }> };
     expect(listData.items.some((k) => k.id === apiKeyId)).toBe(true);
 
@@ -103,14 +142,25 @@ describe("setup + auth + api keys", () => {
     });
     expect(revoke.status).toBe(200);
 
-    const refused = await t.app.request("/api/v1/auth/me", { headers: bearer(apiKeyToken) });
+    const refused = await t.app.request("/api/v1/auth/me", {
+      headers: bearer(apiKeyToken),
+    });
     expect(refused.status).toBe(401);
   });
 
   it("requires auth and rejects garbage tokens", async () => {
     expect((await t.app.request("/api/v1/auth/me")).status).toBe(401);
-    expect((await t.app.request("/api/v1/auth/me", { headers: bearer("tmj_deadbeef") })).status).toBe(401);
-    expect((await t.app.request("/api/v1/auth/me", { headers: bearer("garbage") })).status).toBe(401);
+    expect(
+      (
+        await t.app.request("/api/v1/auth/me", {
+          headers: bearer("tmj_deadbeef"),
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (await t.app.request("/api/v1/auth/me", { headers: bearer("garbage") }))
+        .status,
+    ).toBe(401);
   });
 
   it("updates own name and password via auth.updateMe", async () => {
@@ -119,11 +169,17 @@ describe("setup + auth + api keys", () => {
       jsonReq("PATCH", { name: "Renamed Admin" }, bearer(sessionToken)),
     );
     expect(rename.status).toBe(200);
-    expect(((await rename.json()) as { user: { name: string } }).user.name).toBe("Renamed Admin");
+    expect(
+      ((await rename.json()) as { user: { name: string } }).user.name,
+    ).toBe("Renamed Admin");
 
     const badPw = await t.app.request(
       "/api/v1/auth/me",
-      jsonReq("PATCH", { current_password: "wrong", new_password: "new-password-123" }, bearer(sessionToken)),
+      jsonReq(
+        "PATCH",
+        { current_password: "wrong", new_password: "new-password-123" },
+        bearer(sessionToken),
+      ),
     );
     expect(badPw.status).toBe(401);
 
@@ -131,7 +187,10 @@ describe("setup + auth + api keys", () => {
       "/api/v1/auth/me",
       jsonReq(
         "PATCH",
-        { current_password: "correct-horse-battery", new_password: "new-password-123" },
+        {
+          current_password: "correct-horse-battery",
+          new_password: "new-password-123",
+        },
         bearer(sessionToken),
       ),
     );
@@ -139,7 +198,10 @@ describe("setup + auth + api keys", () => {
 
     const login = await t.app.request(
       "/api/v1/auth/login",
-      jsonReq("POST", { email: "admin@example.com", password: "new-password-123" }),
+      jsonReq("POST", {
+        email: "admin@example.com",
+        password: "new-password-123",
+      }),
     );
     expect(login.status).toBe(200);
   });
@@ -147,12 +209,20 @@ describe("setup + auth + api keys", () => {
   it("logout destroys the session", async () => {
     const login = await t.app.request(
       "/api/v1/auth/login",
-      jsonReq("POST", { email: "admin@example.com", password: "new-password-123" }),
+      jsonReq("POST", {
+        email: "admin@example.com",
+        password: "new-password-123",
+      }),
     );
     const { token } = (await login.json()) as { token: string };
-    const out = await t.app.request("/api/v1/auth/logout", { method: "POST", headers: bearer(token) });
+    const out = await t.app.request("/api/v1/auth/logout", {
+      method: "POST",
+      headers: bearer(token),
+    });
     expect(out.status).toBe(200);
-    const refused = await t.app.request("/api/v1/auth/me", { headers: bearer(token) });
+    const refused = await t.app.request("/api/v1/auth/me", {
+      headers: bearer(token),
+    });
     expect(refused.status).toBe(401);
   });
 
@@ -163,7 +233,10 @@ describe("setup + auth + api keys", () => {
 
     const oa = await t.app.request("/api/v1/openapi.json");
     expect(oa.status).toBe(200);
-    const doc = (await oa.json()) as { openapi: string; paths: Record<string, unknown> };
+    const doc = (await oa.json()) as {
+      openapi: string;
+      paths: Record<string, unknown>;
+    };
     expect(doc.openapi).toBe("3.1.0");
     expect(Object.keys(doc.paths).length).toBeGreaterThan(20);
   });
