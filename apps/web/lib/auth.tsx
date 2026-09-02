@@ -4,35 +4,18 @@ import { Platform } from 'react-native';
 import { createClient } from './api';
 
 /**
- * Token persistence. Web/native-safe: use globalThis.localStorage when available
- * (React Native Web provides it on web; native falls back to an in-memory map).
+ * Native-only session token, kept in memory (no secure storage wrapper wired yet).
+ * On web the session is an HttpOnly cookie the browser sends with every request, so we
+ * deliberately never persist a session token in localStorage — that would hand any XSS
+ * a live, cookie-equivalent credential.
  */
-const STORAGE_KEY = 'temujira.session_token';
-
-function readStoredToken(): string | null {
-  try {
-    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      return localStorage.getItem(STORAGE_KEY);
-    }
-    // Native: no synchronous storage wrapper wired yet; keep token in memory.
-    return memToken;
-  } catch {
-    return null;
-  }
-}
-
 let memToken: string | null = null;
 
-function writeStoredToken(token: string | null) {
-  memToken = token;
-  try {
-    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      if (token) localStorage.setItem(STORAGE_KEY, token);
-      else localStorage.removeItem(STORAGE_KEY);
-    }
-  } catch {
-    // ignore storage failures
-  }
+const IS_WEB = Platform.OS === 'web';
+
+function setClientToken(client: TemujiraClient, token: string | null | undefined) {
+  memToken = token ?? null;
+  client.setToken(token ?? undefined);
 }
 
 export interface AuthState {
@@ -57,30 +40,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<User | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
-  const applyUser = React.useCallback(
-    (u: User) => {
-      setUser(u);
-      setError(null);
-    },
-    [],
-  );
+  const applyUser = React.useCallback((u: User) => {
+    setUser(u);
+    setError(null);
+  }, []);
 
   const clearSession = React.useCallback(() => {
-    client.setToken(undefined);
-    writeStoredToken(null);
+    setClientToken(client, null);
     setUser(null);
   }, [client]);
 
-  // On mount, restore a stored token and validate it against /auth/me.
+  // On mount, restore the existing session. Web reuses the HttpOnly cookie (no stored
+  // token); native restores the in-memory bearer token and validates it against /auth/me.
   React.useEffect(() => {
     let cancelled = false;
     async function bootstrap() {
-      const stored = readStoredToken();
-      if (!stored) {
+      if (IS_WEB) {
+        try {
+          const { user: me } = await client.me();
+          if (!cancelled) applyUser(me);
+        } catch {
+          // No valid cookie session — stay logged out.
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+        return;
+      }
+      if (!memToken) {
         if (!cancelled) setLoading(false);
         return;
       }
-      client.setToken(stored);
+      client.setToken(memToken);
       try {
         const { user: me } = await client.me();
         if (!cancelled) applyUser(me);
@@ -103,15 +93,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       try {
         const { user: u, token } = await client.login({ email, password });
-        client.setToken(token);
-        writeStoredToken(token);
+        if (!IS_WEB) setClientToken(client, token);
         applyUser(u);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Login failed');
         throw e;
       }
     },
-    [client, applyUser],
+    [client, applyUser]
   );
 
   const logout = React.useCallback(async () => {
@@ -135,16 +124,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const setSession = React.useCallback(
     (token: string, u: User) => {
-      client.setToken(token);
-      writeStoredToken(token);
+      if (!IS_WEB) setClientToken(client, token);
       applyUser(u);
     },
-    [client, applyUser],
+    [client, applyUser]
   );
 
   const value = React.useMemo<AuthState>(
-    () => ({ client, loading, user, error, login, logout, refresh, setUser: applyUser, setSession }),
-    [client, loading, user, error, login, logout, refresh, applyUser, setSession],
+    () => ({
+      client,
+      loading,
+      user,
+      error,
+      login,
+      logout,
+      refresh,
+      setUser: applyUser,
+      setSession,
+    }),
+    [client, loading, user, error, login, logout, refresh, applyUser, setSession]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

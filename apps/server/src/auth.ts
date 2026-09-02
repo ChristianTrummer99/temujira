@@ -1,5 +1,11 @@
-import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual, type ScryptOptions } from "node:crypto";
-import { eq } from "drizzle-orm";
+import {
+  createHash,
+  randomBytes,
+  scrypt as scryptCb,
+  timingSafeEqual,
+  type ScryptOptions,
+} from "node:crypto";
+import { and, eq, sql } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { AuthLevel } from "@temujira/shared";
@@ -10,9 +16,16 @@ import { forbidden, unauthorized, HttpError } from "./errors";
 import type { UserRow } from "./serialize";
 import { newId, now } from "./util";
 
-const scrypt = (password: string, salt: Buffer, keylen: number, opts: ScryptOptions): Promise<Buffer> =>
+const scrypt = (
+  password: string,
+  salt: Buffer,
+  keylen: number,
+  opts: ScryptOptions,
+): Promise<Buffer> =>
   new Promise((resolve, reject) =>
-    scryptCb(password, salt, keylen, opts, (err, key) => (err ? reject(err) : resolve(key))),
+    scryptCb(password, salt, keylen, opts, (err, key) =>
+      err ? reject(err) : resolve(key),
+    ),
   );
 
 // ---------- password hashing (Node built-in scrypt; zero native deps) ----------
@@ -34,17 +47,25 @@ export async function hashPassword(password: string): Promise<string> {
   return `scrypt:${SCRYPT_N}:${SCRYPT_R}:${SCRYPT_P}:${salt.toString("hex")}:${hash.toString("hex")}`;
 }
 
-export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+export async function verifyPassword(
+  password: string,
+  stored: string,
+): Promise<boolean> {
   const parts = stored.split(":");
   if (parts.length !== 6 || parts[0] !== "scrypt") return false;
   const [, nStr, rStr, pStr, saltHex, hashHex] = parts;
   const expected = Buffer.from(hashHex!, "hex");
-  const actual = await scrypt(password, Buffer.from(saltHex!, "hex"), expected.length, {
-    N: Number(nStr),
-    r: Number(rStr),
-    p: Number(pStr),
-    maxmem: SCRYPT_MAXMEM,
-  });
+  const actual = await scrypt(
+    password,
+    Buffer.from(saltHex!, "hex"),
+    expected.length,
+    {
+      N: Number(nStr),
+      r: Number(rStr),
+      p: Number(pStr),
+      maxmem: SCRYPT_MAXMEM,
+    },
+  );
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
@@ -54,7 +75,8 @@ export const SESSION_COOKIE = "tmj_session";
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days, sliding
 const SESSION_RENEW_AFTER_MS = 60 * 60 * 1000; // refresh sliding expiry at most hourly
 
-export const sha256hex = (s: string) => createHash("sha256").update(s).digest("hex");
+export const sha256hex = (s: string) =>
+  createHash("sha256").update(s).digest("hex");
 
 export const newSessionToken = () => `tms_${randomBytes(32).toString("hex")}`;
 export const newApiKeyToken = () => `tmj_${randomBytes(20).toString("hex")}`;
@@ -70,7 +92,10 @@ export class LoginRateLimiter {
   assertAllowed(key: string): void {
     const entry = this.failures.get(key);
     if (entry && entry.resetAt > now() && entry.count >= LOGIN_MAX_FAILURES) {
-      throw new HttpError("rate_limited", "too many failed login attempts; try again later");
+      throw new HttpError(
+        "rate_limited",
+        "too many failed login attempts; try again later",
+      );
     }
   }
 
@@ -84,7 +109,8 @@ export class LoginRateLimiter {
     }
     // Opportunistic prune so the map cannot grow unboundedly.
     if (this.failures.size > 10_000) {
-      for (const [k, v] of this.failures) if (v.resetAt <= t) this.failures.delete(k);
+      for (const [k, v] of this.failures)
+        if (v.resetAt <= t) this.failures.delete(k);
     }
   }
 
@@ -95,7 +121,10 @@ export class LoginRateLimiter {
 
 // ---------- sessions ----------
 
-export function createSession(db: Db, userId: string): { token: string; sessionId: string } {
+export function createSession(
+  db: Db,
+  userId: string,
+): { token: string; sessionId: string } {
   const token = newSessionToken();
   const t = now();
   const sessionId = newId();
@@ -116,13 +145,32 @@ export function destroySession(db: Db, sessionId: string): void {
   db.delete(sessions).where(eq(sessions.id, sessionId)).run();
 }
 
+export function destroyUserSessions(
+  db: Db,
+  userId: string,
+  exceptSessionId?: string,
+): void {
+  const conditions = [eq(sessions.userId, userId)];
+  if (exceptSessionId)
+    conditions.push(sql`${sessions.id} != ${exceptSessionId}`);
+  db.delete(sessions)
+    .where(and(...conditions))
+    .run();
+}
+
 function isSecureRequest(c: Context, config: ServerConfig): boolean {
   if (config.cookieSecure !== undefined) return config.cookieSecure;
-  const proto = c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
+  const proto =
+    c.req.header("x-forwarded-proto") ??
+    new URL(c.req.url).protocol.replace(":", "");
   return proto === "https";
 }
 
-export function setSessionCookie(c: Context, config: ServerConfig, token: string): void {
+export function setSessionCookie(
+  c: Context,
+  config: ServerConfig,
+  token: string,
+): void {
   setCookie(c, SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "Lax",
@@ -133,7 +181,10 @@ export function setSessionCookie(c: Context, config: ServerConfig, token: string
 }
 
 export function clearSessionCookie(c: Context, config: ServerConfig): void {
-  deleteCookie(c, SESSION_COOKIE, { path: "/", secure: isSecureRequest(c, config) });
+  deleteCookie(c, SESSION_COOKIE, {
+    path: "/",
+    secure: isSecureRequest(c, config),
+  });
 }
 
 // ---------- authentication ----------
@@ -146,7 +197,10 @@ export interface AuthResult {
   sessionId?: string;
 }
 
-function verifySessionToken(db: Db, token: string): { user: UserRow; sessionId: string } | null {
+function verifySessionToken(
+  db: Db,
+  token: string,
+): { user: UserRow; sessionId: string } | null {
   const t = now();
   const row = db
     .select({ session: sessions, user: users })
@@ -178,7 +232,10 @@ function verifyApiKey(db: Db, token: string): UserRow | null {
     .get();
   if (!row || row.key.revokedAt !== null) return null;
   if (row.key.lastUsedAt === null || t - row.key.lastUsedAt > 60_000) {
-    db.update(apiKeys).set({ lastUsedAt: t }).where(eq(apiKeys.id, row.key.id)).run();
+    db.update(apiKeys)
+      .set({ lastUsedAt: t })
+      .where(eq(apiKeys.id, row.key.id))
+      .run();
   }
   return row.user;
 }
@@ -195,14 +252,18 @@ export function authenticate(c: Context, db: Db): AuthResult | null {
     }
     if (token.startsWith("tms_")) {
       const res = verifySessionToken(db, token);
-      return res ? { user: res.user, kind: "bearer", sessionId: res.sessionId } : null;
+      return res
+        ? { user: res.user, kind: "bearer", sessionId: res.sessionId }
+        : null;
     }
     return null;
   }
   const cookie = getCookie(c, SESSION_COOKIE);
   if (cookie) {
     const res = verifySessionToken(db, cookie);
-    return res ? { user: res.user, kind: "cookie", sessionId: res.sessionId } : null;
+    return res
+      ? { user: res.user, kind: "cookie", sessionId: res.sessionId }
+      : null;
   }
   return null;
 }
@@ -214,7 +275,9 @@ const MUTATING = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 function assertOriginAllowed(c: Context, config: ServerConfig): void {
   const origin = c.req.header("origin");
   if (!origin) {
-    throw forbidden("cross-site request blocked: missing Origin header (use a Bearer token for scripts)");
+    throw forbidden(
+      "cross-site request blocked: missing Origin header (use a Bearer token for scripts)",
+    );
   }
   if (config.devOrigins.includes(origin)) return;
   let originHost: string;
@@ -225,19 +288,28 @@ function assertOriginAllowed(c: Context, config: ServerConfig): void {
   }
   const requestHost = c.req.header("x-forwarded-host") ?? c.req.header("host");
   if (!requestHost || originHost.toLowerCase() !== requestHost.toLowerCase()) {
-    throw forbidden("cross-site request blocked: Origin does not match this host");
+    throw forbidden(
+      "cross-site request blocked: Origin does not match this host",
+    );
   }
 }
 
 // ---------- middleware ----------
 
-export function requireAuth(level: Exclude<AuthLevel, "public">, db: Db, config: ServerConfig): MiddlewareHandler {
+export function requireAuth(
+  level: Exclude<AuthLevel, "public">,
+  db: Db,
+  config: ServerConfig,
+): MiddlewareHandler {
   return async (c, next) => {
     const result = authenticate(c, db);
     if (!result) throw unauthorized();
-    if (result.user.deactivatedAt !== null) throw unauthorized("account is deactivated");
-    if (level === "admin" && result.user.role !== "admin") throw forbidden("admin role required");
-    if (result.kind === "cookie" && MUTATING.has(c.req.method)) assertOriginAllowed(c, config);
+    if (result.user.deactivatedAt !== null)
+      throw unauthorized("account is deactivated");
+    if (level === "admin" && result.user.role !== "admin")
+      throw forbidden("admin role required");
+    if (result.kind === "cookie" && MUTATING.has(c.req.method))
+      assertOriginAllowed(c, config);
     c.set("user", result.user);
     c.set("authKind", result.kind);
     c.set("sessionId", result.sessionId);

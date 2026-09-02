@@ -6,12 +6,18 @@ import type {
   MentionSearchQuerySchema,
   UpdateUserInputSchema,
 } from "@temujira/shared";
-import { hashPassword } from "../auth";
+import { hashPassword, destroyUserSessions } from "../auth";
 import { sessions, users } from "../db/schema";
 import { conflict, notFound } from "../errors";
 import { userToApi } from "../serialize";
 import { newId, now } from "../util";
-import { body, currentUser, query, type AppContext, type Handlers } from "./types";
+import {
+  body,
+  currentUser,
+  query,
+  type AppContext,
+  type Handlers,
+} from "./types";
 
 function activeAdminCount(ctx: AppContext): number {
   return (
@@ -27,7 +33,12 @@ export function usersHandlers(
   ctx: AppContext,
 ): Pick<
   Handlers,
-  "users.list" | "users.create" | "users.get" | "users.update" | "users.deactivate" | "users.search"
+  | "users.list"
+  | "users.create"
+  | "users.get"
+  | "users.update"
+  | "users.deactivate"
+  | "users.search"
 > {
   return {
     "users.list": (c) => {
@@ -65,15 +76,22 @@ export function usersHandlers(
 
     "users.create": async (c) => {
       const input = body<z.infer<typeof CreateUserInputSchema>>(c);
-      const existing = ctx.db.select().from(users).where(eq(users.email, input.email)).get();
-      if (existing) throw conflict(`a user with email ${input.email} already exists`);
+      const existing = ctx.db
+        .select()
+        .from(users)
+        .where(eq(users.email, input.email))
+        .get();
+      if (existing)
+        throw conflict(`a user with email ${input.email} already exists`);
       const t = now();
       const row: typeof users.$inferSelect = {
         id: newId(),
         email: input.email,
         name: input.name,
         // Agent accounts have no password: web login structurally refused, API keys only.
-        passwordHash: input.is_agent ? null : await hashPassword(input.password!),
+        passwordHash: input.is_agent
+          ? null
+          : await hashPassword(input.password!),
         role: input.role,
         isAgent: input.is_agent ? 1 : 0,
         deactivatedAt: null,
@@ -111,12 +129,20 @@ export function usersHandlers(
       }
       if (input.password !== undefined) {
         if (target.isAgent || target.passwordHash === null) {
-          throw conflict("agent accounts are API-key-only and cannot have a password");
+          throw conflict(
+            "agent accounts are API-key-only and cannot have a password",
+          );
         }
         updates.passwordHash = await hashPassword(input.password);
       }
       if (input.reactivate === true) updates.deactivatedAt = null;
-      const updated = ctx.db.update(users).set(updates).where(eq(users.id, id)).returning().get();
+      const updated = ctx.db
+        .update(users)
+        .set(updates)
+        .where(eq(users.id, id))
+        .returning()
+        .get();
+      if (input.password !== undefined) destroyUserSessions(ctx.db, id);
       return c.json({ user: userToApi(updated!) });
     },
 
@@ -125,13 +151,17 @@ export function usersHandlers(
       const target = ctx.db.select().from(users).where(eq(users.id, id)).get();
       if (!target) throw notFound("user");
       // Idempotent: deactivating an already-deactivated user is a no-op.
-      if (target.deactivatedAt !== null) return c.json({ user: userToApi(target) });
+      if (target.deactivatedAt !== null)
+        return c.json({ user: userToApi(target) });
       if (target.role === "admin" && activeAdminCount(ctx) <= 1) {
         throw conflict("cannot deactivate the last active admin");
       }
       const t = now();
       ctx.db.transaction((tx) => {
-        tx.update(users).set({ deactivatedAt: t, updatedAt: t }).where(eq(users.id, id)).run();
+        tx.update(users)
+          .set({ deactivatedAt: t, updatedAt: t })
+          .where(eq(users.id, id))
+          .run();
         tx.delete(sessions).where(eq(sessions.userId, id)).run();
       });
       const updated = ctx.db.select().from(users).where(eq(users.id, id)).get();

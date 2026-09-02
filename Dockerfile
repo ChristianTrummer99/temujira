@@ -46,6 +46,11 @@ COPY --from=build /app/apps/web/dist /app/web
 # The tmj CLI, usable via `docker compose exec app tmj ...`
 RUN printf '#!/bin/sh\nexec node /app/cli/index.js "$@"\n' > /usr/local/bin/tmj && chmod +x /usr/local/bin/tmj
 
+# Hand off to a non-root user. /data is mounted at runtime; the host directory
+# must be writable by uid 1000 (see self-hosting docs).
+RUN chown -R node:node /app
+USER node
+
 VOLUME /data
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \

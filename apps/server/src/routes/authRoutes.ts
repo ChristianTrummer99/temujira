@@ -1,12 +1,26 @@
 import { eq } from "drizzle-orm";
 import type { z } from "zod";
 import type { LoginInputSchema, UpdateMeInputSchema } from "@temujira/shared";
-import { clearSessionCookie, createSession, destroySession, hashPassword, setSessionCookie, verifyPassword } from "../auth";
+import {
+  clearSessionCookie,
+  createSession,
+  destroySession,
+  destroyUserSessions,
+  hashPassword,
+  setSessionCookie,
+  verifyPassword,
+} from "../auth";
 import { users } from "../db/schema";
 import { forbidden, unauthorized, validationError } from "../errors";
 import { userToApi } from "../serialize";
 import { now } from "../util";
-import { body, currentUser, type AppContext, type Ctx, type Handlers } from "./types";
+import {
+  body,
+  currentUser,
+  type AppContext,
+  type Ctx,
+  type Handlers,
+} from "./types";
 
 function clientIp(c: Ctx): string {
   const fwd = c.req.header("x-forwarded-for");
@@ -22,7 +36,11 @@ export function authHandlers(
       const input = body<z.infer<typeof LoginInputSchema>>(c);
       const limiterKey = `${clientIp(c)}:${input.email}`;
       ctx.limiter.assertAllowed(limiterKey);
-      const user = ctx.db.select().from(users).where(eq(users.email, input.email)).get();
+      const user = ctx.db
+        .select()
+        .from(users)
+        .where(eq(users.email, input.email))
+        .get();
       // Agent accounts (passwordHash null) and unknown emails fail identically.
       const ok =
         user?.passwordHash != null && user.deactivatedAt === null
@@ -56,7 +74,10 @@ export function authHandlers(
         if (user.passwordHash === null) {
           throw forbidden("agent accounts have no password");
         }
-        if (!input.current_password || !(await verifyPassword(input.current_password, user.passwordHash))) {
+        if (
+          !input.current_password ||
+          !(await verifyPassword(input.current_password, user.passwordHash))
+        ) {
           throw unauthorized("current password is incorrect");
         }
         updates.passwordHash = await hashPassword(input.new_password);
@@ -64,7 +85,14 @@ export function authHandlers(
       if (input.name === undefined && input.new_password === undefined) {
         throw validationError("nothing to update");
       }
-      const updated = ctx.db.update(users).set(updates).where(eq(users.id, user.id)).returning().get();
+      const updated = ctx.db
+        .update(users)
+        .set(updates)
+        .where(eq(users.id, user.id))
+        .returning()
+        .get();
+      if (input.new_password !== undefined)
+        destroyUserSessions(ctx.db, user.id, c.get("sessionId"));
       return c.json({ user: userToApi(updated!) });
     },
   };

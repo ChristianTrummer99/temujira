@@ -226,6 +226,74 @@ describe("setup + auth + api keys", () => {
     expect(refused.status).toBe(401);
   });
 
+  it("changing the password revokes other sessions but keeps the current one", async () => {
+    // Two concurrent sessions for the admin.
+    const loginA = await t.app.request(
+      "/api/v1/auth/login",
+      jsonReq("POST", {
+        email: "admin@example.com",
+        password: "new-password-123",
+      }),
+    );
+    const a = (await loginA.json()) as { token: string };
+    const loginB = await t.app.request(
+      "/api/v1/auth/login",
+      jsonReq("POST", {
+        email: "admin@example.com",
+        password: "new-password-123",
+      }),
+    );
+    const b = (await loginB.json()) as { token: string };
+    expect(a.token).not.toBe(b.token);
+
+    // Changing the password from session A revokes session B but keeps session A.
+    const change = await t.app.request(
+      "/api/v1/auth/me",
+      jsonReq(
+        "PATCH",
+        {
+          current_password: "new-password-123",
+          new_password: "final-password-456",
+        },
+        bearer(a.token),
+      ),
+    );
+    expect(change.status).toBe(200);
+
+    expect(
+      (await t.app.request("/api/v1/auth/me", { headers: bearer(a.token) }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await t.app.request("/api/v1/auth/me", { headers: bearer(b.token) }))
+        .status,
+    ).toBe(401);
+
+    // Old password no longer works; new one does.
+    expect(
+      (
+        await t.app.request(
+          "/api/v1/auth/login",
+          jsonReq("POST", {
+            email: "admin@example.com",
+            password: "new-password-123",
+          }),
+        )
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await t.app.request(
+          "/api/v1/auth/login",
+          jsonReq("POST", {
+            email: "admin@example.com",
+            password: "final-password-456",
+          }),
+        )
+      ).status,
+    ).toBe(200);
+  });
+
   it("serves health and openapi publicly", async () => {
     const health = await t.app.request("/api/v1/health");
     expect(health.status).toBe(200);

@@ -41,8 +41,12 @@ builds the selected source locally; it does not pull a published Temujira image.
 cp .env.example .env
 chmod 600 .env
 mkdir -p data
+chown -R 1000:1000 data
 chmod 700 data
 ```
+
+The container runs as uid 1000 (`node` user). The host `data` directory must be
+owned by uid 1000 so the bind-mounted volume is writable inside the container.
 
 The defaults bind Temujira to `127.0.0.1:3000`, which is appropriate when Caddy or nginx
 runs on the same host. Important Compose values are:
@@ -75,6 +79,10 @@ docker compose exec app sh -c 'test -z "$TEMUJIRA_ADMIN_EMAIL$TEMUJIRA_ADMIN_PAS
 Do not commit `.env`. Keep the published port on loopback for production. Docker-published
 ports can bypass common host-firewall rules, so changing `TEMUJIRA_BIND` to a public
 address requires deliberate Docker-aware network controls.
+
+The container runs as a non-root user (uid 1000) with a read-only root filesystem,
+all Linux capabilities dropped, `no-new-privileges` enforced, and a 1 GB memory cap.
+The `/tmp` tmpfs (64 MB) and the bind-mounted `/data` are the only writable paths.
 
 Bootstrap values use the same validation as browser setup: a valid email, a nonblank name,
 and an 8-256 character password. Invalid or partial values stop startup rather than opening
@@ -158,6 +166,33 @@ Caddy 2.10 or newer supplies the `request_body` limit shown here, the required f
 headers, and automatic TLS. Keep the proxy limit above `MAX_UPLOAD_MB` plus multipart
 overhead; the app separately enforces a 2 MB JSON limit while streaming request bodies.
 
+To rate-limit repeated login failures at the proxy layer (defense in depth over the
+server-side in-memory limiter), use the Caddy `rate_limit` plugin or a Cloudflare/
+Traefik rate-limiting middleware. A minimal Cloudflare example: create an Endpoint Rule
+for `/api/v1/auth/login` that blocks requests exceeding 10/minute per IP.
+
+Add HSTS, security headers, and a request-body cap at the Caddyfile level:
+
+```caddyfile
+pm.example.com {
+    request_body {
+        max_size 55MB
+    }
+
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), camera=(), microphone=()"
+    }
+
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+Do not publicly cache authenticated `/api/v1/attachments/*` responses.
+
 ```sh
 sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
@@ -173,6 +208,12 @@ server {
     # Keep this above MAX_UPLOAD_MB plus multipart overhead.
     client_max_body_size 55m;
 
+    # Security headers
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
@@ -183,7 +224,26 @@ server {
 }
 ```
 
-Add your normal TLS, HSTS, access logging, and security-header configuration at the proxy.
+For rate-limiting repeated login failures (defense in depth over the server-side
+in-memory limiter), add an `limit_req_zone` + `limit_req` directive for `/api/v1/auth/login`.
+A starting point:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
+
+server {
+    # ... inside the server block above ...
+    location = /api/v1/auth/login {
+        limit_req zone=login burst=5 nodelay;
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+}
+```
+
 Do not publicly cache authenticated `/api/v1/attachments/*` responses.
 
 ```sh
