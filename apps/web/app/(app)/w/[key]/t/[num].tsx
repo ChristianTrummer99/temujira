@@ -5,6 +5,7 @@ import {
 } from '@/components/attachment-preview';
 import { Markdown } from '@/components/markdown';
 import { MentionInput } from '@/components/mention-input';
+import { RichEditor } from '@/components/rich-editor';
 import { TagPill } from '@/components/tag-pill';
 import { UserInfoDialog } from '@/components/user-info-dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -31,6 +32,7 @@ import {
   type Option,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
@@ -93,6 +95,7 @@ export default function TaskDetailScreen() {
   const router = useRouter();
 
   const [expanded, setExpanded] = React.useState(false);
+  const [open, setOpen] = React.useState(true);
   const [mentionedUser, setMentionedUser] = React.useState<User | null>(null);
   const [previewAtt, setPreviewAtt] = React.useState<Attachment | null>(null);
 
@@ -203,20 +206,11 @@ export default function TaskDetailScreen() {
   const queueEntry = queue.find((e) => e.task.id === task.id) ?? null;
 
   return (
-    <View className="absolute inset-0 flex-row bg-black/30">
-      {/* clickable region — dimmed list still visible behind the tray */}
-      <Pressable
-        onPress={close}
-        className={expanded ? 'hidden' : 'flex-1'}
-        accessibilityRole="button"
-      />
-
-      {/* the tray / drawer */}
-      <View
-        className={`border-border bg-background h-full flex-col overflow-hidden border-l ${
-          expanded ? 'w-full' : 'w-[560px]'
-        }`}
-        style={Platform.OS === 'web' ? { boxShadow: '0 0 40px rgba(0,0,0,0.2)' } : undefined}>
+    <>
+      <Sheet open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
+        <SheetContent
+          className={`${expanded ? 'w-full' : 'w-full max-w-[560px]'}`}
+          style={Platform.OS === 'web' ? { boxShadow: '0 0 40px rgba(0,0,0,0.2)' } : undefined}>
         {/* tray header: breadcrumb identity + controls */}
         <View className="border-border flex-row items-center justify-between border-b px-4 py-2.5">
           <View className="min-w-0 flex-1">
@@ -261,7 +255,7 @@ export default function TaskDetailScreen() {
         <ScrollView
           className="flex-1"
           contentContainerClassName={`${expanded ? 'mx-auto w-full max-w-3xl' : ''} gap-6 p-5`}>
-          <InlineTitleEditor task={task} onChanged={setTask} />
+          <InlineTitleEditor task={task} onChanged={setTask} mentions={users} />
 
           <View className="flex-row flex-wrap gap-6">
             <StatusPicker task={task} statuses={statuses} onChanged={setTask} />
@@ -287,12 +281,7 @@ export default function TaskDetailScreen() {
 
           <TagEditor task={task} tags={tags} onChanged={setTask} />
 
-          <InlineDescriptionEditor
-            task={task}
-            users={users}
-            onChanged={setTask}
-            onMentionPress={setMentionedUser}
-          />
+          <InlineDescriptionEditor task={task} users={users} onChanged={setTask} />
 
           <FieldsSection task={task} fields={fields} onChanged={setTask} />
 
@@ -319,7 +308,8 @@ export default function TaskDetailScreen() {
             onPreview={setPreviewAtt}
           />
         </ScrollView>
-      </View>
+        </SheetContent>
+      </Sheet>
 
       <AttachmentPreviewDialog
         attachment={previewAtt}
@@ -328,53 +318,102 @@ export default function TaskDetailScreen() {
         onMentionPress={setMentionedUser}
       />
       <UserInfoDialog user={mentionedUser} onClose={() => setMentionedUser(null)} />
-    </View>
+    </>
   );
 }
 
-function InlineTitleEditor({ task, onChanged }: { task: Task; onChanged: (t: Task) => void }) {
-  const { client } = useAuth();
-  const [editing, setEditing] = React.useState(false);
-  const [title, setTitle] = React.useState(task.title);
-  const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+/**
+ * Google-doc-style autosave: schedules a debounced save while typing, flushes on blur,
+ * and surfaces a small Saving…/Saved/Save failed status line.
+ */
+function useAutosave(
+  current: string,
+  save: (text: string) => Promise<void>
+): { status: 'idle' | 'saving' | 'saved' | 'error'; schedule: (text: string) => void; flush: () => Promise<void> } {
+  const savedRef = React.useRef(current);
+  const textRef = React.useRef(current);
+  const saveRef = React.useRef(save);
+  saveRef.current = save;
+  const [status, setStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function save() {
-    if (saving || !title.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const { task: updated } = await client.updateTask(task.id, { title: title.trim() });
-      onChanged(updated);
-      setEditing(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save title');
-    } finally {
-      setSaving(false);
+  const flush = React.useCallback(async (): Promise<void> => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
     }
-  }
+    const text = textRef.current;
+    if (text === savedRef.current) {
+      setStatus('idle');
+      return;
+    }
+    setStatus('saving');
+    try {
+      await saveRef.current(text);
+      savedRef.current = text;
+      setStatus('saved');
+    } catch {
+      setStatus('error');
+    }
+  }, []);
+
+  React.useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  const schedule = React.useCallback(
+    (text: string) => {
+      textRef.current = text;
+      setStatus('saving');
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => void flush(), 700);
+    },
+    [flush]
+  );
+
+  return { status, schedule, flush };
+}
+
+function AutoSaveStatus({ status }: { status: 'idle' | 'saving' | 'saved' | 'error' }) {
+  if (status === 'idle') return <Text className="text-muted-foreground font-mono text-[10px]">{'\u00a0'}</Text>;
+  if (status === 'saving') return <Text className="text-muted-foreground font-mono text-[10px]">Saving…</Text>;
+  if (status === 'saved') return <Text className="text-muted-foreground font-mono text-[10px]">Saved</Text>;
+  return <Text className="text-destructive font-mono text-[10px]">Save failed</Text>;
+}
+
+function InlineTitleEditor({
+  task,
+  onChanged,
+  mentions,
+}: {
+  task: Task;
+  onChanged: (t: Task) => void;
+  mentions: User[];
+}) {
+  const { client } = useAuth();
+  const { status, schedule, flush } = useAutosave(task.title, async (text) => {
+    const { task: updated } = await client.updateTask(task.id, { title: text.trim() });
+    onChanged(updated);
+  });
 
   return (
     <View className="gap-1.5">
-      <Text className="text-muted-foreground font-mono text-xs">{task.key}</Text>
-      {editing ? (
-        <View className="gap-2">
-          <Textarea value={title} onChangeText={setTitle} className="min-h-16 text-base" autoFocus />
-          {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-          <View className="flex-row justify-end gap-2">
-            <Button variant="ghost" size="sm" onPress={() => setEditing(false)}>
-              <Text>Cancel</Text>
-            </Button>
-            <Button size="sm" onPress={save} disabled={saving || !title.trim()}>
-              <Text>{saving ? 'Saving...' : 'Save'}</Text>
-            </Button>
-          </View>
-        </View>
-      ) : (
-        <Pressable onPress={() => setEditing(true)} accessibilityRole="button">
-          <Text variant="h3">{task.title}</Text>
-        </Pressable>
-      )}
+      <View className="flex-row items-center justify-between">
+        <Text className="text-muted-foreground font-mono text-xs">{task.key}</Text>
+        <AutoSaveStatus status={status} />
+      </View>
+      <RichEditor
+        value={task.title}
+        onChangeText={(t) => {
+          onChanged({ ...task, title: t });
+          schedule(t);
+        }}
+        singleLine
+        onSubmit={() => void flush()}
+        onBlurCommit={() => void flush()}
+        mentions={mentions}
+        className="min-h-0 border-0 bg-transparent px-0 py-0 text-2xl font-semibold shadow-none outline-none"
+      />
     </View>
   );
 }
@@ -771,77 +810,38 @@ function InlineDescriptionEditor({
   task,
   users,
   onChanged,
-  onMentionPress,
 }: {
   task: Task;
   users: User[];
   onChanged: (t: Task) => void;
-  onMentionPress: (u: User) => void;
 }) {
   const { client } = useAuth();
-  const [editing, setEditing] = React.useState(false);
-  const [description, setDescription] = React.useState(task.description);
-  const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  async function save() {
-    if (saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const { task: updated } = await client.updateTask(task.id, { description });
-      onChanged(updated);
-      setEditing(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save description');
-    } finally {
-      setSaving(false);
-    }
-  }
+  const { status, schedule, flush } = useAutosave(task.description ?? '', async (text) => {
+    const { task: updated } = await client.updateTask(task.id, { description: text });
+    onChanged(updated);
+  });
 
   return (
     <View className="gap-2">
       <View className="flex-row items-center justify-between">
         <Text className="text-sm font-medium">Description</Text>
-        {!editing ? (
-          <Button variant="ghost" size="sm" className="h-8" onPress={() => setEditing(true)}>
-            <Text className="text-sm">Edit</Text>
-          </Button>
-        ) : null}
+        <AutoSaveStatus status={status} />
       </View>
-      <View className="border-border bg-card gap-2 rounded-md border p-3">
-        {editing ? (
-          <>
-            {/* Plain textarea: task update has no mention_ids in the contract, so a
-                description mention renders as a link but never notifies. */}
-            <Textarea
-              value={description}
-              onChangeText={setDescription}
-              className="min-h-32"
-              placeholder="Markdown supported..."
-              autoFocus
-            />
-            {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-            <View className="flex-row justify-end gap-2">
-              <Button variant="ghost" size="sm" onPress={() => setEditing(false)}>
-                <Text>Cancel</Text>
-              </Button>
-              <Button size="sm" onPress={save} disabled={saving}>
-                <Text>{saving ? 'Saving...' : 'Save'}</Text>
-              </Button>
-            </View>
-          </>
-        ) : task.description ? (
-          <Pressable onPress={() => setEditing(true)}>
-            <Markdown mentionUsers={users} onMentionPress={onMentionPress}>
-              {task.description}
-            </Markdown>
-          </Pressable>
-        ) : (
-          <Pressable onPress={() => setEditing(true)}>
-            <Text className="text-muted-foreground text-sm">No description yet — click to add.</Text>
-          </Pressable>
-        )}
+      <View className="border-border bg-card gap-2 rounded-md border p-1.5">
+        <RichEditor
+          value={task.description ?? ''}
+          onChangeText={(t) => {
+            onChanged({ ...task, description: t });
+            schedule(t);
+          }}
+          onBlurCommit={() => void flush()}
+          mentions={users}
+          placeholder="No description yet — start typing…"
+          className="min-h-32"
+        />
+        <Text className="text-muted-foreground px-2 pb-1 text-[11px]">
+          Markdown supported · @ to mention · auto-saves
+        </Text>
       </View>
     </View>
   );
@@ -1366,6 +1366,7 @@ function CommentsSection({
             value={body}
             onChangeText={setBody}
             onMentionIdsChange={setMentionIds}
+            mentions={users}
             placeholder="Write a comment — @ to mention, markdown supported..."
             className="min-h-20"
           />
@@ -1531,6 +1532,7 @@ function CommentThread({
           <ReplyComposer
             taskKey={taskKey}
             parentId={root.id}
+            users={users}
             onDone={async () => {
               setReplyingTo(null);
               await onReload();
@@ -1609,11 +1611,13 @@ function QuestionOptions({
 function ReplyComposer({
   taskKey,
   parentId,
+  users,
   onDone,
   onCancel,
 }: {
   taskKey: string;
   parentId: string;
+  users: User[];
   onDone: () => Promise<void>;
   onCancel: () => void;
 }) {
@@ -1649,6 +1653,7 @@ function ReplyComposer({
         value={body}
         onChangeText={setBody}
         onMentionIdsChange={setMentionIds}
+        mentions={users}
         placeholder="Reply…"
         className="min-h-16"
         autoFocus

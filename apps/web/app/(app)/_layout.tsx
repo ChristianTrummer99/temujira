@@ -391,7 +391,7 @@ function TopBar() {
         <BreadcrumbSep />
         {atTask || atActivity ? (
           <>
-            <BreadcrumbLink onPress={() => router.push(path)}>{workspaceName}</BreadcrumbLink>
+            <BreadcrumbLink onPress={() => router.push(path as Href)}>{workspaceName}</BreadcrumbLink>
             <BreadcrumbSep />
             <Breadcrumb active>
               {atTask ? `${workspaceKey}-${params.num}` : 'Activity'}

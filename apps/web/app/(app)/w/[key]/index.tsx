@@ -15,6 +15,7 @@ import {
   SelectValue,
   type Option,
 } from '@/components/ui/select';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
@@ -562,37 +563,30 @@ function NewTaskDialog({
         <Text>New task</Text>
       </Button>
 
-      {open ? (
-        <View className="absolute inset-0 flex-row bg-black/30">
-          <Pressable
-            onPress={close}
-            className="flex-1"
-            accessibilityRole="button"
-            accessibilityLabel="Close new task tray"
-          />
-          <View
-            className="border-border bg-background h-full w-[560px] flex-col overflow-hidden border-l"
-            style={Platform.OS === 'web' ? { boxShadow: '0 0 40px rgba(0,0,0,0.2)' } : undefined}>
-            {/* tray header */}
-            <View className="border-border flex-row items-center justify-between border-b px-4 py-2.5">
-              <View className="min-w-0 flex-1">
-                <View className="flex-row items-center gap-1.5">
-                  <Text className="text-muted-foreground font-mono text-xs">{workspaceKey}</Text>
-                </View>
-              </View>
-              <View className="flex-row items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0"
-                  onPress={close}
-                  accessibilityLabel="Close tray">
-                  <Icon as={XIcon} className="text-muted-foreground size-4" />
-                </Button>
+      <Sheet open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
+        <SheetContent
+          className="w-full max-w-[560px]"
+          style={Platform.OS === 'web' ? { boxShadow: '0 0 40px rgba(0,0,0,0.2)' } : undefined}>
+          {/* sheet header */}
+          <View className="border-border flex-row items-center justify-between border-b px-4 py-2.5">
+            <View className="min-w-0 flex-1">
+              <View className="flex-row items-center gap-1.5">
+                <Text className="text-muted-foreground font-mono text-xs">{workspaceKey}</Text>
               </View>
             </View>
+            <View className="flex-row items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onPress={close}
+                accessibilityLabel="Close tray">
+                <Icon as={XIcon} className="text-muted-foreground size-4" />
+              </Button>
+            </View>
+          </View>
 
-            <ScrollView className="flex-1" contentContainerClassName="gap-6 p-5">
+          <ScrollView className="flex-1" contentContainerClassName="gap-6 p-5">
               <View className="gap-1">
                 <Text variant="h3">New task</Text>
                 <Text className="text-muted-foreground text-sm">
@@ -702,9 +696,8 @@ function NewTaskDialog({
                 </Button>
               </View>
             </ScrollView>
-          </View>
-        </View>
-      ) : null}
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

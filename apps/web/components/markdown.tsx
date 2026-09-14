@@ -28,7 +28,7 @@ export interface MarkdownProps {
  */
 export function Markdown({ children, mentionUsers, onMentionPress }: MarkdownProps) {
   if (Platform.OS !== 'web') {
-    return <Text className="text-sm leading-6">{children.replace(/[*_`#>~]/g, '')}</Text>;
+    return <Text className="text-sm leading-6">{children.replace(/[*_`#>~<>]/g, '')}</Text>;
   }
   return (
     <WebMarkdown
@@ -61,6 +61,15 @@ function linkifyTaskKeys(text: string): string {
   const body = TaskKeyPattern.source.replace(/^\^/, '').replace(/\$$/, '');
   const re = new RegExp(`(?<![\\w-])(${body})(?![\\w-])`, 'g');
   return text.replace(re, (key) => `[${key}](#task:${key})`);
+}
+
+/**
+ * Underline has no CommonMark syntax, so we rewrite the editor's `<u>…</u>` marker
+ * pairs into `[…]` links carrying a `#underline:` fragment (same trick as mentions and
+ * task keys). Non-nested only; a `<u>` without a closer stays literal text.
+ */
+function linkifyUnderlines(text: string): string {
+  return text.replace(/<u>((?:(?!<\/?u>)[\s\S])*)<\/u>/g, (_m, inner: string) => `[${inner}](#underline:1)`);
 }
 
 /**
@@ -98,7 +107,9 @@ function linkifyMentions(text: string, users: User[]): string {
 
 function preprocess(source: string, users: User[]): string {
   return splitOutsideCode(source)
-    .map((part) => (part.code ? part.text : linkifyMentions(linkifyTaskKeys(part.text), users)))
+    .map((part) =>
+      part.code ? part.text : linkifyUnderlines(linkifyMentions(linkifyTaskKeys(part.text), users))
+    )
     .join('');
 }
 
@@ -138,6 +149,12 @@ function WebMarkdown({
   const components = {
     a: ({ href, children: c }: any) => {
       const url = typeof href === 'string' ? href : '';
+
+      if (url.startsWith('#underline:')) {
+        return (
+          <Text style={{ textDecorationLine: 'underline' }}>{c}</Text>
+        );
+      }
 
       if (url.startsWith('#mention:')) {
         const user = usersById.get(url.slice('#mention:'.length));

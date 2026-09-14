@@ -27,11 +27,23 @@ export function configFromEnv(
     dataDir: env.DATA_DIR ?? "./data",
     maxUploadMb: positiveNumber(env.MAX_UPLOAD_MB, "MAX_UPLOAD_MB", 50),
     cookieSecure: cookieSecureFromEnv(env.COOKIE_SECURE),
-    devOrigins: dev ? ["http://localhost:8081", "http://127.0.0.1:8081"] : [],
+    devOrigins: dev ? devOriginsFromEnv(env) : [],
     version: VERSION,
     ...admin,
     webDist: env.WEB_DIST,
   };
+}
+
+/** Extra credentialed-CORS/CSRF origins for local Expo dev servers. Defaults to 8081. */
+function devOriginsFromEnv(env: NodeJS.ProcessEnv): string[] {
+  const raw = env.TEMUJIRA_DEV_ORIGINS;
+  if (raw === undefined || raw.trim() === "") {
+    return ["http://localhost:8081", "http://127.0.0.1:8081"];
+  }
+  return raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 }
 
 function cookieSecureFromEnv(raw: string | undefined): boolean | undefined {

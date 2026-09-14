@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { WebRichEditor } from '@/components/rich-editor';
 import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth';
@@ -38,6 +39,8 @@ export interface MentionInputProps {
   onChangeText: (value: string) => void;
   /** Resolved user ids for the mentions still present in the text. */
   onMentionIdsChange?: (ids: string[]) => void;
+  /** Users available to resolve `@Name` chips against (web inline highlight). */
+  mentions?: User[];
   placeholder?: string;
   className?: string;
   editable?: boolean;
@@ -47,13 +50,40 @@ export interface MentionInputProps {
 }
 
 /**
- * A Textarea with @-autocomplete.
+ * A Textarea with @-autocomplete. On web it renders a Google-doc-style editor with
+ * inline mention/task-key highlights (see WebRichEditor); on native the original
+ * picked-list textarea is used and degrades gracefully.
+ */
+export function MentionInput({
+  mentions,
+  ...props
+}: MentionInputProps) {
+  if (Platform.OS === 'web') {
+    return (
+      <WebRichEditor
+        value={props.value}
+        onChangeText={props.onChangeText}
+        onMentionIdsChange={props.onMentionIdsChange}
+        mentions={mentions}
+        placeholder={props.placeholder}
+        className={props.className}
+        editable={props.editable}
+        autoFocus={props.autoFocus}
+        suggestionsPlacement={props.suggestionsPlacement}
+      />
+    );
+  }
+  return <NativeMentionInput {...props} />;
+}
+
+/**
+ * Native fallback: keeps the original Textarea + picker behavior.
  *
  * The suggestion list is a plain absolutely-positioned View, not the RNR Popover: the
  * Popover is trigger-anchored and steals focus from the textarea. Rows commit on
  * mousedown (see SuggestionRow) because a plain click blurs the textarea first.
  */
-export function MentionInput({
+function NativeMentionInput({
   value,
   onChangeText,
   onMentionIdsChange,

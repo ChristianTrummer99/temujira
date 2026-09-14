@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import * as SelectPrimitive from '@rn-primitives/select';
 import { Check, ChevronDown, ChevronDownIcon, ChevronUpIcon } from 'lucide-react-native';
 import * as React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 import { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
 import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
 
@@ -77,59 +77,73 @@ function SelectContent({
     className?: string;
     portalHost?: string;
   }) {
+  const content = (
+    <SelectPrimitive.Overlay
+      style={Platform.select<ViewStyle>({
+        web: { zIndex: 70 },
+        native: StyleSheet.absoluteFill,
+      })}
+      asChild={Platform.OS !== 'web'}>
+      <NativeOnlyAnimatedView
+        className="z-50"
+        entering={FadeIn.reduceMotion(ReduceMotion.System)}
+        exiting={FadeOut.reduceMotion(ReduceMotion.System)}
+        as="Pressable">
+        <TextClassContext.Provider value="text-popover-foreground">
+          <SelectPrimitive.Content
+            className={cn(
+              'bg-popover border-border relative z-50 min-w-[8rem] rounded-md border shadow-md shadow-black/5',
+              Platform.select({
+                web: cn(
+                  'animate-in fade-in-0 zoom-in-95 origin-(--radix-select-content-transform-origin) max-h-52 overflow-y-auto overflow-x-hidden',
+                  props.side === 'bottom' && 'slide-in-from-top-2',
+                  props.side === 'top' && 'slide-in-from-bottom-2'
+                ),
+                native: 'p-1',
+              }),
+              position === 'popper' &&
+              Platform.select({
+                web: cn(
+                  props.side === 'bottom' && 'translate-y-1',
+                  props.side === 'top' && '-translate-y-1'
+                ),
+              }),
+              className
+            )}
+            position={position}
+            {...props}>
+            <SelectScrollUpButton />
+            <SelectPrimitive.Viewport
+              className={cn(
+                'p-1',
+                position === 'popper' &&
+                cn(
+                  'w-full',
+                  Platform.select({
+                    web: 'h-[var(--radix-select-trigger-height)] min-w-[var(--radix-select-trigger-width)]',
+                  })
+                )
+              )}>
+              {children}
+            </SelectPrimitive.Viewport>
+            <SelectScrollDownButton />
+          </SelectPrimitive.Content>
+        </TextClassContext.Provider>
+      </NativeOnlyAnimatedView>
+    </SelectPrimitive.Overlay>
+  );
+
   return (
     <SelectPrimitive.Portal hostName={portalHost}>
       <FullWindowOverlay>
-        <SelectPrimitive.Overlay
-          style={Platform.select({ native: StyleSheet.absoluteFill })}
-          asChild={Platform.OS !== 'web'}>
-          <NativeOnlyAnimatedView
-            className="z-50"
-            entering={FadeIn.reduceMotion(ReduceMotion.System)}
-            exiting={FadeOut.reduceMotion(ReduceMotion.System)}
-            as="Pressable">
-            <TextClassContext.Provider value="text-popover-foreground">
-              <SelectPrimitive.Content
-                className={cn(
-                  'bg-popover border-border relative z-50 min-w-[8rem] rounded-md border shadow-md shadow-black/5',
-                  Platform.select({
-                    web: cn(
-                      'animate-in fade-in-0 zoom-in-95 origin-(--radix-select-content-transform-origin) max-h-52 overflow-y-auto overflow-x-hidden',
-                      props.side === 'bottom' && 'slide-in-from-top-2',
-                      props.side === 'top' && 'slide-in-from-bottom-2'
-                    ),
-                    native: 'p-1',
-                  }),
-                  position === 'popper' &&
-                  Platform.select({
-                    web: cn(
-                      props.side === 'bottom' && 'translate-y-1',
-                      props.side === 'top' && '-translate-y-1'
-                    ),
-                  }),
-                  className
-                )}
-                position={position}
-                {...props}>
-                <SelectScrollUpButton />
-                <SelectPrimitive.Viewport
-                  className={cn(
-                    'p-1',
-                    position === 'popper' &&
-                    cn(
-                      'w-full',
-                      Platform.select({
-                        web: 'h-[var(--radix-select-trigger-height)] min-w-[var(--radix-select-trigger-width)]',
-                      })
-                    )
-                  )}>
-                  {children}
-                </SelectPrimitive.Viewport>
-                <SelectScrollDownButton />
-              </SelectPrimitive.Content>
-            </TextClassContext.Provider>
-          </NativeOnlyAnimatedView>
-        </SelectPrimitive.Overlay>
+        {Platform.OS === 'web' ? (
+          // Dialogs paint above this portal unless the portal's box is
+          // brought up to a higher stacking level. Wrap web dropdowns in a
+          // high-z layer so they stay reachable inside dialogs.
+          <div className="pointer-events-none fixed inset-0 z-[70]">{content}</div>
+        ) : (
+          content
+        )}
       </FullWindowOverlay>
     </SelectPrimitive.Portal>
   );

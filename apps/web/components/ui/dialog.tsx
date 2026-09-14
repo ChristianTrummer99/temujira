@@ -66,41 +66,106 @@ function DialogContent({
   className,
   portalHost,
   children,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   portalHost?: string;
 }) {
-  return (
+  const handleInteractOutside = React.useCallback(
+    (event: Event) => {
+      // Opening a nested Select/Popover moves focus into a portal rendered
+      // outside this dialog. Keep the dialog open for focus changes and for
+      // events inside a nested portal, while still allowing genuine outside
+      // clicks (e.g. the backdrop) to dismiss.
+      const original = (event as unknown as { detail?: { originalEvent?: Event } }).detail
+        ?.originalEvent;
+      const isFocusEvent = original?.type === 'focusin' || original?.type === 'focusout';
+      const target = ((original?.target ?? event.target) as HTMLElement | null) ?? null;
+      const inNestedPortal =
+        !!target && typeof target.closest === 'function'
+          ? target.closest('[data-radix-popper-content-wrapper], [data-radix-select-viewport]')
+          : null;
+      if (isFocusEvent || inNestedPortal) {
+        event.preventDefault();
+      }
+      onInteractOutside?.(event);
+    },
+    [onInteractOutside]
+  );
+
+  const contentProps = {
+    className: cn(
+      'bg-background border-border z-50 mx-auto flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
+      Platform.select({
+        web: 'animate-in fade-in-0 zoom-in-95 duration-200',
+      }),
+      className
+    ),
+    ...props,
+  };
+
+  // On web the overlay is the RN-web responder for any press that doesn't land
+  // on a RN-native responder (e.g. a nested Radix Select trigger). RN-web then
+  // reports the overlay itself as the event target, so the `target ===
+  // currentTarget` backdrop check in `DialogOverlay` passes and the dialog
+  // closes. Render the backdrop and the content as siblings on web so presses
+  // on the content never reach the overlay.
+  const portalBody = (
     <DialogPortal hostName={portalHost}>
-      <DialogOverlay>
-        <DialogPrimitive.Content
-          className={cn(
-            'bg-background border-border z-50 mx-auto flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
-            Platform.select({
-              web: 'animate-in fade-in-0 zoom-in-95 duration-200',
-            }),
-            className
-          )}
-          {...props}>
-          <>{children}</>
-          <DialogPrimitive.Close
-            className={cn(
-              'absolute right-4 top-4 rounded opacity-70 active:opacity-100',
-              Platform.select({
-                web: 'ring-offset-background focus:ring-ring data-[state=open]:bg-accent transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2',
-              })
-            )}
-            hitSlop={12}>
-            <Icon
-              as={X}
-              className={cn('text-accent-foreground web:pointer-events-none size-4 shrink-0')}
-            />
-            <Text className="sr-only">Close</Text>
-          </DialogPrimitive.Close>
-        </DialogPrimitive.Content>
-      </DialogOverlay>
+      {Platform.OS === 'web' ? (
+        <div className="relative z-50">
+          <DialogOverlay />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
+            <div className="pointer-events-auto w-full max-w-[calc(100%-2rem)] sm:max-w-lg">
+              <DialogPrimitive.Content
+                {...contentProps}
+                onInteractOutside={Platform.select({ web: handleInteractOutside, native: undefined })}>
+                <>{children}</>
+                <DialogPrimitive.Close
+                  className={cn(
+                    'absolute right-4 top-4 rounded opacity-70 active:opacity-100',
+                    Platform.select({
+                      web: 'ring-offset-background focus:ring-ring data-[state=open]:bg-accent transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2',
+                    })
+                  )}
+                  hitSlop={12}>
+                  <Icon
+                    as={X}
+                    className={cn('text-accent-foreground web:pointer-events-none size-4 shrink-0')}
+                  />
+                  <Text className="sr-only">Close</Text>
+                </DialogPrimitive.Close>
+              </DialogPrimitive.Content>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <DialogOverlay>
+          <DialogPrimitive.Content
+            {...contentProps}
+            onInteractOutside={Platform.select({ web: handleInteractOutside, native: undefined })}>
+            <>{children}</>
+            <DialogPrimitive.Close
+              className={cn(
+                'absolute right-4 top-4 rounded opacity-70 active:opacity-100',
+                Platform.select({
+                  web: 'ring-offset-background focus:ring-ring data-[state=open]:bg-accent transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2',
+                })
+              )}
+              hitSlop={12}>
+              <Icon
+                as={X}
+                className={cn('text-accent-foreground web:pointer-events-none size-4 shrink-0')}
+              />
+              <Text className="sr-only">Close</Text>
+            </DialogPrimitive.Close>
+          </DialogPrimitive.Content>
+        </DialogOverlay>
+      )}
     </DialogPortal>
   );
+
+  return portalBody;
 }
 
 function DialogHeader({ className, ...props }: ViewProps) {
