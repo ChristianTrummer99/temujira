@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useAuth } from '@/lib/auth';
-import { initialsOf } from '@/lib/format';
+import { initialsOf, splitTaskKey, taskKeyBody } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { useWorkspaceKeys } from '@/lib/workspaces';
 import type { User } from '@temujira/client';
-import { TaskKeyPattern } from '@temujira/shared';
+import { useRouter } from 'expo-router';
 import * as React from 'react';
 import { Platform, TextInput, View } from 'react-native';
 
@@ -57,6 +59,7 @@ const TASK_STYLE: React.CSSProperties = {
   color: '#3b82f6',
   fontFamily: 'ui-monospace, monospace',
   whiteSpace: 'nowrap',
+  cursor: 'pointer',
 };
 
 const LINK_STYLE: React.CSSProperties = {
@@ -66,8 +69,16 @@ const LINK_STYLE: React.CSSProperties = {
 
 const MARKER_STYLE: React.CSSProperties = { color: 'rgba(138,143,163,0.72)' };
 
-const TASK_KEY_BODY = TaskKeyPattern.source.replace(/^\^/, '').replace(/\$$/, '');
-const TASK_ANCHOR_RE = new RegExp(`^(${TASK_KEY_BODY})(?![\\w-])`);
+/**
+ * Task-key anchor that matches only real, active workspace prefixes: `HUM-14` is a chip,
+ * a random `MX-100` is not. Empty body means no workspaces are known yet → never match.
+ */
+function taskAnchorRe(keys: string[]): RegExp {
+  const body = taskKeyBody(keys);
+  if (body === '') return /(?!x)x/;
+  return new RegExp(`^(${body})(?![\\w-])`);
+}
+
 const RAW_URL_RE = /^(?:https?:\/\/|www\.)[^\s<>[\]"()]+/i;
 
 /** Same resolution as `markdown.tsx`: longest user name that prefixes the token. */
@@ -96,7 +107,14 @@ function findSingleMarker(source: string, from: number, ch: string): number {
  * mention chips (longest name prefix), task keys and links. Markers are consumed —
  * children text excludes them — so the DOM never needs to re-read marker characters.
  */
-function parseInline(source: string, from: number, to: number, mentions: User[], ids: Set<string>): InlineSeg[] {
+function parseInline(
+  source: string,
+  from: number,
+  to: number,
+  mentions: User[],
+  ids: Set<string>,
+  taskRe: RegExp
+): InlineSeg[] {
   const segs: InlineSeg[] = [];
   let i = from;
   while (i < to) {
@@ -104,7 +122,7 @@ function parseInline(source: string, from: number, to: number, mentions: User[],
     if (source.startsWith('<u>', i)) {
       const close = source.indexOf('</u>', i + 3);
       if (close >= 0 && close < to) {
-        const children = parseInline(source, i + 3, close, mentions, ids);
+        const children = parseInline(source, i + 3, close, mentions, ids, taskRe);
         segs.push({ kind: 'underline', children });
         i = close + 4;
         continue;
@@ -117,7 +135,7 @@ function parseInline(source: string, from: number, to: number, mentions: User[],
     if (source.startsWith('**', i)) {
       const close = source.indexOf('**', i + 2);
       if (close >= 0 && close < to) {
-        const children = parseInline(source, i + 2, close, mentions, ids);
+        const children = parseInline(source, i + 2, close, mentions, ids, taskRe);
         segs.push({ kind: 'bold', children });
         i = close + 2;
         continue;
@@ -130,7 +148,7 @@ function parseInline(source: string, from: number, to: number, mentions: User[],
     if (source[i] === '*') {
       const close = findSingleMarker(source, i + 1, '*');
       if (close > i && close < to) {
-        const children = parseInline(source, i + 1, close, mentions, ids);
+        const children = parseInline(source, i + 1, close, mentions, ids, taskRe);
         segs.push({ kind: 'italic', marker: '*', children });
         i = close + 1;
         continue;
@@ -143,7 +161,7 @@ function parseInline(source: string, from: number, to: number, mentions: User[],
       if (prevOk && nextOk) {
         const close = findClosingUnderscore(source, i + 1, to);
         if (close > i && close < to) {
-          const children = parseInline(source, i + 1, close, mentions, ids);
+          const children = parseInline(source, i + 1, close, mentions, ids, taskRe);
           segs.push({ kind: 'italic', marker: '_', children });
           i = close + 1;
           continue;
@@ -180,7 +198,7 @@ function parseInline(source: string, from: number, to: number, mentions: User[],
     }
     // task key, only at a fresh boundary
     if ((i === from || !/[\w-]/.test(source[i - 1])) && /[A-Z0-9]/.test(source[i]) && source[i] !== '0') {
-      const m = TASK_ANCHOR_RE.exec(source.slice(i));
+      const m = taskRe.exec(source.slice(i));
       if (m) {
         const tok = m[1];
         segs.push({ kind: 'task', idOrKey: tok, text: tok });
@@ -210,7 +228,7 @@ function parseInline(source: string, from: number, to: number, mentions: User[],
         if (prevOk) break;
       }
       if ((/[\s(>]/.test(source[j - 1] ?? '')) && (source.startsWith('https://', j) || source.startsWith('http://', j) || source.startsWith('www.', j))) break;
-      if ((j === from || !/[\w-]/.test(source[j - 1])) && /[A-Z0-9]/.test(source[j]) && source[j] !== '0' && TASK_ANCHOR_RE.test(source.slice(j))) break;
+      if ((j === from || !/[\w-]/.test(source[j - 1])) && /[A-Z0-9]/.test(source[j]) && source[j] !== '0' && taskRe.test(source.slice(j))) break;
       j++;
     }
     if (j === i) j = i + 1;
@@ -229,9 +247,9 @@ function findClosingUnderscore(source: string, from: number, to: number): number
   return -1;
 }
 
-function parseSegments(value: string, mentions: User[]): { segs: InlineSeg[]; ids: string[] } {
+function parseSegments(value: string, mentions: User[], taskRe: RegExp): { segs: InlineSeg[]; ids: string[] } {
   const ids = new Set<string>();
-  const segs = parseInline(value, 0, value.length, mentions, ids);
+  const segs = parseInline(value, 0, value.length, mentions, ids, taskRe);
   return { segs, ids: [...ids] };
 }
 
@@ -607,6 +625,7 @@ function WebRichEditor({
   onBlurCommit,
 }: RichDocEditorProps) {
   const { client } = useAuth();
+  const router = useRouter();
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const valueRef = React.useRef(value);
   valueRef.current = value;
@@ -614,6 +633,7 @@ function WebRichEditor({
   const readyRef = React.useRef(false);
   const caretRef = React.useRef(value.length);
   const lastIdsRef = React.useRef<string[]>([]);
+  const workspaceKeys = useWorkspaceKeys();
   const [caret, setCaret] = React.useState(value.length);
   const [focused, setFocused] = React.useState(false);
   const [results, setResults] = React.useState<User[]>([]);
@@ -629,17 +649,19 @@ function WebRichEditor({
   } | null>(null);
   const hoverLinkRef = React.useRef<HTMLElement | null>(null);
 
+  const taskRe = React.useMemo(() => taskAnchorRe(workspaceKeys), [workspaceKeys]);
+
   const active = React.useMemo(() => activeToken(value, caret, mentions), [value, caret, mentions]);
   const token = active?.token.trim() ?? '';
   const open = !!active && !dismissed && (results.length > 0 || token.length === 0);
 
   React.useEffect(() => {
-    const ids = parseSegments(value, mentions).ids;
+    const ids = parseSegments(value, mentions, taskRe).ids;
     if (ids.length !== lastIdsRef.current.length || ids.some((id, i) => id !== lastIdsRef.current[i])) {
       lastIdsRef.current = ids;
       onMentionIdsChange?.(ids);
     }
-  }, [value, mentions, onMentionIdsChange]);
+  }, [value, mentions, taskRe, onMentionIdsChange]);
 
   // The DOM is solely authoritative: keystrokes (even in bursts faster than React's
 // round-trip through parent state) must never be reverted by a rebuild sourced from a
@@ -653,18 +675,18 @@ React.useLayoutEffect(() => {
     const source = pending === 'insert' ? value : (el.textContent ?? '');
     pendingExternalRef.current = null;
     if (!readyRef.current) {
-      const target = parseSegments(value, mentions);
+      const target = parseSegments(value, mentions, taskRe);
       buildDOM(el, target.segs);
       readyRef.current = true;
       return;
     }
-    const target = parseSegments(source, mentions);
+    const target = parseSegments(source, mentions, taskRe);
     const read = readSegments(el);
     if (!read.ok || !sameSegments(target.segs, read.segs)) {
       buildDOM(el, target.segs);
       restoreCaret(el, caretRef.current);
     }
-  }, [value, mentions]);
+  }, [value, mentions, taskRe]);
 
   React.useEffect(() => {
     const el = rootRef.current;
@@ -777,7 +799,7 @@ React.useLayoutEffect(() => {
     readyRef.current = true;
     const read = readSegments(el);
     if (!read.ok) {
-      buildDOM(el, parseSegments(text, mentions).segs);
+      buildDOM(el, parseSegments(text, mentions, taskRe).segs);
       restoreCaret(el, caretRef.current);
     }
     setDismissed(false);
@@ -814,6 +836,17 @@ React.useLayoutEffect(() => {
           className
         )}
         onInput={handleInput}
+        onClick={(e) => {
+          const target = e.target as HTMLElement | null;
+          const chip = target?.closest?.('[data-tmj-task]');
+          if (!chip) return;
+          const tok = chip.getAttribute('data-tmj-task');
+          if (!tok) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const parsed = splitTaskKey(tok);
+          if (parsed) router.push(`/w/${parsed.workspaceKey}/t/${parsed.number}`);
+        }}
         onSelect={() => {
           const offset = rootRef.current ? getCaretOffset(rootRef.current) : null;
           if (offset !== null) {

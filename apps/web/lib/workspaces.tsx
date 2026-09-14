@@ -56,3 +56,13 @@ export function useWorkspaceList(): WorkspaceListState {
   if (!ctx) throw new Error('useWorkspaceList must be used within a WorkspaceListProvider');
   return ctx;
 }
+
+/**
+ * Active (non-archived) workspace keys, e.g. ["HUM", "KEY"]. Used to restrict task-key
+ * linkification to real tasks: an unknown prefix like "MX-100" is never a link. Empty
+ * while loading or when there are no workspaces.
+ */
+export function useWorkspaceKeys(): string[] {
+  const ctx = React.useContext(WorkspaceListContext);
+  return React.useMemo(() => (ctx ? ctx.workspaces.map((w) => w.key) : []), [ctx]);
+}

@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Text } from '@/components/ui/text';
-import { splitTaskKey } from '@/lib/format';
+import { splitTaskKey, taskKeyBody } from '@/lib/format';
+import { useWorkspaceKeys } from '@/lib/workspaces';
 import type { User } from '@temujira/client';
-import { TaskKeyPattern } from '@temujira/shared';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, View } from 'react-native';
@@ -56,11 +56,16 @@ function splitOutsideCode(source: string): { code: boolean; text: string }[] {
   return parts;
 }
 
-function linkifyTaskKeys(text: string): string {
-  // Reuse the shared pattern, unanchored + globalised.
-  const body = TaskKeyPattern.source.replace(/^\^/, '').replace(/\$$/, '');
-  const re = new RegExp(`(?<![\\w-])(${body})(?![\\w-])`, 'g');
-  return text.replace(re, (key) => `[${key}](#task:${key})`);
+/** Matches only task keys whose workspace prefix is a real, active workspace. */
+const NO_MATCH = '(?!x)x';
+
+function taskKeyPattern(keys: string[]): RegExp {
+  const body = taskKeyBody(keys) || NO_MATCH;
+  return new RegExp(`(?<![\\w-])(${body})(?![\\w-])`, 'g');
+}
+
+function linkifyTaskKeys(text: string, keys: string[]): string {
+  return text.replace(taskKeyPattern(keys), (key) => `[${key}](#task:${key})`);
 }
 
 /**
@@ -105,10 +110,10 @@ function linkifyMentions(text: string, users: User[]): string {
   return out;
 }
 
-function preprocess(source: string, users: User[]): string {
+function preprocess(source: string, users: User[], keys: string[]): string {
   return splitOutsideCode(source)
     .map((part) =>
-      part.code ? part.text : linkifyUnderlines(linkifyMentions(linkifyTaskKeys(part.text), users))
+      part.code ? part.text : linkifyUnderlines(linkifyMentions(linkifyTaskKeys(part.text, keys), users))
     )
     .join('');
 }
@@ -125,6 +130,7 @@ function WebMarkdown({
   onMentionPress?: (user: User) => void;
 }) {
   const router = useRouter();
+  const workspaceKeys = useWorkspaceKeys();
   const [Comp, setComp] = React.useState<any>(null);
 
   React.useEffect(() => {
@@ -137,7 +143,10 @@ function WebMarkdown({
     };
   }, []);
 
-  const source = React.useMemo(() => preprocess(text, mentionUsers), [text, mentionUsers]);
+  const source = React.useMemo(
+    () => preprocess(text, mentionUsers, workspaceKeys),
+    [text, mentionUsers, workspaceKeys]
+  );
   const usersById = React.useMemo(() => {
     const map = new Map<string, User>();
     for (const u of mentionUsers) map.set(u.id, u);

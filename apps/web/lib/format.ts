@@ -36,3 +36,17 @@ export function splitTaskKey(taskKey: string): { workspaceKey: string; number: s
   if (!m) return null;
   return { workspaceKey: m[1], number: m[2] };
 }
+
+/**
+ * Alternation body for matching task keys whose workspace prefix is one of the given
+ * workspace keys, e.g. `(?:HUM|KEY)-[0-9]+`. Only known keys are matched so a random
+ * `MX-100` is never linkified. Longest key first so e.g. `HUM` wins over `HU`. Returns
+ * `''` when no keys are known — callers should fall back to a never-matching pattern.
+ */
+export function taskKeyBody(workspaceKeys: string[]): string {
+  const keys = Array.from(
+    new Set(workspaceKeys.filter((k) => /^[A-Z][A-Z0-9]{1,5}$/.test(k)))
+  ).sort((a, b) => b.length - a.length);
+  if (keys.length === 0) return '';
+  return `(?:${keys.join('|')})-[0-9]+`;
+}
