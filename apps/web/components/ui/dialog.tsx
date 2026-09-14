@@ -113,7 +113,7 @@ function DialogContent({
   const portalBody = (
     <DialogPortal hostName={portalHost}>
       {Platform.OS === 'web' ? (
-        <div className="relative z-50">
+        <div className="fixed inset-0 z-50">
           <DialogOverlay />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
             <div className="pointer-events-auto w-full max-w-[calc(100%-2rem)] sm:max-w-lg">
