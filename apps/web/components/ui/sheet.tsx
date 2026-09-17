@@ -46,7 +46,10 @@ function SheetOverlay({ className }: { className?: string }) {
           }),
           className
         )}
-        onPress={Platform.select({ web: onOverlayPress, native: onOverlayPress })}
+        // Web: Radix's own outside-press dismissal already calls onOpenChange(false); adding
+        // this handler there fires it twice (double history.back(), which skips a page).
+        // Native has no such default, so the explicit handler is required.
+        onPress={Platform.OS === 'web' ? undefined : onOverlayPress}
         asChild={Platform.OS !== 'web'}>
         <NativeOnlyAnimatedView
           entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
