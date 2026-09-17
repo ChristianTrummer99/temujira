@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth';
+import { hasScope } from '@/lib/scopes';
 import { formatRelative, initialsOf } from '@/lib/format';
 import { DEFAULT_GROUP_BY, groupTasks, type GroupBy, type TaskGroup } from '@/lib/group-tasks';
 import { useResource } from '@/lib/use-resource';
@@ -507,7 +508,7 @@ function NewTaskDialog({
   fields: FieldDef[];
   onCreated: () => void;
 }) {
-  const { client } = useAuth();
+  const { client, user: me } = useAuth();
   const [open, setOpen] = React.useState(false);
   const [title, setTitle] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -558,10 +559,12 @@ function NewTaskDialog({
 
   return (
     <>
-      <Button onPress={() => setOpen(true)}>
-        <Icon as={PlusIcon} className="text-primary-foreground size-4" />
-        <Text>New task</Text>
-      </Button>
+      {hasScope(me, 'tasks:write') ? (
+        <Button onPress={() => setOpen(true)}>
+          <Icon as={PlusIcon} className="text-primary-foreground size-4" />
+          <Text>New task</Text>
+        </Button>
+      ) : null}
 
       <Sheet open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
         <SheetContent

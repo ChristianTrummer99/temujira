@@ -15,6 +15,7 @@ import {
   type LinkRelation,
   type QueueEntry,
   type QueueState,
+  type ScopeId,
   type Status,
   type Tag,
   type TaskLink,
@@ -189,13 +190,33 @@ export class TemujiraClient {
   listUsers(query: { include_deactivated?: boolean } = {}) {
     return this.call("users.list", {}, { query }) as Promise<{ items: User[] }>;
   }
-  createUser(body: { email: string; name: string; role?: "admin" | "member"; is_agent?: boolean; password?: string }) {
+  createUser(body: {
+    email: string;
+    name: string;
+    role?: "admin" | "member";
+    is_agent?: boolean;
+    password?: string;
+    scopes?: ScopeId[];
+    workspace_access_all?: boolean;
+    workspace_ids?: string[];
+  }) {
     return this.call("users.create", {}, { body }) as Promise<{ user: User }>;
   }
   getUser(id: string) {
     return this.call("users.get", { id }) as Promise<{ user: User }>;
   }
-  updateUser(id: string, body: { name?: string; role?: "admin" | "member"; password?: string; reactivate?: boolean }) {
+  updateUser(
+    id: string,
+    body: {
+      name?: string;
+      role?: "admin" | "member";
+      password?: string;
+      reactivate?: boolean;
+      scopes?: ScopeId[];
+      workspace_access_all?: boolean;
+      workspace_ids?: string[];
+    }
+  ) {
     return this.call("users.update", { id }, { body }) as Promise<{ user: User }>;
   }
   deactivateUser(id: string) {

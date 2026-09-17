@@ -1,4 +1,5 @@
 import { LINK_INVERSE, type LinkType } from "@temujira/shared";
+import { parseScopes } from "./access";
 import type {
   ActivityEvent,
   ApiKey,
@@ -46,13 +47,16 @@ export type FieldDefRow = typeof fieldDefs.$inferSelect;
 export type FieldValueRow = typeof fieldValues.$inferSelect;
 export type QueueEntryRow = typeof queueEntries.$inferSelect;
 
-export function userToApi(u: UserRow): User {
+export function userToApi(u: UserRow, workspaceIds: string[] = []): User {
   return {
     id: u.id,
     email: u.email,
     name: u.name,
     role: u.role as User["role"],
     is_agent: !!u.isAgent,
+    scopes: parseScopes(u.scopes),
+    workspace_access_all: !!u.workspaceAccessAll,
+    workspace_ids: workspaceIds,
     deactivated_at: u.deactivatedAt,
     created_at: u.createdAt,
     updated_at: u.updatedAt,

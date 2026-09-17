@@ -9,9 +9,10 @@ import {
   type TaskLink,
 } from "@temujira/shared";
 import type { Db } from "../db";
+import { accessibleWorkspaceIds, assertWorkspaceAccess } from "../access";
 import { statuses, taskLinks, tasks, workspaces } from "../db/schema";
 import { conflict, notFound, validationError } from "../errors";
-import { taskLinkToApi, type StatusRow, type TaskLinkRow, type TaskRow, type WorkspaceRow } from "../serialize";
+import { taskLinkToApi, type StatusRow, type TaskLinkRow, type TaskRow, type UserRow, type WorkspaceRow } from "../serialize";
 import { newId, now } from "../util";
 import { recordActivity } from "./engagement";
 import { requireTask } from "./resolve";
@@ -31,7 +32,7 @@ const relationFrom = (row: TaskLinkRow, taskId: string): LinkRelation =>
  * `inArray` join for the far ends — each far task carries its OWN workspace key, so
  * cross-workspace links serialize correct keys.
  */
-export function loadLinksForTask(db: Db, taskId: string): TaskLink[] {
+export function loadLinksForTask(db: Db, taskId: string, viewer?: UserRow): TaskLink[] {
   const rows = db
     .select()
     .from(taskLinks)
@@ -48,10 +49,14 @@ export function loadLinksForTask(db: Db, taskId: string): TaskLink[] {
     .where(inArray(tasks.id, farIds))
     .all();
   const byId = new Map(far.map((r) => [r.task.id, r]));
+  // A scoped viewer never sees a far end living in a workspace they can't access.
+  const accessible = viewer ? accessibleWorkspaceIds(db, viewer) : null;
+  const allowed = accessible === null ? null : new Set(accessible);
   const out: TaskLink[] = [];
   for (const row of rows) {
     const other = byId.get(farEndOf(row, taskId));
     if (!other) continue; // FK guarantees this never happens
+    if (allowed && !allowed.has(other.task.workspaceId)) continue;
     out.push(taskLinkToApi(row, taskId, { task: other.task, workspaceKey: other.workspace.key, status: other.status }));
   }
   return out;
@@ -132,9 +137,9 @@ export function linksHandlers(ctx: AppContext): Pick<Handlers, "links.create" | 
   return {
     "links.create": (c) => {
       const user = currentUser(c);
-      const urlEnd = requireTask(ctx.db, c.req.param("idOrKey") ?? "");
+      const urlEnd = requireTask(ctx.db, c.req.param("idOrKey") ?? "", user);
       const input = body<z.infer<typeof CreateTaskLinkInputSchema>>(c);
-      const otherEnd = requireTask(ctx.db, input.task);
+      const otherEnd = requireTask(ctx.db, input.task, user);
       // Compare resolved ULIDs: "START-1" and its own id are the same task.
       if (otherEnd.task.id === urlEnd.task.id) throw validationError("a task cannot link to itself");
 
@@ -210,7 +215,10 @@ export function linksHandlers(ctx: AppContext): Pick<Handlers, "links.create" | 
         .all();
       const src = ends.find((e) => e.task.id === row.srcTaskId)!;
       const dst = ends.find((e) => e.task.id === row.dstTaskId)!;
-      // One row, both sides: any authenticated user may unlink (created_by is audit only).
+      // A link is visible only when both ends are: unlink requires access to both.
+      assertWorkspaceAccess(ctx.db, user, src.workspace.id, "link");
+      assertWorkspaceAccess(ctx.db, user, dst.workspace.id, "link");
+      // One row, both sides: any caller with access may unlink (created_by is audit only).
       ctx.db.delete(taskLinks).where(eq(taskLinks.id, row.id)).run();
       recordLinkActivity(ctx.db, {
         action: "task.unlinked",

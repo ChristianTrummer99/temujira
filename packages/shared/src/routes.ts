@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ScopeId } from "./scopes";
 import {
   ActivityEventSchema,
   AddTaskToQueueInputSchema,
@@ -57,6 +58,9 @@ export type RouteMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
  * user:   any authenticated, non-deactivated user (session cookie, Bearer tms_ session
  *         token, or Bearer tmj_ API key). Handlers may apply finer owner-or-admin rules.
  * admin:  authenticated user with role=admin.
+ *
+ * `scope` narrows a `user` route further: the caller must hold the named scope (admins
+ * implicitly hold every scope). Missing scope → 403.
  */
 export type AuthLevel = "public" | "user" | "admin";
 
@@ -65,6 +69,8 @@ export interface RouteDef {
   /** Hono-style path under /api/v1, e.g. "/tasks/:idOrKey". */
   path: string;
   auth: AuthLevel;
+  /** Required capability scope for non-admin callers (see SCOPES). */
+  scope?: ScopeId;
   summary: string;
   query?: z.ZodType;
   body?: z.ZodType;
@@ -185,7 +191,8 @@ export const ROUTES = {
   "users.create": {
     method: "POST",
     path: "/users",
-    auth: "admin",
+    auth: "user",
+    scope: "users:manage",
     summary: "Create a human (password required) or agent (API-key-only) account",
     body: CreateUserInputSchema,
     response: z.object({ user: UserSchema }),
@@ -210,15 +217,17 @@ export const ROUTES = {
   "users.update": {
     method: "PATCH",
     path: "/users/:id",
-    auth: "admin",
-    summary: "Update name/role, reset password, or reactivate",
+    auth: "user",
+    scope: "users:manage",
+    summary: "Update name/role, reset password, or reactivate (role changes are admin-only)",
     body: UpdateUserInputSchema,
     response: z.object({ user: UserSchema }),
   },
   "users.deactivate": {
     method: "DELETE",
     path: "/users/:id",
-    auth: "admin",
+    auth: "user",
+    scope: "users:manage",
     summary: "Deactivate (soft): login and API keys refused; history stays intact",
     response: z.object({ user: UserSchema }),
   },
@@ -236,6 +245,7 @@ export const ROUTES = {
     method: "POST",
     path: "/workspaces",
     auth: "user",
+    scope: "workspaces:create",
     summary: "Create a workspace; seeds Backlog / In Progress / Done statuses",
     body: CreateWorkspaceInputSchema,
     response: z.object({ workspace: WorkspaceSchema }),
@@ -251,6 +261,7 @@ export const ROUTES = {
     method: "PATCH",
     path: "/workspaces/:idOrKey",
     auth: "user",
+    scope: "workspaces:manage",
     summary: "Rename, archive (archived: true) or unarchive (archived: false)",
     body: UpdateWorkspaceInputSchema,
     response: z.object({ workspace: WorkspaceSchema }),
@@ -268,6 +279,7 @@ export const ROUTES = {
     method: "POST",
     path: "/workspaces/:idOrKey/statuses",
     auth: "user",
+    scope: "workspaces:manage",
     summary: "Create a status (appended at the end)",
     body: CreateStatusInputSchema,
     response: z.object({ status: StatusSchema }),
@@ -276,6 +288,7 @@ export const ROUTES = {
     method: "PATCH",
     path: "/statuses/:id",
     auth: "user",
+    scope: "workspaces:manage",
     summary: "Rename or recolor a status",
     body: UpdateStatusInputSchema,
     response: z.object({ status: StatusSchema }),
@@ -284,6 +297,7 @@ export const ROUTES = {
     method: "PUT",
     path: "/workspaces/:idOrKey/statuses/order",
     auth: "user",
+    scope: "workspaces:manage",
     summary: "Reorder statuses: full ordered array of all status ids",
     body: ReorderStatusesInputSchema,
     response: listOf(StatusSchema),
@@ -292,6 +306,7 @@ export const ROUTES = {
     method: "DELETE",
     path: "/statuses/:id",
     auth: "user",
+    scope: "workspaces:manage",
     summary: "Delete a status; ?move_to= required (409 otherwise) when tasks reference it",
     query: DeleteStatusQuerySchema,
     response: okResponse,
@@ -309,6 +324,7 @@ export const ROUTES = {
     method: "POST",
     path: "/workspaces/:idOrKey/fields",
     auth: "user",
+    scope: "workspaces:manage",
     summary: "Define a custom field (select/text/number) — the statuses model, user-defined",
     body: CreateFieldInputSchema,
     response: z.object({ field: FieldDefSchema }),
@@ -317,6 +333,7 @@ export const ROUTES = {
     method: "PATCH",
     path: "/fields/:id",
     auth: "user",
+    scope: "workspaces:manage",
     summary: "Rename a field or replace its option set (type is immutable)",
     body: UpdateFieldInputSchema,
     response: z.object({ field: FieldDefSchema }),
@@ -325,6 +342,7 @@ export const ROUTES = {
     method: "PUT",
     path: "/workspaces/:idOrKey/fields/order",
     auth: "user",
+    scope: "workspaces:manage",
     summary: "Reorder field definitions: full ordered array of all field ids",
     body: ReorderFieldsInputSchema,
     response: listOf(FieldDefSchema),
@@ -333,6 +351,7 @@ export const ROUTES = {
     method: "DELETE",
     path: "/fields/:id",
     auth: "user",
+    scope: "workspaces:manage",
     summary: "Delete a field definition and all tasks' values for it",
     response: okResponse,
   },
@@ -349,24 +368,27 @@ export const ROUTES = {
   "tags.create": {
     method: "POST",
     path: "/workspaces/:idOrKey/tags",
-    auth: "admin",
-    summary: "Create a per-workspace tag (admin)",
+    auth: "user",
+    scope: "workspaces:manage",
+    summary: "Create a per-workspace tag",
     body: CreateTagInputSchema,
     response: z.object({ tag: TagSchema }),
   },
   "tags.update": {
     method: "PATCH",
     path: "/tags/:id",
-    auth: "admin",
-    summary: "Rename or recolor a tag (admin)",
+    auth: "user",
+    scope: "workspaces:manage",
+    summary: "Rename or recolor a tag",
     body: UpdateTagInputSchema,
     response: z.object({ tag: TagSchema }),
   },
   "tags.delete": {
     method: "DELETE",
     path: "/tags/:id",
-    auth: "admin",
-    summary: "Delete a tag and unlink it from all tasks (admin)",
+    auth: "user",
+    scope: "workspaces:manage",
+    summary: "Delete a tag and unlink it from all tasks",
     response: okResponse,
   },
 
@@ -401,6 +423,7 @@ export const ROUTES = {
     method: "POST",
     path: "/workspaces/:idOrKey/tasks",
     auth: "user",
+    scope: "tasks:write",
     summary: "Create a task; number allocated transactionally (key like TEM-42)",
     body: CreateTaskInputSchema,
     response: z.object({ task: TaskSchema }),
@@ -416,6 +439,7 @@ export const ROUTES = {
     method: "PATCH",
     path: "/tasks/:idOrKey",
     auth: "user",
+    scope: "tasks:write",
     summary: "Edit title/description, move status, (un)assign, archive/unarchive",
     body: UpdateTaskInputSchema,
     response: z.object({ task: TaskSchema }),
@@ -426,6 +450,7 @@ export const ROUTES = {
     method: "POST",
     path: "/tasks/:idOrKey/links",
     auth: "user",
+    scope: "tasks:write",
     summary:
       "Link this task to another (e.g. absorbs START-2); either-end spellings accepted (blocked_by, absorbed_by)",
     body: CreateTaskLinkInputSchema,
@@ -435,6 +460,7 @@ export const ROUTES = {
     method: "DELETE",
     path: "/links/:id",
     auth: "user",
+    scope: "tasks:write",
     summary: "Remove a link by id; one call removes it from both tasks",
     response: okResponse,
   },
@@ -498,6 +524,7 @@ export const ROUTES = {
     method: "POST",
     path: "/tasks/:idOrKey/comments",
     auth: "user",
+    scope: "tasks:write",
     summary: "Add a markdown comment",
     body: CreateCommentInputSchema,
     response: z.object({ comment: CommentSchema }),
@@ -506,6 +533,7 @@ export const ROUTES = {
     method: "PATCH",
     path: "/comments/:id",
     auth: "user",
+    scope: "tasks:write",
     summary: "Edit a comment (author or admin)",
     body: UpdateCommentInputSchema,
     response: z.object({ comment: CommentSchema }),
@@ -514,6 +542,7 @@ export const ROUTES = {
     method: "DELETE",
     path: "/comments/:id",
     auth: "user",
+    scope: "tasks:write",
     summary: "Delete a comment and its attachments (author or admin)",
     response: okResponse,
   },
@@ -523,6 +552,7 @@ export const ROUTES = {
     method: "POST",
     path: "/tasks/:idOrKey/attachments",
     auth: "user",
+    scope: "tasks:write",
     summary: "Attach a file to a task (multipart field `file`)",
     bodyType: "multipart",
     response: z.object({ attachment: AttachmentSchema }),
@@ -531,6 +561,7 @@ export const ROUTES = {
     method: "POST",
     path: "/comments/:id/attachments",
     auth: "user",
+    scope: "tasks:write",
     summary: "Attach a file to a comment (multipart field `file`)",
     bodyType: "multipart",
     response: z.object({ attachment: AttachmentSchema }),
@@ -553,6 +584,7 @@ export const ROUTES = {
     method: "DELETE",
     path: "/attachments/:id",
     auth: "user",
+    scope: "tasks:write",
     summary: "Delete an attachment and its bytes (uploader or admin)",
     response: okResponse,
   },

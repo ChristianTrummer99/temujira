@@ -7,7 +7,7 @@ import type { AttachmentRow, CommentRow, UserRow } from "../serialize";
 import { newId, now } from "../util";
 import { commentWithReplies, threadedComments } from "./commentSerialize";
 import { associate, pushInbox, recordActivity } from "./engagement";
-import { requireTask } from "./resolve";
+import { assertTaskIdAccess, requireTask } from "./resolve";
 import { body, currentUser, type AppContext, type Handlers } from "./types";
 
 function requireComment(ctx: AppContext, id: string): CommentRow {
@@ -63,13 +63,13 @@ export function commentsHandlers(
   return {
     /** Roots only at the top level, each with its replies nested oldest-first. */
     "comments.list": (c) => {
-      const { task } = requireTask(ctx.db, c.req.param("idOrKey") ?? "");
+      const { task } = requireTask(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       return c.json({ items: threadedComments(ctx.db, task.id) });
     },
 
     "comments.create": (c) => {
       const user = currentUser(c);
-      const { task, workspace } = requireTask(ctx.db, c.req.param("idOrKey") ?? "");
+      const { task, workspace } = requireTask(ctx.db, c.req.param("idOrKey") ?? "", user);
       const input = body<z.infer<typeof CreateCommentInputSchema>>(c);
 
       // ---- resolve the parent, coercing reply-to-reply up to the thread root ----
@@ -194,6 +194,7 @@ export function commentsHandlers(
     "comments.update": (c) => {
       const user = currentUser(c);
       const comment = requireComment(ctx, c.req.param("id") ?? "");
+      assertTaskIdAccess(ctx.db, user, comment.taskId);
       assertAuthorOrAdmin(user, comment, "edit");
       const input = body<z.infer<typeof UpdateCommentInputSchema>>(c);
       const updates: Partial<typeof comments.$inferInsert> = { updatedAt: now() };
@@ -225,6 +226,7 @@ export function commentsHandlers(
     "comments.delete": (c) => {
       const user = currentUser(c);
       const comment = requireComment(ctx, c.req.param("id") ?? "");
+      assertTaskIdAccess(ctx.db, user, comment.taskId);
       assertAuthorOrAdmin(user, comment, "delete");
       const replyIds =
         comment.parentId === null

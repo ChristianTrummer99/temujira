@@ -8,12 +8,14 @@ let member: { token: string; userId: string };
 beforeAll(async () => {
   t = await makeTestApp();
   admin = await setupAdmin(t.app);
-  member = await makeMember(t.app, admin.token);
+  member = await makeMember(t.app, admin.token, {
+    scopes: ["workspaces:create", "workspaces:manage", "tasks:write"],
+  });
 });
 afterAll(() => t.cleanup());
 
 describe("workspaces.create", () => {
-  it("lets any member create a workspace and seeds the 3 default statuses", async () => {
+  it("lets a member with workspaces:create create a workspace and seeds the 3 default statuses", async () => {
     const ws = await makeWorkspace(t.app, member.token, "ENG", "Engineering");
     expect(ws.key).toBe("ENG");
     expect(ws.name).toBe("Engineering");

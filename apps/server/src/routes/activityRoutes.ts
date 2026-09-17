@@ -14,7 +14,7 @@ export function activityHandlers(ctx: AppContext): Pick<Handlers, "activity.list
      */
     "activity.list": (c) => {
       const user = currentUser(c);
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", user);
       const q = query<z.infer<typeof ListActivityQuerySchema>>(c);
       const conds: (SQL | undefined)[] = [eq(activityEvents.workspaceId, ws.id)];
       if (q.mine) {

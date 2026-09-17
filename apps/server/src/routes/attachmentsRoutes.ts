@@ -5,7 +5,7 @@ import { attachments, comments } from "../db/schema";
 import { HttpError, forbidden, notFound, validationError } from "../errors";
 import { attachmentToApi, type AttachmentRow } from "../serialize";
 import { newId, now } from "../util";
-import { requireTask } from "./resolve";
+import { assertTaskIdAccess, requireTask } from "./resolve";
 import { currentUser, type AppContext, type Ctx, type Handlers } from "./types";
 
 /** Content-Length preflight tolerance over the byte cap (multipart framing overhead). */
@@ -130,6 +130,17 @@ function requireAttachment(ctx: AppContext, id: string): AttachmentRow {
   return row;
 }
 
+/** Attachments inherit the visibility of their task (or their comment's task). */
+function assertAttachmentAccess(ctx: AppContext, user: ReturnType<typeof currentUser>, row: AttachmentRow): void {
+  if (row.taskId !== null) {
+    assertTaskIdAccess(ctx.db, user, row.taskId);
+    return;
+  }
+  const comment = ctx.db.select().from(comments).where(eq(comments.id, row.commentId!)).get();
+  if (!comment) throw notFound("attachment");
+  assertTaskIdAccess(ctx.db, user, comment.taskId);
+}
+
 export function attachmentsHandlers(
   ctx: AppContext,
 ): Pick<
@@ -143,7 +154,7 @@ export function attachmentsHandlers(
   return {
     "attachments.uploadToTask": async (c) => {
       const user = currentUser(c);
-      const { task } = requireTask(ctx.db, c.req.param("idOrKey") ?? "");
+      const { task } = requireTask(ctx.db, c.req.param("idOrKey") ?? "", user);
       const file = await readUpload(c, ctx);
       const row = storeUpload(ctx, file, { taskId: task.id, commentId: null }, user.id);
       return c.json({ attachment: attachmentToApi(row) });
@@ -154,6 +165,7 @@ export function attachmentsHandlers(
       const id = c.req.param("id") ?? "";
       const comment = ctx.db.select().from(comments).where(eq(comments.id, id)).get();
       if (!comment) throw notFound("comment");
+      assertTaskIdAccess(ctx.db, user, comment.taskId);
       const file = await readUpload(c, ctx);
       const row = storeUpload(ctx, file, { taskId: null, commentId: comment.id }, user.id);
       return c.json({ attachment: attachmentToApi(row) });
@@ -161,11 +173,13 @@ export function attachmentsHandlers(
 
     "attachments.get": (c) => {
       const row = requireAttachment(ctx, c.req.param("id") ?? "");
+      assertAttachmentAccess(ctx, currentUser(c), row);
       return c.json({ attachment: attachmentToApi(row) });
     },
 
     "attachments.download": (c) => {
       const row = requireAttachment(ctx, c.req.param("id") ?? "");
+      assertAttachmentAccess(ctx, currentUser(c), row);
       if (!ctx.storage.exists(row.id)) {
         console.error(`[temujira] attachment ${row.id} has a DB row but no file on disk`);
         throw notFound("attachment file");
@@ -187,6 +201,7 @@ export function attachmentsHandlers(
     "attachments.delete": (c) => {
       const user = currentUser(c);
       const row = requireAttachment(ctx, c.req.param("id") ?? "");
+      assertAttachmentAccess(ctx, user, row);
       if (row.uploaderId !== user.id && user.role !== "admin") {
         throw forbidden("only the uploader or an admin can delete this attachment");
       }

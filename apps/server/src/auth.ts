@@ -8,11 +8,12 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import type { AuthLevel } from "@temujira/shared";
+import type { AuthLevel, ScopeId } from "@temujira/shared";
 import type { ServerConfig } from "./config";
 import type { Db } from "./db";
 import { apiKeys, sessions, users } from "./db/schema";
 import { forbidden, unauthorized, HttpError } from "./errors";
+import { hasScope } from "./access";
 import type { UserRow } from "./serialize";
 import { newId, now } from "./util";
 
@@ -300,6 +301,7 @@ export function requireAuth(
   level: Exclude<AuthLevel, "public">,
   db: Db,
   config: ServerConfig,
+  scope?: ScopeId,
 ): MiddlewareHandler {
   return async (c, next) => {
     const result = authenticate(c, db);
@@ -308,6 +310,8 @@ export function requireAuth(
       throw unauthorized("account is deactivated");
     if (level === "admin" && result.user.role !== "admin")
       throw forbidden("admin role required");
+    if (scope && !hasScope(result.user, scope))
+      throw forbidden(`missing scope: ${scope}`);
     if (result.kind === "cookie" && MUTATING.has(c.req.method))
       assertOriginAllowed(c, config);
     c.set("user", result.user);

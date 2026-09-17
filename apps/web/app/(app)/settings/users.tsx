@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogClose,
@@ -32,17 +33,21 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
 import { initialsOf } from '@/lib/format';
+import { hasScope } from '@/lib/scopes';
 import { useResource } from '@/lib/use-resource';
 import type { User } from '@temujira/client';
-import { CopyIcon, KeyRoundIcon, PlusIcon } from 'lucide-react-native';
+import { SCOPES, type ScopeId } from '@temujira/shared';
+import { CopyIcon, KeyRoundIcon, PlusIcon, ShieldCheckIcon } from 'lucide-react-native';
 import * as React from 'react';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 export default function UsersSettingsScreen() {
   const { client, user: me } = useAuth();
-  // UX-only gating: the server enforces `auth: "admin"` on create/update/deactivate
-  // regardless. Reads are never gated.
+  // UX-only gating: the server enforces scopes on the routes regardless. Reads are never gated.
   const isAdmin = me?.role === 'admin';
+  const canManageUsers = hasScope(me, 'users:manage');
+  const canManageKeys = hasScope(me, 'api_keys:manage');
+  const myScopes = me?.scopes ?? [];
 
   const resource = useResource(
     () => client.listUsers({ include_deactivated: true }),
@@ -65,6 +70,67 @@ export default function UsersSettingsScreen() {
   const [minting, setMinting] = React.useState(false);
   const [mintedToken, setMintedToken] = React.useState<string | null>(null);
   const [mintError, setMintError] = React.useState<string | null>(null);
+
+  // Per-row access editing (scopes + workspace allowlist).
+  const [accessFor, setAccessFor] = React.useState<User | null>(null);
+  const [accessScopes, setAccessScopes] = React.useState<ScopeId[]>([]);
+  const [accessAll, setAccessAll] = React.useState(true);
+  const [accessWsIds, setAccessWsIds] = React.useState<string[]>([]);
+  const [accessBusy, setAccessBusy] = React.useState(false);
+  const [accessError, setAccessError] = React.useState<string | null>(null);
+  const wsResource = useResource(
+    () => client.listWorkspaces({ include_archived: true }),
+    [client]
+  );
+  const workspaces = wsResource.data?.items ?? [];
+
+  function openAccess(u: User) {
+    setAccessFor(u);
+    setAccessScopes(u.scopes);
+    setAccessAll(u.workspace_access_all);
+    setAccessWsIds(u.workspace_ids);
+    setAccessError(null);
+  }
+
+  function closeAccess() {
+    setAccessFor(null);
+    setAccessError(null);
+  }
+
+  function toggleAccessScope(id: ScopeId) {
+    setAccessScopes((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  }
+
+  function toggleAccessWs(id: string) {
+    setAccessWsIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function saveAccess() {
+    if (!accessFor || accessBusy) return;
+    setAccessBusy(true);
+    setAccessError(null);
+    try {
+      await client.updateUser(accessFor.id, {
+        scopes: accessScopes,
+        workspace_access_all: accessAll,
+        // Persist the selection even when "all" is on, so toggling back restores it.
+        workspace_ids: accessWsIds,
+      });
+      closeAccess();
+      await resource.reload();
+    } catch (e) {
+      setAccessError(e instanceof Error ? e.message : 'Failed to save access');
+    } finally {
+      setAccessBusy(false);
+    }
+  }
+
+  /** A non-admin manager may only grant scopes they hold themselves. */
+  function canGrantScope(id: ScopeId): boolean {
+    return isAdmin || myScopes.includes(id);
+  }
 
   async function onCreate() {
     if (creating || !name.trim() || !email.trim()) return;
@@ -154,7 +220,7 @@ export default function UsersSettingsScreen() {
                 Human teammates and agent accounts. Agents log in with API keys only.
               </CardDescription>
             </View>
-            {isAdmin ? (
+            {canManageUsers ? (
               <Button onPress={() => setCreateOpen(true)} className="gap-1">
                 <Icon as={PlusIcon} className="text-primary-foreground size-4" />
                 <Text>Add user</Text>
@@ -163,10 +229,9 @@ export default function UsersSettingsScreen() {
           </View>
         </CardHeader>
         <CardContent className="gap-2">
-          {!isAdmin ? (
+          {!canManageUsers ? (
             <Text className="text-muted-foreground text-xs">
-              Only admins can add users, change roles, deactivate accounts, or mint keys for
-              others.
+              Managing users needs the users:manage scope. Ask an admin to grant it.
             </Text>
           ) : null}
           {resource.error ? (
@@ -218,40 +283,55 @@ export default function UsersSettingsScreen() {
                   <Badge variant={u.is_agent ? 'default' : 'outline'}>
                     <Text>{u.is_agent ? 'Agent' : 'Human'}</Text>
                   </Badge>
-                  {isAdmin ? (
+                  {canManageKeys || canManageUsers ? (
                     <View className="flex-row gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 gap-1"
-                        accessibilityLabel={`Mint API key for ${u.name}`}
-                        onPress={() => {
-                          setMintFor(u);
-                          setKeyName(`${u.name.split(/\s+/)[0].toLowerCase()}-key`);
-                        }}>
-                        <Icon as={KeyRoundIcon} className="text-muted-foreground size-3.5" />
-                        <Text className="text-xs">API key</Text>
-                      </Button>
-                      {!isMe ? (
+                      {canManageKeys ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1"
+                          accessibilityLabel={`Mint API key for ${u.name}`}
+                          onPress={() => {
+                            setMintFor(u);
+                            setKeyName(`${u.name.split(/\s+/)[0].toLowerCase()}-key`);
+                          }}>
+                          <Icon as={KeyRoundIcon} className="text-muted-foreground size-3.5" />
+                          <Text className="text-xs">API key</Text>
+                        </Button>
+                      ) : null}
+                      {canManageUsers ? (
                         <>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7"
-                            onPress={() => toggleRole(u)}>
-                            <Text className="text-xs">
-                              {u.role === 'admin' ? 'Demote' : 'Promote'}
-                            </Text>
+                            className="h-7 gap-1"
+                            accessibilityLabel={`Edit access for ${u.name}`}
+                            onPress={() => openAccess(u)}>
+                            <Icon as={ShieldCheckIcon} className="text-muted-foreground size-3.5" />
+                            <Text className="text-xs">Access</Text>
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7"
-                            onPress={() => toggleDeactivate(u)}>
-                            <Text className="text-destructive text-xs">
-                              {u.deactivated_at ? 'Reactivate' : 'Deactivate'}
-                            </Text>
-                          </Button>
+                          {isAdmin && !isMe ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7"
+                              onPress={() => toggleRole(u)}>
+                              <Text className="text-xs">
+                                {u.role === 'admin' ? 'Demote' : 'Promote'}
+                              </Text>
+                            </Button>
+                          ) : null}
+                          {!isMe && (isAdmin || u.role !== 'admin') ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7"
+                              onPress={() => toggleDeactivate(u)}>
+                              <Text className="text-destructive text-xs">
+                                {u.deactivated_at ? 'Reactivate' : 'Deactivate'}
+                              </Text>
+                            </Button>
+                          ) : null}
                         </>
                       ) : null}
                     </View>
@@ -405,6 +485,95 @@ export default function UsersSettingsScreen() {
                 </Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Scopes + workspace allowlist for one user. */}
+      <Dialog open={!!accessFor} onOpenChange={(open) => (open ? undefined : closeAccess())}>
+        <DialogContent className="w-full max-w-md">
+          <DialogHeader>
+            <DialogTitle>Access for {accessFor?.name ?? ''}</DialogTitle>
+            <DialogDescription>
+              Scopes decide what they can do. Workspace access decides what they can see.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollView className="max-h-[60vh]" contentContainerClassName="gap-5">
+            <View className="gap-2">
+              <Text className="text-sm font-medium">Permissions</Text>
+              {SCOPES.map((s) => {
+                const checked = accessScopes.includes(s.id);
+                const grantable = canGrantScope(s.id);
+                return (
+                  <View key={s.id} className="flex-row items-start gap-3">
+                    <Checkbox
+                      checked={checked}
+                      disabled={!grantable}
+                      onCheckedChange={() => grantable && toggleAccessScope(s.id)}
+                    />
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-sm">{s.label}</Text>
+                      <Text className="text-muted-foreground text-xs">
+                        {s.description}
+                        {!grantable ? ' (you don’t hold this scope)' : ''}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            <View className="gap-2">
+              <Text className="text-sm font-medium">Workspace access</Text>
+              <View className="flex-row items-center gap-3">
+                <Checkbox
+                  checked={accessAll}
+                  onCheckedChange={() => {
+                    if (isAdmin || !accessAll) setAccessAll(!accessAll);
+                  }}
+                  disabled={!isAdmin && !accessAll}
+                />
+                <View className="flex-1">
+                  <Text className="text-sm">All workspaces</Text>
+                  <Text className="text-muted-foreground text-xs">
+                    Includes workspaces created later.
+                    {!isAdmin && !accessAll ? ' (only admins can grant all)' : ''}
+                  </Text>
+                </View>
+              </View>
+              {!accessAll ? (
+                <View className="gap-1 pl-7">
+                  {workspaces.length === 0 ? (
+                    <Text className="text-muted-foreground text-xs">No workspaces available.</Text>
+                  ) : (
+                    workspaces.map((w) => (
+                      <View key={w.id} className="flex-row items-center gap-3 py-1">
+                        <Checkbox
+                          checked={accessWsIds.includes(w.id)}
+                          onCheckedChange={() => toggleAccessWs(w.id)}
+                        />
+                        <Text className="text-sm">
+                          {w.name}{' '}
+                          <Text className="text-muted-foreground font-mono text-xs">{w.key}</Text>
+                          {w.archived_at ? (
+                            <Text className="text-muted-foreground text-xs"> (archived)</Text>
+                          ) : null}
+                        </Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              ) : null}
+            </View>
+            {accessError ? <Text className="text-destructive text-sm">{accessError}</Text> : null}
+          </ScrollView>
+          <DialogFooter>
+            <Button variant="outline" onPress={closeAccess}>
+              <Text>Cancel</Text>
+            </Button>
+            <Button onPress={saveAccess} disabled={accessBusy}>
+              <Text>{accessBusy ? 'Saving...' : 'Save'}</Text>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

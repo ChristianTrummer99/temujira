@@ -6,9 +6,10 @@ import type {
   QueueStateInputSchema,
   ReorderQueueInputSchema,
 } from "@temujira/shared";
+import { accessibleWorkspaceIds, workspaceScopeWhere } from "../access";
 import { queueEntries, statuses, taskLinks, tasks, users, workspaces } from "../db/schema";
 import { conflict, notFound, validationError } from "../errors";
-import { queueEntryToApi, taskToApi, type QueueEntryRow } from "../serialize";
+import { queueEntryToApi, taskToApi, type QueueEntryRow, type UserRow } from "../serialize";
 import { newId, now } from "../util";
 import { requireTask } from "./resolve";
 import { loadFieldValuesForTasks, loadTagsForTasks } from "./tasksRoutes";
@@ -25,12 +26,18 @@ function requireOwnEntry(ctx: AppContext, userId: string, id: string): QueueEntr
  * status, assignee, tags and field values, plus the derived `blocked` flag from the
  * links graph (true when some task has a `blocks` edge to it).
  */
-export function loadQueueForUser(ctx: AppContext, userId: string): QueueEntry[] {
+export function loadQueueForUser(ctx: AppContext, user: UserRow): QueueEntry[] {
   const rows = ctx.db
     .select({ entry: queueEntries, task: tasks })
     .from(queueEntries)
     .innerJoin(tasks, eq(queueEntries.taskId, tasks.id))
-    .where(eq(queueEntries.userId, userId))
+    .where(
+      and(
+        eq(queueEntries.userId, user.id),
+        // Entries pointing at tasks in inaccessible workspaces are hidden, not deleted.
+        workspaceScopeWhere(tasks.workspaceId, accessibleWorkspaceIds(ctx.db, user))
+      )
+    )
     .orderBy(asc(queueEntries.position), asc(queueEntries.createdAt))
     .all();
   if (rows.length === 0) return [];
@@ -77,12 +84,12 @@ export function queueHandlers(
   return {
     "queue.get": (c) => {
       const user = currentUser(c);
-      return c.json({ items: loadQueueForUser(ctx, user.id) });
+      return c.json({ items: loadQueueForUser(ctx, user) });
     },
 
     "queue.next": (c) => {
       const user = currentUser(c);
-      const items = loadQueueForUser(ctx, user.id);
+      const items = loadQueueForUser(ctx, user);
       // running > ready > queued; first match wins. Blocked is advisory (flagged, not skipped).
       const pick = (state: string) => items.find((e) => e.state === state) ?? null;
       return c.json({ entry: pick("running") ?? pick("ready") ?? pick("queued") });
@@ -91,7 +98,7 @@ export function queueHandlers(
     "queue.add": (c) => {
       const user = currentUser(c);
       const input = body<z.infer<typeof AddTaskToQueueInputSchema>>(c);
-      const { task } = requireTask(ctx.db, input.task);
+      const { task } = requireTask(ctx.db, input.task, user);
       const existing = ctx.db
         .select()
         .from(queueEntries)
@@ -119,7 +126,7 @@ export function queueHandlers(
           updatedAt: t,
         })
         .run();
-      const entry = loadQueueForUser(ctx, user.id).find((e) => e.id === id)!;
+      const entry = loadQueueForUser(ctx, user).find((e) => e.id === id)!;
       return c.json({ entry });
     },
 
@@ -132,7 +139,7 @@ export function queueHandlers(
         .set({ state: input.state, updatedAt: now() })
         .where(eq(queueEntries.id, row.id))
         .run();
-      const entry = loadQueueForUser(ctx, user.id).find((e) => e.id === row.id)!;
+      const entry = loadQueueForUser(ctx, user).find((e) => e.id === row.id)!;
       return c.json({ entry });
     },
 
@@ -164,7 +171,7 @@ export function queueHandlers(
           tx.update(queueEntries).set({ position: i, updatedAt: t }).where(eq(queueEntries.id, id)).run();
         });
       });
-      return c.json({ items: loadQueueForUser(ctx, user.id) });
+      return c.json({ items: loadQueueForUser(ctx, user) });
     },
   };
 }

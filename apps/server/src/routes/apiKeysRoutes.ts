@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import type { z } from "zod";
 import type { CreateApiKeyInputSchema, ListApiKeysQuerySchema } from "@temujira/shared";
+import { hasScope } from "../access";
 import { newApiKeyToken, sha256hex } from "../auth";
 import { apiKeys, users } from "../db/schema";
 import { forbidden, notFound } from "../errors";
@@ -17,7 +18,8 @@ export function apiKeyHandlers(
       const q = query<z.infer<typeof ListApiKeysQuerySchema>>(c);
       let targetUserId = user.id;
       if (q.user_id && q.user_id !== user.id) {
-        if (user.role !== "admin") throw forbidden("only admins can list another user's API keys");
+        if (!hasScope(user, "api_keys:manage"))
+          throw forbidden("missing scope: api_keys:manage");
         targetUserId = q.user_id;
       }
       const items = ctx.db
@@ -34,7 +36,8 @@ export function apiKeyHandlers(
       const input = body<z.infer<typeof CreateApiKeyInputSchema>>(c);
       let targetUserId = user.id;
       if (input.user_id && input.user_id !== user.id) {
-        if (user.role !== "admin") throw forbidden("only admins can create API keys for other users");
+        if (!hasScope(user, "api_keys:manage"))
+          throw forbidden("missing scope: api_keys:manage");
         const target = ctx.db.select().from(users).where(eq(users.id, input.user_id)).get();
         if (!target) throw notFound("user");
         targetUserId = target.id;
@@ -60,8 +63,8 @@ export function apiKeyHandlers(
       const id = c.req.param("id") ?? "";
       const key = ctx.db.select().from(apiKeys).where(eq(apiKeys.id, id)).get();
       if (!key) throw notFound("API key");
-      if (key.userId !== user.id && user.role !== "admin") {
-        throw forbidden("only the owner or an admin can revoke this key");
+      if (key.userId !== user.id && !hasScope(user, "api_keys:manage")) {
+        throw forbidden("only the owner or a caller with api_keys:manage can revoke this key");
       }
       if (key.revokedAt === null) {
         ctx.db.update(apiKeys).set({ revokedAt: now() }).where(eq(apiKeys.id, id)).run();

@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ScopeId } from "@temujira/shared";
 import { buildApp, type BuiltApp } from "../src/app";
 import type { ServerConfig } from "../src/config";
 
@@ -56,14 +57,36 @@ async function expectOk<T>(res: Response, what: string): Promise<T> {
 export async function makeMember(
   app: BuiltApp["app"],
   adminToken: string,
-  opts: { email?: string; name?: string; password?: string; role?: "admin" | "member" } = {},
+  opts: {
+    email?: string;
+    name?: string;
+    password?: string;
+    role?: "admin" | "member";
+    scopes?: ScopeId[];
+    workspace_access_all?: boolean;
+    workspace_ids?: string[];
+  } = {},
 ): Promise<{ userId: string; token: string; email: string; password: string }> {
   const email = opts.email ?? uniqueEmail("member");
   const password = opts.password ?? "member-pass-123";
   const created = await expectOk<{ user: { id: string } }>(
     await app.request(
       "/api/v1/users",
-      jsonReq("POST", { email, name: opts.name ?? "Member", password, role: opts.role ?? "member" }, bearer(adminToken)),
+      jsonReq(
+        "POST",
+        {
+          email,
+          name: opts.name ?? "Member",
+          password,
+          role: opts.role ?? "member",
+          ...(opts.scopes ? { scopes: opts.scopes } : {}),
+          ...(opts.workspace_access_all !== undefined
+            ? { workspace_access_all: opts.workspace_access_all }
+            : {}),
+          ...(opts.workspace_ids ? { workspace_ids: opts.workspace_ids } : {}),
+        },
+        bearer(adminToken),
+      ),
     ),
     "makeMember create",
   );

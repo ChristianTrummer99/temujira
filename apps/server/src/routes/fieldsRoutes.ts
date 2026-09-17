@@ -5,6 +5,7 @@ import type {
   ReorderFieldsInputSchema,
   UpdateFieldInputSchema,
 } from "@temujira/shared";
+import { assertWorkspaceAccess } from "../access";
 import { fieldDefs, fieldValues } from "../db/schema";
 import { conflict, notFound, validationError } from "../errors";
 import { fieldDefToApi, type FieldDefRow } from "../serialize";
@@ -33,7 +34,7 @@ export function fieldsHandlers(
 ): Pick<Handlers, "fields.list" | "fields.create" | "fields.update" | "fields.reorder" | "fields.delete"> {
   return {
     "fields.list": (c) => {
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const rows = ctx.db
         .select()
         .from(fieldDefs)
@@ -44,7 +45,7 @@ export function fieldsHandlers(
     },
 
     "fields.create": (c) => {
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const input = body<z.infer<typeof CreateFieldInputSchema>>(c);
       if (nameTaken(ctx, ws.id, input.name)) {
         throw conflict(`a field named "${input.name}" already exists in this workspace`);
@@ -72,6 +73,7 @@ export function fieldsHandlers(
 
     "fields.update": (c) => {
       const st = requireField(ctx, c.req.param("id") ?? "");
+      assertWorkspaceAccess(ctx.db, currentUser(c), st.workspaceId);
       const input = body<z.infer<typeof UpdateFieldInputSchema>>(c);
       const updates: Partial<typeof fieldDefs.$inferInsert> = {};
       if (input.name !== undefined && input.name !== st.name) {
@@ -96,7 +98,7 @@ export function fieldsHandlers(
     },
 
     "fields.reorder": (c) => {
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const input = body<z.infer<typeof ReorderFieldsInputSchema>>(c);
       const rows = ctx.db.select().from(fieldDefs).where(eq(fieldDefs.workspaceId, ws.id)).all();
       const currentIds = new Set(rows.map((r) => r.id));
@@ -126,6 +128,7 @@ export function fieldsHandlers(
 
     "fields.delete": (c) => {
       const st = requireField(ctx, c.req.param("id") ?? "");
+      assertWorkspaceAccess(ctx.db, currentUser(c), st.workspaceId);
       ctx.db.transaction((tx) => {
         tx.delete(fieldValues).where(eq(fieldValues.fieldId, st.id)).run();
         tx.delete(fieldDefs).where(eq(fieldDefs.id, st.id)).run();

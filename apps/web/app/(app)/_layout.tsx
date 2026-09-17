@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
+import { hasScope } from '@/lib/scopes';
 import { InboxProvider, useInbox } from '@/lib/inbox';
 import { WorkspaceListProvider, useWorkspaceList } from '@/lib/workspaces';
 import { Slot, useGlobalSearchParams, usePathname, useRouter, type Href } from 'expo-router';
@@ -191,7 +192,7 @@ function AppSidebar() {
         <SidebarGroup>
           <View className="flex-row items-center justify-between pr-2">
             <SidebarGroupLabel>Workspaces</SidebarGroupLabel>
-            <CreateWorkspaceDialog onCreated={reload} />
+            {hasScope(user, 'workspaces:create') ? <CreateWorkspaceDialog onCreated={reload} /> : null}
           </View>
           <SidebarGroupContent>
             <SidebarMenu>

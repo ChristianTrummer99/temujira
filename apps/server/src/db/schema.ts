@@ -19,6 +19,10 @@ export const users = sqliteTable(
     // NULL = agent account: cannot log in with a password, API keys only.
     passwordHash: text("password_hash"),
     role: text("role").notNull(),
+    /** JSON string array of capability scopes (members only; admins hold all implicitly). */
+    scopes: text("scopes").notNull().default("[]"),
+    /** 1 = access to every workspace (default); 0 = only `user_workspaces` rows. */
+    workspaceAccessAll: integer("workspace_access_all").notNull().default(1),
     isAgent: integer("is_agent").notNull().default(0),
     deactivatedAt: integer("deactivated_at"),
     createdAt: integer("created_at").notNull(),
@@ -27,6 +31,23 @@ export const users = sqliteTable(
   (t) => [
     uniqueIndex("users_email_unique").on(t.email),
     check("users_role_check", sql`${t.role} IN ('admin','member')`),
+  ],
+);
+
+/** Workspace allowlist for users whose `workspace_access_all` is 0. */
+export const userWorkspaces = sqliteTable(
+  "user_workspaces",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.workspaceId] }),
+    index("user_workspaces_workspace_id_idx").on(t.workspaceId),
   ],
 );
 

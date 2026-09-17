@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ScopeSchema } from "./scopes";
 
 // ---------- scalars ----------
 
@@ -37,6 +38,12 @@ export const UserSchema = z.object({
   name: z.string(),
   role: RoleSchema,
   is_agent: z.boolean(),
+  /** Member scope grants. Admins implicitly hold all scopes regardless of this list. */
+  scopes: z.array(ScopeSchema),
+  /** true = access to every workspace; false = only `workspace_ids`. Admins always have all. */
+  workspace_access_all: z.boolean(),
+  /** Workspace allowlist, meaningful when workspace_access_all is false. */
+  workspace_ids: z.array(UlidSchema),
   deactivated_at: TimestampSchema.nullable(),
   created_at: TimestampSchema,
   updated_at: TimestampSchema,
@@ -340,6 +347,11 @@ export const CreateUserInputSchema = z
     is_agent: z.boolean().default(false),
     /** Required for human accounts; forbidden for agent accounts (API-key-only login). */
     password: PasswordSchema.optional(),
+    /** Capability grants; admins implicitly have all. Defaults to a minimal writer. */
+    scopes: z.array(ScopeSchema).default(["tasks:write"]),
+    /** true (default) = every workspace; false = only `workspace_ids`. */
+    workspace_access_all: z.boolean().default(true),
+    workspace_ids: z.array(UlidSchema).default([]),
   })
   .refine((v) => (v.is_agent ? v.password === undefined : v.password !== undefined), {
     message: "password is required for human accounts and not allowed for agent accounts",
@@ -350,6 +362,10 @@ export const UpdateUserInputSchema = z.object({
   role: RoleSchema.optional(),
   password: PasswordSchema.optional(),
   reactivate: z.boolean().optional(),
+  scopes: z.array(ScopeSchema).optional(),
+  workspace_access_all: z.boolean().optional(),
+  /** Replaces the allowlist wholesale when provided (ignored unless workspace_access_all is false). */
+  workspace_ids: z.array(UlidSchema).optional(),
 });
 
 export const CreateWorkspaceInputSchema = z.object({

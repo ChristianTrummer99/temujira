@@ -1,6 +1,7 @@
 import { and, count, desc, eq, isNull, type SQL } from "drizzle-orm";
 import type { z } from "zod";
 import type { InboxItem, ListInboxQuerySchema, UpdateInboxQuerySchema } from "@temujira/shared";
+import { accessibleWorkspaceIds, workspaceScopeWhere } from "../access";
 import { inboxItems, tasks, users, workspaces } from "../db/schema";
 import { inboxItemToApi } from "../serialize";
 import { now } from "../util";
@@ -16,7 +17,9 @@ export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "i
     "inbox.list": (c) => {
       const user = currentUser(c);
       const q = query<z.infer<typeof ListInboxQuerySchema>>(c);
-      const conds: (SQL | undefined)[] = [eq(inboxItems.userId, user.id)];
+      // Scoped users never see inbox rows for workspaces they can't access (badge included).
+      const wsScope = workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user));
+      const conds: (SQL | undefined)[] = [eq(inboxItems.userId, user.id), wsScope];
       if (!q.include_read) conds.push(isNull(inboxItems.readAt));
       const where = and(...conds);
       const total = ctx.db.select({ c: count() }).from(inboxItems).where(where).get()?.c ?? 0;
@@ -24,7 +27,7 @@ export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "i
         ctx.db
           .select({ c: count() })
           .from(inboxItems)
-          .where(and(eq(inboxItems.userId, user.id), isNull(inboxItems.readAt)))
+          .where(and(eq(inboxItems.userId, user.id), isNull(inboxItems.readAt), wsScope))
           .get()?.c ?? 0;
       const rows = ctx.db
         .select({ item: inboxItems, actor: users, workspace: workspaces, task: tasks })

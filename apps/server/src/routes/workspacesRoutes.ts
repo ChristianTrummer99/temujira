@@ -1,10 +1,11 @@
-import { asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import type { z } from "zod";
 import type {
   CreateWorkspaceInputSchema,
   ListWorkspacesQuerySchema,
   UpdateWorkspaceInputSchema,
 } from "@temujira/shared";
+import { accessibleWorkspaceIds, assertWorkspaceAccess, workspaceScopeWhere } from "../access";
 import type { Db } from "../db";
 import { workspaces } from "../db/schema";
 import { conflict } from "../errors";
@@ -12,7 +13,7 @@ import { seedDefaultStatuses } from "../seed";
 import { workspaceToApi } from "../serialize";
 import { newId, now } from "../util";
 import { requireWorkspace } from "./resolve";
-import { body, query, type AppContext, type Handlers } from "./types";
+import { body, currentUser, query, type AppContext, type Handlers } from "./types";
 
 export function workspacesHandlers(
   ctx: AppContext,
@@ -20,10 +21,17 @@ export function workspacesHandlers(
   return {
     "workspaces.list": (c) => {
       const q = query<z.infer<typeof ListWorkspacesQuerySchema>>(c);
+      const user = currentUser(c);
+      const ids = accessibleWorkspaceIds(ctx.db, user);
       const rows = ctx.db
         .select()
         .from(workspaces)
-        .where(q.include_archived ? undefined : isNull(workspaces.archivedAt))
+        .where(
+          and(
+            q.include_archived ? undefined : isNull(workspaces.archivedAt),
+            workspaceScopeWhere(workspaces.id, ids)
+          )
+        )
         .orderBy(asc(workspaces.createdAt), asc(workspaces.id))
         .all();
       return c.json({ items: rows.map(workspaceToApi) });
@@ -52,11 +60,13 @@ export function workspacesHandlers(
 
     "workspaces.get": (c) => {
       const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      assertWorkspaceAccess(ctx.db, currentUser(c), ws.id);
       return c.json({ workspace: workspaceToApi(ws) });
     },
 
     "workspaces.update": (c) => {
       const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      assertWorkspaceAccess(ctx.db, currentUser(c), ws.id);
       const input = body<z.infer<typeof UpdateWorkspaceInputSchema>>(c);
       const t = now();
       const updates: Partial<typeof workspaces.$inferInsert> = { updatedAt: t };

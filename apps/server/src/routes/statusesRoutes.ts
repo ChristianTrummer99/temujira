@@ -8,10 +8,11 @@ import type {
 } from "@temujira/shared";
 import { statuses, tasks } from "../db/schema";
 import { conflict, notFound, validationError } from "../errors";
+import { assertWorkspaceAccess } from "../access";
 import { statusToApi, type StatusRow } from "../serialize";
 import { newId, now } from "../util";
 import { requireWorkspace } from "./resolve";
-import { body, query, type AppContext, type Handlers } from "./types";
+import { body, currentUser, query, type AppContext, type Handlers } from "./types";
 
 function requireStatus(ctx: AppContext, id: string): StatusRow {
   const row = ctx.db.select().from(statuses).where(eq(statuses.id, id)).get();
@@ -33,7 +34,7 @@ export function statusesHandlers(
 ): Pick<Handlers, "statuses.list" | "statuses.create" | "statuses.update" | "statuses.reorder" | "statuses.delete"> {
   return {
     "statuses.list": (c) => {
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const rows = ctx.db
         .select()
         .from(statuses)
@@ -44,7 +45,7 @@ export function statusesHandlers(
     },
 
     "statuses.create": (c) => {
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const input = body<z.infer<typeof CreateStatusInputSchema>>(c);
       if (nameTaken(ctx, ws.id, input.name)) {
         throw conflict(`a status named "${input.name}" already exists in this workspace`);
@@ -66,6 +67,7 @@ export function statusesHandlers(
 
     "statuses.update": (c) => {
       const st = requireStatus(ctx, c.req.param("id") ?? "");
+      assertWorkspaceAccess(ctx.db, currentUser(c), st.workspaceId);
       const input = body<z.infer<typeof UpdateStatusInputSchema>>(c);
       const updates: Partial<typeof statuses.$inferInsert> = {};
       if (input.name !== undefined && input.name !== st.name) {
@@ -81,7 +83,7 @@ export function statusesHandlers(
     },
 
     "statuses.reorder": (c) => {
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const input = body<z.infer<typeof ReorderStatusesInputSchema>>(c);
       const rows = ctx.db.select().from(statuses).where(eq(statuses.workspaceId, ws.id)).all();
       const currentIds = new Set(rows.map((r) => r.id));
@@ -111,6 +113,7 @@ export function statusesHandlers(
 
     "statuses.delete": (c) => {
       const st = requireStatus(ctx, c.req.param("id") ?? "");
+      assertWorkspaceAccess(ctx.db, currentUser(c), st.workspaceId);
       const q = query<z.infer<typeof DeleteStatusQuerySchema>>(c);
       const siblingCount =
         ctx.db.select({ c: count() }).from(statuses).where(eq(statuses.workspaceId, st.workspaceId)).get()?.c ?? 0;

@@ -1,12 +1,13 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { z } from "zod";
 import type { CreateTagInputSchema, UpdateTagInputSchema } from "@temujira/shared";
+import { assertWorkspaceAccess } from "../access";
 import { tags, taskTags, tasks } from "../db/schema";
 import { conflict, notFound } from "../errors";
 import { tagToApi, type TagRow } from "../serialize";
 import { newId, now } from "../util";
 import { requireWorkspace } from "./resolve";
-import { body, type AppContext, type Handlers } from "./types";
+import { body, currentUser, type AppContext, type Handlers } from "./types";
 
 function requireTag(ctx: AppContext, id: string): TagRow {
   const row = ctx.db.select().from(tags).where(eq(tags.id, id)).get();
@@ -28,7 +29,7 @@ export function tagsHandlers(
 ): Pick<Handlers, "tags.list" | "tags.create" | "tags.update" | "tags.delete"> {
   return {
     "tags.list": (c) => {
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const rows = ctx.db
         .select()
         .from(tags)
@@ -39,7 +40,7 @@ export function tagsHandlers(
     },
 
     "tags.create": (c) => {
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const input = body<z.infer<typeof CreateTagInputSchema>>(c);
       if (nameTaken(ctx, ws.id, input.name)) {
         throw conflict(`a tag named "${input.name}" already exists in this workspace`);
@@ -57,6 +58,7 @@ export function tagsHandlers(
 
     "tags.update": (c) => {
       const tag = requireTag(ctx, c.req.param("id") ?? "");
+      assertWorkspaceAccess(ctx.db, currentUser(c), tag.workspaceId);
       const input = body<z.infer<typeof UpdateTagInputSchema>>(c);
       const updates: Partial<typeof tags.$inferInsert> = {};
       if (input.name !== undefined && input.name !== tag.name) {
@@ -73,6 +75,7 @@ export function tagsHandlers(
 
     "tags.delete": (c) => {
       const tag = requireTag(ctx, c.req.param("id") ?? "");
+      assertWorkspaceAccess(ctx.db, currentUser(c), tag.workspaceId);
       ctx.db.transaction((tx) => {
         tx.delete(taskTags).where(inArray(taskTags.tagId, [tag.id])).run();
         tx.delete(tags).where(eq(tags.id, tag.id)).run();

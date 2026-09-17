@@ -25,6 +25,8 @@ export function createFirstAdmin(
     name: input.name,
     passwordHash: input.passwordHash,
     role: "admin",
+    scopes: "[]",
+    workspaceAccessAll: 1,
     isAgent: 0,
     deactivatedAt: null,
     createdAt: t,

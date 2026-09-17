@@ -203,7 +203,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     const def: RouteDef = ROUTES[id];
     const middlewares: MiddlewareHandler<AppEnv>[] = [];
     if (def.auth !== "public")
-      middlewares.push(requireAuth(def.auth, db, config));
+      middlewares.push(requireAuth(def.auth, db, config, def.scope));
     middlewares.push(validateRequest(def));
     app.on([def.method], [`/api/v1${def.path}`], ...middlewares, handlers[id]);
   }

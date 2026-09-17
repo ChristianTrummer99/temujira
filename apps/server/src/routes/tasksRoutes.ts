@@ -7,6 +7,7 @@ import type {
   UpdateTaskInputSchema,
 } from "@temujira/shared";
 import type { Db } from "../db";
+import { accessibleWorkspaceIds, workspaceScopeWhere } from "../access";
 import {
   attachments,
   fieldDefs,
@@ -166,7 +167,7 @@ export function tasksHandlers(
 ): Pick<Handlers, "tasks.list" | "tasks.mine" | "tasks.create" | "tasks.get" | "tasks.update"> {
   return {
     "tasks.list": (c) => {
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const q = query<z.infer<typeof ListTasksQuerySchema>>(c);
       const conds: (SQL | undefined)[] = [eq(tasks.workspaceId, ws.id)];
       if (!q.include_archived) conds.push(isNull(tasks.archivedAt));
@@ -231,8 +232,13 @@ export function tasksHandlers(
     "tasks.mine": (c) => {
       const user = currentUser(c);
       const q = query<z.infer<typeof ListMyTasksQuerySchema>>(c);
-      // Archived tasks stay out of "my tasks", matching tasks.list's default.
-      const where = and(eq(taskAssociations.userId, user.id), isNull(tasks.archivedAt));
+      // Archived tasks stay out of "my tasks", matching tasks.list's default. Scoped users
+      // only see associations for workspaces they can access.
+      const where = and(
+        eq(taskAssociations.userId, user.id),
+        isNull(tasks.archivedAt),
+        workspaceScopeWhere(tasks.workspaceId, accessibleWorkspaceIds(ctx.db, user))
+      );
       const total =
         ctx.db
           .select({ c: count() })
@@ -276,7 +282,7 @@ export function tasksHandlers(
 
     "tasks.create": (c) => {
       const user = currentUser(c);
-      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "");
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", user);
       const input = body<z.infer<typeof CreateTaskInputSchema>>(c);
       let status: StatusRow;
       if (input.status_id !== undefined) {
@@ -334,7 +340,7 @@ export function tasksHandlers(
     },
 
     "tasks.get": (c) => {
-      const { task, workspace } = requireTask(ctx.db, c.req.param("idOrKey") ?? "");
+      const { task, workspace } = requireTask(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const status = ctx.db.select().from(statuses).where(eq(statuses.id, task.statusId)).get()!;
       const assignee = task.assigneeId
         ? (ctx.db.select().from(users).where(eq(users.id, task.assigneeId)).get() ?? null)
@@ -348,7 +354,7 @@ export function tasksHandlers(
       const tagRows = loadTagsForTasks(ctx.db, [task.id]).get(task.id) ?? [];
       // Links are embedded on tasks.get only (attachments precedent): list/mine/create/update
       // stay a single query per task.
-      const links = loadLinksForTask(ctx.db, task.id);
+      const links = loadLinksForTask(ctx.db, task.id, currentUser(c));
       const fieldValues = loadFieldValuesForTasks(ctx.db, [task.id]).get(task.id);
       return c.json({
         task: taskToApi(task, workspace.key, status, assignee, tagRows, attachmentRows, links, fieldValues),
@@ -357,7 +363,7 @@ export function tasksHandlers(
 
     "tasks.update": (c) => {
       const user = currentUser(c);
-      const { task, workspace } = requireTask(ctx.db, c.req.param("idOrKey") ?? "");
+      const { task, workspace } = requireTask(ctx.db, c.req.param("idOrKey") ?? "", user);
       const input = body<z.infer<typeof UpdateTaskInputSchema>>(c);
       const t = now();
       const updates: Partial<typeof tasks.$inferInsert> = { updatedAt: t };

@@ -29,6 +29,27 @@ export async function resolveUserId(client: TemujiraClient, spec: string): Promi
 }
 
 /**
+ * Resolve --workspace specs client-side: ULIDs pass through; anything else matches a
+ * workspace key (exact, case-insensitive), then name (exact, case-insensitive).
+ */
+export async function resolveWorkspaceIds(
+  client: TemujiraClient,
+  specs: readonly string[],
+): Promise<string[]> {
+  if (specs.length === 0) return [];
+  if (specs.every(isUlid)) return [...specs];
+  const { items } = await client.listWorkspaces({ include_archived: true });
+  const byKey = new Map(items.map((w) => [w.key.trim().toLowerCase(), w.id]));
+  const byName = new Map(items.map((w) => [w.name.trim().toLowerCase(), w.id]));
+  return specs.map((spec) => {
+    if (isUlid(spec)) return spec;
+    const id = byKey.get(spec.trim().toLowerCase()) ?? byName.get(spec.trim().toLowerCase());
+    if (!id) throw new CliError(`no workspace matching "${spec}"`, EXIT_CODES.notFound);
+    return id;
+  });
+}
+
+/**
  * Resolve --tag specs client-side: ULIDs pass through; anything else is a
  * case-insensitive tag-name lookup within the workspace (miss → exit 4).
  * tags.list is fetched at most once, and only when a name is actually present.
