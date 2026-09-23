@@ -3,7 +3,6 @@ import busboy from "busboy";
 import { eq } from "drizzle-orm";
 import { attachments, comments } from "../db/schema";
 import { HttpError, forbidden, notFound, validationError } from "../errors";
-import { assertWorkerTicketAccess } from "../reservations";
 import { attachmentToApi, type AttachmentRow } from "../serialize";
 import { newId, now } from "../util";
 import { assertTaskIdAccess, requireTask } from "./resolve";
@@ -142,14 +141,6 @@ function assertAttachmentAccess(ctx: AppContext, user: ReturnType<typeof current
   assertTaskIdAccess(ctx.db, user, comment.taskId);
 }
 
-/** The ticket an attachment belongs to, whether attached directly or through a comment. */
-function attachmentTaskId(ctx: AppContext, row: AttachmentRow): string {
-  if (row.taskId !== null) return row.taskId;
-  const comment = ctx.db.select().from(comments).where(eq(comments.id, row.commentId!)).get();
-  if (!comment) throw notFound("attachment");
-  return comment.taskId;
-}
-
 export function attachmentsHandlers(
   ctx: AppContext,
 ): Pick<
@@ -164,11 +155,7 @@ export function attachmentsHandlers(
     "attachments.uploadToTask": async (c) => {
       const user = currentUser(c);
       const { task } = requireTask(ctx.db, c.req.param("idOrKey") ?? "", user);
-      assertWorkerTicketAccess(ctx.db, c, task.id);
       const file = await readUpload(c, ctx);
-      // Re-check after the (async) stream: a release that committed meanwhile must not
-      // let this upload finalize.
-      assertWorkerTicketAccess(ctx.db, c, task.id);
       const row = storeUpload(ctx, file, { taskId: task.id, commentId: null }, user.id);
       return c.json({ attachment: attachmentToApi(row) });
     },
@@ -179,9 +166,7 @@ export function attachmentsHandlers(
       const comment = ctx.db.select().from(comments).where(eq(comments.id, id)).get();
       if (!comment) throw notFound("comment");
       assertTaskIdAccess(ctx.db, user, comment.taskId);
-      assertWorkerTicketAccess(ctx.db, c, comment.taskId);
       const file = await readUpload(c, ctx);
-      assertWorkerTicketAccess(ctx.db, c, comment.taskId);
       const row = storeUpload(ctx, file, { taskId: null, commentId: comment.id }, user.id);
       return c.json({ attachment: attachmentToApi(row) });
     },
@@ -217,7 +202,6 @@ export function attachmentsHandlers(
       const user = currentUser(c);
       const row = requireAttachment(ctx, c.req.param("id") ?? "");
       assertAttachmentAccess(ctx, user, row);
-      assertWorkerTicketAccess(ctx.db, c, attachmentTaskId(ctx, row));
       if (row.uploaderId !== user.id && user.role !== "admin") {
         throw forbidden("only the uploader or an admin can delete this attachment");
       }

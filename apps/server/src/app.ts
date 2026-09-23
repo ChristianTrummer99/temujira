@@ -18,7 +18,6 @@ import { inboxHandlers } from "./routes/inboxRoutes";
 import { linksHandlers } from "./routes/linksRoutes";
 import { metaHandlers } from "./routes/meta";
 import { queueHandlers } from "./routes/queueRoutes";
-import { reservationHandlers } from "./routes/reservationsRoutes";
 import { statusesHandlers } from "./routes/statusesRoutes";
 import { tagsHandlers } from "./routes/tagsRoutes";
 import { tasksHandlers } from "./routes/tasksRoutes";
@@ -27,7 +26,6 @@ import { workspacesHandlers } from "./routes/workspacesRoutes";
 import type { AppContext, AppEnv, Handlers } from "./routes/types";
 import { LocalStorage } from "./storage";
 import { staticMiddleware } from "./static";
-import { enforceWorkerPolicy } from "./workerPolicy";
 
 const JSON_BODY_LIMIT = 2 * 1024 * 1024;
 
@@ -160,7 +158,6 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     ...attachmentsHandlers(ctx),
     ...activityHandlers(ctx),
     ...inboxHandlers(ctx),
-    ...reservationHandlers(ctx),
   };
 
   const app = new Hono<AppEnv>();
@@ -207,9 +204,6 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     const middlewares: MiddlewareHandler<AppEnv>[] = [];
     if (def.auth !== "public")
       middlewares.push(requireAuth(def.auth, db, config, def.scope));
-    // Worker-credential policy runs after auth: it only constrains API-key requests made
-    // as an admitted managed agent identity.
-    middlewares.push(enforceWorkerPolicy(id));
     middlewares.push(validateRequest(def));
     app.on([def.method], [`/api/v1${def.path}`], ...middlewares, handlers[id]);
   }

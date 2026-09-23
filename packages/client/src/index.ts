@@ -13,10 +13,8 @@ import {
   type FieldType,
   type InboxItem,
   type LinkRelation,
-  type ManagedAgent,
   type QueueEntry,
   type QueueState,
-  type Reservation,
   type ScopeId,
   type Status,
   type Tag,
@@ -186,63 +184,6 @@ export class TemujiraClient {
   }
   revokeApiKey(id: string) {
     return this.call("apiKeys.revoke", { id }) as Promise<{ ok: true }>;
-  }
-
-  // ---- managed agents + reservations ----
-  listManagedAgents(query: { include_deactivated?: boolean } = {}) {
-    return this.call("managedAgents.list", {}, { query }) as Promise<{ items: ManagedAgent[] }>;
-  }
-  admitManagedAgent(body: { user_id: string; note?: string }) {
-    return this.call("managedAgents.admit", {}, { body }) as Promise<{ agent: ManagedAgent }>;
-  }
-  removeManagedAgent(userId: string) {
-    return this.call("managedAgents.remove", { userId }) as Promise<{ ok: true }>;
-  }
-  listReservations(
-    query: {
-      agent_user_id?: string;
-      task?: string;
-      status?: "active" | "released";
-      request_id?: string;
-      limit?: number;
-      offset?: number;
-    } = {}
-  ) {
-    return this.call("reservations.list", {}, { query }) as Promise<{ items: Reservation[] }>;
-  }
-  lookupReservation(requestId: string) {
-    return this.call("reservations.lookup", {}, { query: { request_id: requestId } }) as Promise<{
-      reservation: Reservation | null;
-    }>;
-  }
-  currentReservation() {
-    return this.call("reservations.current", {}) as Promise<{
-      user: User;
-      reservation: Reservation | null;
-      task: Task | null;
-    }>;
-  }
-  getReservation(id: string) {
-    return this.call("reservations.get", { id }) as Promise<{ reservation: Reservation }>;
-  }
-  claimReservation(body: {
-    agent_user_id: string;
-    task: string;
-    run_reference: string;
-    request_id: string;
-    adopt_existing_assignment?: boolean;
-  }) {
-    return this.call("reservations.claim", {}, { body }) as Promise<{
-      reservation: Reservation;
-      /** Null on an idempotent replay — the token is revealed by the first claim only. */
-      token: string | null;
-      replayed: boolean;
-    }>;
-  }
-  releaseReservation(id: string, body: { reason?: string } = {}) {
-    return this.call("reservations.release", { id }, { body }) as Promise<{
-      reservation: Reservation;
-    }>;
   }
 
   // ---- users ----
@@ -549,15 +490,6 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "apiKeys.list": "listApiKeys",
   "apiKeys.create": "createApiKey",
   "apiKeys.revoke": "revokeApiKey",
-  "managedAgents.list": "listManagedAgents",
-  "managedAgents.admit": "admitManagedAgent",
-  "managedAgents.remove": "removeManagedAgent",
-  "reservations.list": "listReservations",
-  "reservations.lookup": "lookupReservation",
-  "reservations.current": "currentReservation",
-  "reservations.get": "getReservation",
-  "reservations.claim": "claimReservation",
-  "reservations.release": "releaseReservation",
   "users.list": "listUsers",
   "users.create": "createUser",
   "users.get": "getUser",

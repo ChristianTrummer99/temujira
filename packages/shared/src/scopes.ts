@@ -17,12 +17,6 @@ export const SCOPES = [
     description: "Mint and revoke API keys on behalf of other users.",
   },
   {
-    id: "reservations:manage",
-    label: "Manage agent reservations",
-    description:
-      "Admit managed agent identities and claim or release exclusive identity+ticket reservations.",
-  },
-  {
     id: "workspaces:create",
     label: "Create workspaces",
     description: "Create new workspaces.",

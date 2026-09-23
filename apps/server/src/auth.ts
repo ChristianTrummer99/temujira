@@ -14,8 +14,7 @@ import type { Db } from "./db";
 import { apiKeys, sessions, users } from "./db/schema";
 import { forbidden, unauthorized, HttpError } from "./errors";
 import { hasScope } from "./access";
-import { activeReservationForKey, isManagedAgent } from "./reservations";
-import type { ReservationRow, UserRow } from "./serialize";
+import type { UserRow } from "./serialize";
 import { newId, now } from "./util";
 
 const scrypt = (
@@ -197,12 +196,6 @@ export interface AuthResult {
   user: UserRow;
   kind: AuthKind;
   sessionId?: string;
-  /** Bearer `tmj_` API-key id (worker-credential policy keys off this). */
-  apiKeyId?: string;
-  /** True when the user is an admitted managed agent identity. */
-  managedAgent?: boolean;
-  /** Active reservation bound to this API key, when the credential is a worker key. */
-  reservation?: ReservationRow | null;
 }
 
 function verifySessionToken(
@@ -230,7 +223,7 @@ function verifySessionToken(
   return { user: row.user, sessionId: row.session.id };
 }
 
-function verifyApiKey(db: Db, token: string): { user: UserRow; keyId: string } | null {
+function verifyApiKey(db: Db, token: string): UserRow | null {
   const t = now();
   const row = db
     .select({ key: apiKeys, user: users })
@@ -245,7 +238,7 @@ function verifyApiKey(db: Db, token: string): { user: UserRow; keyId: string } |
       .where(eq(apiKeys.id, row.key.id))
       .run();
   }
-  return { user: row.user, keyId: row.key.id };
+  return row.user;
 }
 
 export function authenticate(c: Context, db: Db): AuthResult | null {
@@ -255,13 +248,8 @@ export function authenticate(c: Context, db: Db): AuthResult | null {
     if (!m) return null;
     const token = m[1]!;
     if (token.startsWith("tmj_")) {
-      const key = verifyApiKey(db, token);
-      if (!key) return null;
-      // Worker-credential context: only agent identities can be admitted, and only the
-      // reservation's own key is a worker key (a second key for the same agent is not).
-      const managedAgent = key.user.isAgent ? isManagedAgent(db, key.user.id) : false;
-      const reservation = managedAgent ? (activeReservationForKey(db, key.keyId) ?? null) : null;
-      return { user: key.user, kind: "bearer", apiKeyId: key.keyId, managedAgent, reservation };
+      const user = verifyApiKey(db, token);
+      return user ? { user, kind: "bearer" } : null;
     }
     if (token.startsWith("tms_")) {
       const res = verifySessionToken(db, token);
@@ -329,9 +317,6 @@ export function requireAuth(
     c.set("user", result.user);
     c.set("authKind", result.kind);
     c.set("sessionId", result.sessionId);
-    c.set("apiKeyId", result.apiKeyId);
-    c.set("managedAgent", result.managedAgent);
-    c.set("reservation", result.reservation ?? null);
     await next();
   };
 }

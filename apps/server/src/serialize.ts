@@ -8,7 +8,6 @@ import type {
   FieldDef,
   InboxItem,
   QueueEntry,
-  Reservation,
   Status,
   Tag,
   Task,
@@ -24,9 +23,7 @@ import type {
   fieldDefs,
   fieldValues,
   inboxItems,
-  managedAgents,
   queueEntries,
-  reservations,
   statuses,
   tags,
   taskLinks,
@@ -49,27 +46,6 @@ export type TaskLinkRow = typeof taskLinks.$inferSelect;
 export type FieldDefRow = typeof fieldDefs.$inferSelect;
 export type FieldValueRow = typeof fieldValues.$inferSelect;
 export type QueueEntryRow = typeof queueEntries.$inferSelect;
-export type ManagedAgentRow = typeof managedAgents.$inferSelect;
-export type ReservationRow = typeof reservations.$inferSelect;
-
-/** `task_key` is resolved by the caller (join or point lookup) so this stays pure. */
-export function reservationToApi(r: ReservationRow, taskKey: string): Reservation {
-  return {
-    id: r.id,
-    agent_user_id: r.agentUserId,
-    task_id: r.taskId,
-    task_key: taskKey,
-    run_reference: r.runReference,
-    request_id: r.requestId,
-    api_key_id: r.apiKeyId,
-    manager_user_id: r.managerUserId,
-    status: r.status as Reservation["status"],
-    created_at: r.createdAt,
-    released_at: r.releasedAt,
-    released_by: r.releasedBy,
-    release_reason: r.releaseReason,
-  };
-}
 
 export function userToApi(u: UserRow, workspaceIds: string[] = []): User {
   return {

@@ -200,57 +200,6 @@ Queues are owner-scoped. New entries append as queued; duplicate task addition c
 `next` prefers running, then ready, then queued. Complete/remove only removes queue
 metadata. Reorder requires the full exact list of queue-entry IDs.
 
-## Managed agents and reservations
-
-Reservations are server-enforced exclusive leases: one managed agent identity bound to one
-ticket, with its own API key. They exist so concurrent foremen cannot double-book a worker
-identity or a ticket, and so a worker key can only write its own ticket.
-
-```text
-tmj agent list [--deactivated]
-tmj agent admit <userId> [--note <note>]
-tmj agent remove <userId>
-
-tmj reservation claim --agent <userId> --task <idOrKey> --run <reference>
-                      --request-id <id> [--adopt-existing-assignment]
-tmj reservation list [--agent <userId>] [--task <idOrKey>]
-                     [--status active|released] [--request-id <id>]
-                     [--limit <n>] [--offset <n>]
-tmj reservation get <reservationId>
-tmj reservation lookup --request-id <id>
-tmj reservation current
-tmj reservation release <reservationId> [--reason <reason>]
-```
-
-Semantics that callers must design around:
-
-- **Admission is explicit.** `agent admit` enters an existing agent account into the
-  workflow; names never auto-admit. Unadmitted, deactivated, or actively reserved
-  identities are not claimable. Availability is derived from reservation state — never
-  infer it from idle processes, quiet logs, empty queues, or ticket status.
-- **Claim is atomic and idempotent.** `--request-id` is the idempotency key: repeating the
-  same claim returns the same reservation with `token: null` (the worker key is revealed
-  only once) and `replayed: true`. Reusing a request id for different inputs conflicts.
-  After a lost token, `reservation release` then claim again with a new request id.
-- **One active reservation per identity and per ticket**, enforced by partial unique
-  indexes. A claim cannot steal a ticket assigned to someone else; a ticket already
-  assigned to the same agent without a reservation needs `--adopt-existing-assignment`.
-- **Worker keys are reservation-bound.** A managed agent's ordinary keys can read but
-  cannot perform job writes; only the claim's key may mutate the reserved ticket
-  (status/assignment/title/description/comments/attachments, links involving that ticket).
-  Worker credentials cannot mint keys, manage users, manage reservations, or write other
-  tickets. Queue/inbox/read operations stay available.
-- **Assignment into a managed identity requires the claim path** — ordinary
-  `task assign` to a managed agent conflicts (409) by design. Reassigning a reserved
-  ticket also requires releasing first; `release` clears the assignment only when the
-  ticket is still assigned to that worker and never overwrites a different assignee.
-- **Release is explicit** (no timeout/heartbeat expiry). It revokes the reservation's key
-  and keeps the identity + history; the next claim mints a fresh key. Releasing does not
-  certify the job complete, and it cannot stop a native process — quiesce the old session
-  first. Repeated releases are harmless and stale releases never touch newer reservations.
-- `reservation current` is the worker's self-check (identity, reservation, ticket, run
-  reference). Secrets never appear in lists, inspection, or activity.
-
 ## Attachments
 
 ```text

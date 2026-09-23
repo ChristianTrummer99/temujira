@@ -170,47 +170,6 @@ Task field updates are partial. An empty value clears that one field. By contras
 supplying any `--tag` flags to `task update` replaces the task's complete tag set; read the
 current task first and include every tag that should remain.
 
-## Reserve an agent identity for a ticket
-
-Reservations are exclusive leases for agent work: one managed agent identity bound to one
-ticket, with a reservation-bound API key. Use them whenever several workers or foremen
-could otherwise double-book the same identity or the same ticket.
-
-```sh
-# Once per identity: admit an existing agent account (explicit reconciliation).
-tmj agent admit <userId> --note "no keys in use" --json
-tmj agent list --json                       # availability + current reservation + conflicts
-
-# Claim identity + ticket atomically; the worker key prints exactly once.
-tmj reservation claim --agent <userId> --task ENG-42 \
-  --run "batch-4/run-001" --request-id "run-001-attempt-1" --json
-
-# The worker verifies what it holds, then works only its ticket.
-tmj reservation current --json              # run with the worker key
-
-# Recovery and lifecycle.
-tmj reservation lookup --request-id "run-001-attempt-1" --json   # lost response?
-tmj reservation list --agent <userId> --status active --json
-tmj reservation release <reservationId> --reason "job done" --json
-```
-
-Rules that change how you write automation:
-
-- `--request-id` is the idempotency key. Retrying the same claim returns the same
-  reservation with `token: null` and `replayed: true`; it never re-reveals the token and
-  never mints a second key. If the token was lost, release and claim again with a new
-  request id.
-- A claim conflicts (409) when the identity or ticket is already reserved, when the ticket
-  is assigned to someone else, or when it is assigned to the same agent without a
-  reservation (pass `--adopt-existing-assignment` to reconcile that legacy case).
-- Worker keys can only mutate their reserved ticket. They cannot mint keys, manage users,
-  manage reservations, or write other tickets; ordinary keys of the same identity can
-  read but not write. Do not try to work around this by assigning the agent through
-  `task assign` — managed identities require the claim path by design.
-- Release is explicit and revokes the key; blocked or awaiting-review workers stay
-  reserved until you release. Quiesce the native process before releasing, because the
-  identity can be claimed again immediately.
-
 ## Collaborate through comments and links
 
 Use both visible mention text and `--mention` so humans can read the comment and Temujira
