@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { Command, CommanderError } from "commander";
 import { ApiError } from "@temujira/client";
 import { registerActivity } from "./commands/activity";
+import { registerAgent } from "./commands/agent";
 import { registerApi } from "./commands/api";
 import { registerApikey } from "./commands/apikey";
 import { registerAttach } from "./commands/attach";
@@ -12,6 +13,7 @@ import { registerField } from "./commands/field";
 import { registerInbox } from "./commands/inbox";
 import { registerMe } from "./commands/me";
 import { registerQueue } from "./commands/queue";
+import { registerReservation } from "./commands/reservation";
 import { registerSetup } from "./commands/setup";
 import { registerStatus } from "./commands/status";
 import { registerTag } from "./commands/tag";
@@ -78,6 +80,8 @@ export function buildProgram(): Command {
   registerActivity(program);
   registerInbox(program);
   registerApi(program);
+  registerAgent(program);
+  registerReservation(program);
   addGlobalOptions(program);
   for (const leaf of leafCommands(program)) {
     if (leaf !== program) addGlobalOptions(leaf);

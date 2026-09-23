@@ -4,7 +4,7 @@ import type { RouteId } from "@temujira/shared";
 import type { LoginRateLimiter } from "../auth";
 import type { ServerConfig } from "../config";
 import type { Db } from "../db";
-import type { UserRow } from "../serialize";
+import type { ReservationRow, UserRow } from "../serialize";
 import type { LocalStorage } from "../storage";
 
 export type AppEnv = {
@@ -12,6 +12,12 @@ export type AppEnv = {
     user?: UserRow;
     authKind?: "cookie" | "bearer";
     sessionId?: string;
+    /** Set for Bearer `tmj_` API-key requests: the key that authenticated. */
+    apiKeyId?: string;
+    /** True when the authenticated user is an admitted managed agent identity. */
+    managedAgent?: boolean;
+    /** Active reservation bound to the authenticated API key, when one exists. */
+    reservation?: ReservationRow | null;
     body?: unknown;
     query?: unknown;
   };

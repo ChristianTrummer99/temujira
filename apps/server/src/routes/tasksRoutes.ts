@@ -20,7 +20,7 @@ import {
   users,
   workspaces,
 } from "../db/schema";
-import { conflict, validationError } from "../errors";
+import { conflict, forbidden, validationError } from "../errors";
 import {
   asStringArray,
   taskToApi,
@@ -31,6 +31,12 @@ import {
   type UserRow,
 } from "../serialize";
 import { newId, now } from "../util";
+import {
+  assertAssigneeChangeAllowed,
+  assertManagedAssigneeAllowed,
+  assertWorkerTicketAccess,
+  isWorkerCredential,
+} from "../reservations";
 import { associate, recordActivity } from "./engagement";
 import { loadLinksForTask } from "./linksRoutes";
 import { requireTask, requireWorkspace } from "./resolve";
@@ -299,6 +305,8 @@ export function tasksHandlers(
         status = first;
       }
       const assignee = input.assignee_id != null ? requireActiveAssignee(ctx.db, input.assignee_id) : null;
+      // Assignment into a managed identity must go through the reservation claim path.
+      assertManagedAssigneeAllowed(ctx.db, c, assignee?.id ?? null, "");
       const tagIds = input.tag_ids !== undefined ? validateTagIds(ctx.db, ws.id, input.tag_ids) : [];
       const fieldValues = input.field_values !== undefined ? validateFieldValues(ctx.db, ws.id, input.field_values) : {};
       // Allocate the task number atomically: read next_task_number, bump it, and insert
@@ -364,6 +372,9 @@ export function tasksHandlers(
     "tasks.update": (c) => {
       const user = currentUser(c);
       const { task, workspace } = requireTask(ctx.db, c.req.param("idOrKey") ?? "", user);
+      // Worker credentials may only write their reserved ticket; re-reads the reservation
+      // so a release committed after auth cannot still commit this write.
+      assertWorkerTicketAccess(ctx.db, c, task.id);
       const input = body<z.infer<typeof UpdateTaskInputSchema>>(c);
       const t = now();
       const updates: Partial<typeof tasks.$inferInsert> = { updatedAt: t };
@@ -386,6 +397,14 @@ export function tasksHandlers(
         newAssignee = input.assignee_id === null ? null : requireActiveAssignee(ctx.db, input.assignee_id);
         updates.assigneeId = newAssignee?.id ?? null;
         assigneeChanged = (newAssignee?.id ?? null) !== task.assigneeId;
+        // Two guards: assignment into a managed identity needs the claim path (except a
+        // worker re-asserting its own reservation), and a reserved ticket cannot change
+        // hands through ordinary edits at all.
+        assertManagedAssigneeAllowed(ctx.db, c, newAssignee?.id ?? null, task.id);
+        assertAssigneeChangeAllowed(ctx.db, c, task.id, task.assigneeId, newAssignee?.id ?? null);
+      }
+      if (input.archived !== undefined && isWorkerCredential(c)) {
+        throw forbidden("a reserved worker cannot archive or restore tickets; release first");
       }
       if (input.archived === true && task.archivedAt === null) {
         updates.archivedAt = t;

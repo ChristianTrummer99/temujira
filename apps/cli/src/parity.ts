@@ -1,5 +1,6 @@
 import type { RouteId } from "@temujira/shared";
 import { COMMAND_ROUTES as ACTIVITY_ROUTES } from "./commands/activity";
+import { COMMAND_ROUTES as AGENT_ROUTES } from "./commands/agent";
 import { COMMAND_ROUTES as API_ROUTES } from "./commands/api";
 import { COMMAND_ROUTES as APIKEY_ROUTES } from "./commands/apikey";
 import { COMMAND_ROUTES as ATTACH_ROUTES } from "./commands/attach";
@@ -9,6 +10,7 @@ import { COMMAND_ROUTES as FIELD_ROUTES } from "./commands/field";
 import { COMMAND_ROUTES as INBOX_ROUTES } from "./commands/inbox";
 import { COMMAND_ROUTES as ME_ROUTES } from "./commands/me";
 import { COMMAND_ROUTES as QUEUE_ROUTES } from "./commands/queue";
+import { COMMAND_ROUTES as RESERVATION_ROUTES } from "./commands/reservation";
 import { COMMAND_ROUTES as SETUP_ROUTES } from "./commands/setup";
 import { COMMAND_ROUTES as STATUS_ROUTES } from "./commands/status";
 import { COMMAND_ROUTES as TAG_ROUTES } from "./commands/tag";
@@ -37,4 +39,6 @@ export const COMMAND_ROUTE_MAP: Record<string, readonly RouteId[]> = {
   ...ACTIVITY_ROUTES,
   ...INBOX_ROUTES,
   ...API_ROUTES,
+  ...AGENT_ROUTES,
+  ...RESERVATION_ROUTES,
 };

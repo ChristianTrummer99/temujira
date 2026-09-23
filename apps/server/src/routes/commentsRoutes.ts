@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type { CreateCommentInputSchema, UpdateCommentInputSchema } from "@temujira/shared";
 import { attachments, comments, inboxItems, mentions, users } from "../db/schema";
 import { forbidden, notFound, validationError } from "../errors";
+import { assertWorkerTicketAccess } from "../reservations";
 import type { AttachmentRow, CommentRow, UserRow } from "../serialize";
 import { newId, now } from "../util";
 import { commentWithReplies, threadedComments } from "./commentSerialize";
@@ -70,6 +71,7 @@ export function commentsHandlers(
     "comments.create": (c) => {
       const user = currentUser(c);
       const { task, workspace } = requireTask(ctx.db, c.req.param("idOrKey") ?? "", user);
+      assertWorkerTicketAccess(ctx.db, c, task.id);
       const input = body<z.infer<typeof CreateCommentInputSchema>>(c);
 
       // ---- resolve the parent, coercing reply-to-reply up to the thread root ----
@@ -195,6 +197,7 @@ export function commentsHandlers(
       const user = currentUser(c);
       const comment = requireComment(ctx, c.req.param("id") ?? "");
       assertTaskIdAccess(ctx.db, user, comment.taskId);
+      assertWorkerTicketAccess(ctx.db, c, comment.taskId);
       assertAuthorOrAdmin(user, comment, "edit");
       const input = body<z.infer<typeof UpdateCommentInputSchema>>(c);
       const updates: Partial<typeof comments.$inferInsert> = { updatedAt: now() };
@@ -227,6 +230,7 @@ export function commentsHandlers(
       const user = currentUser(c);
       const comment = requireComment(ctx, c.req.param("id") ?? "");
       assertTaskIdAccess(ctx.db, user, comment.taskId);
+      assertWorkerTicketAccess(ctx.db, c, comment.taskId);
       assertAuthorOrAdmin(user, comment, "delete");
       const replyIds =
         comment.parentId === null

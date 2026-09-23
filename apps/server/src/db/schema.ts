@@ -456,3 +456,64 @@ export const queueEntries = sqliteTable(
     check("queue_entries_state_check", sql`${t.state} IN ('queued','ready','running')`),
   ],
 );
+
+/**
+ * Agent identities explicitly admitted to the reservation workflow. Admission is the
+ * reconciliation act: unadmitted agents are never claimable, and an identity's
+ * availability is derived from active reservation state, never a mutable flag.
+ */
+export const managedAgents = sqliteTable("managed_agents", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id),
+  admittedBy: text("admitted_by")
+    .notNull()
+    .references(() => users.id),
+  admittedAt: integer("admitted_at").notNull(),
+  note: text("note"),
+});
+
+/**
+ * Exclusive identity+ticket leases. A reservation
+ * binds one managed agent, one task, one run reference and one freshly minted API key.
+ * Partial unique indexes enforce at most one ACTIVE reservation per identity and per task
+ * at the database boundary; the API additionally makes request_id idempotent.
+ */
+export const reservations = sqliteTable(
+  "reservations",
+  {
+    id: text("id").primaryKey(),
+    agentUserId: text("agent_user_id")
+      .notNull()
+      .references(() => users.id),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    runReference: text("run_reference").notNull(),
+    requestId: text("request_id").notNull(),
+    apiKeyId: text("api_key_id")
+      .notNull()
+      .references(() => apiKeys.id),
+    managerUserId: text("manager_user_id")
+      .notNull()
+      .references(() => users.id),
+    status: text("status").notNull(),
+    createdAt: integer("created_at").notNull(),
+    releasedAt: integer("released_at"),
+    releasedBy: text("released_by").references(() => users.id),
+    releaseReason: text("release_reason"),
+  },
+  (t) => [
+    uniqueIndex("reservations_request_id_unique").on(t.requestId),
+    uniqueIndex("reservations_active_agent_unique")
+      .on(t.agentUserId)
+      .where(sql`${t.status} = 'active'`),
+    uniqueIndex("reservations_active_task_unique")
+      .on(t.taskId)
+      .where(sql`${t.status} = 'active'`),
+    index("reservations_api_key_id_idx").on(t.apiKeyId),
+    index("reservations_task_id_idx").on(t.taskId),
+    index("reservations_agent_user_id_idx").on(t.agentUserId),
+    check("reservations_status_check", sql`${t.status} IN ('active','released')`),
+  ],
+);

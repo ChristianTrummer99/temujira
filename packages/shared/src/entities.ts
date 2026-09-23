@@ -62,6 +62,52 @@ export const ApiKeySchema = z.object({
 });
 export type ApiKey = z.infer<typeof ApiKeySchema>;
 
+// ---------- reservations (exclusive agent assignments) ----------
+
+export const ReservationStatusSchema = z.enum(["active", "released"]);
+export type ReservationStatus = z.infer<typeof ReservationStatusSchema>;
+
+/**
+ * A durable lease binding one managed agent identity to one task, with its own API key.
+ * At most one reservation may be active per identity and per task (partial unique indexes).
+ * Availability is always derived from this state, never from a separate boolean.
+ */
+export const ReservationSchema = z.object({
+  id: UlidSchema,
+  agent_user_id: UlidSchema,
+  task_id: UlidSchema,
+  task_key: z.string(),
+  /** Opaque client run reference, e.g. "batch-4/run-001". */
+  run_reference: z.string(),
+  /** Client-generated idempotency key for the claim that created this reservation. */
+  request_id: z.string(),
+  api_key_id: UlidSchema,
+  manager_user_id: UlidSchema,
+  status: ReservationStatusSchema,
+  created_at: TimestampSchema,
+  released_at: TimestampSchema.nullable(),
+  released_by: UlidSchema.nullable(),
+  release_reason: z.string().nullable(),
+});
+export type Reservation = z.infer<typeof ReservationSchema>;
+
+/** An agent identity explicitly admitted to the reservation workflow. */
+export const ManagedAgentSchema = z.object({
+  user_id: UlidSchema,
+  name: z.string(),
+  deactivated: z.boolean(),
+  admitted_by: UlidSchema,
+  admitted_at: TimestampSchema,
+  note: z.string().nullable(),
+  /** Admitted, not deactivated, and holding no active reservation. */
+  available: z.boolean(),
+  /** The active reservation, if any. Reservation state is the availability source of truth. */
+  reservation: ReservationSchema.nullable(),
+  /** Reasons the identity needs reconciliation before/while it is claimable. */
+  conflicts: z.array(z.string()),
+});
+export type ManagedAgent = z.infer<typeof ManagedAgentSchema>;
+
 export const WorkspaceSchema = z.object({
   id: UlidSchema,
   name: z.string(),
@@ -338,6 +384,52 @@ export const CreateApiKeyInputSchema = z.object({
   name: NameSchema,
   /** Admin only: mint a key for another user (agent provisioning). */
   user_id: UlidSchema.optional(),
+});
+
+// ---------- reservation inputs ----------
+
+export const CreateReservationInputSchema = z.object({
+  /** The managed agent identity (stable user id, never a display name). */
+  agent_user_id: UlidSchema,
+  /** Task ULID or display key (e.g. "TEM-42"). */
+  task: z.string().trim().min(1).max(64),
+  /** Opaque client run reference, e.g. "batch-4/run-001". */
+  run_reference: z.string().trim().min(1).max(200),
+  /** Client-generated idempotency key; repeating the same claim returns the same reservation. */
+  request_id: z.string().trim().min(1).max(200),
+  /**
+   * Required to adopt a ticket that is already assigned to the same agent without a
+   * reservation (legacy/ambiguous work). Without it such a claim conflicts.
+   */
+  adopt_existing_assignment: z.boolean().default(false),
+});
+
+export const ReleaseReservationInputSchema = z.object({
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+
+export const AdmitManagedAgentInputSchema = z.object({
+  user_id: UlidSchema,
+  note: z.string().trim().max(500).optional(),
+});
+
+export const LookupReservationQuerySchema = z.object({
+  /** Recover a committed claim after a lost response or restart. */
+  request_id: z.string().trim().min(1).max(200),
+});
+
+export const ListReservationsQuerySchema = z.object({
+  agent_user_id: UlidSchema.optional(),
+  /** Task ULID or display key. */
+  task: z.string().trim().min(1).max(64).optional(),
+  status: ReservationStatusSchema.optional(),
+  request_id: z.string().trim().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const ListManagedAgentsQuerySchema = z.object({
+  include_deactivated: QueryBoolSchema,
 });
 
 export const CreateUserInputSchema = z

@@ -11,7 +11,8 @@ import {
 import type { Db } from "../db";
 import { accessibleWorkspaceIds, assertWorkspaceAccess } from "../access";
 import { statuses, taskLinks, tasks, workspaces } from "../db/schema";
-import { conflict, notFound, validationError } from "../errors";
+import { conflict, forbidden, notFound, validationError } from "../errors";
+import { workerReservation } from "../reservations";
 import { taskLinkToApi, type StatusRow, type TaskLinkRow, type TaskRow, type UserRow, type WorkspaceRow } from "../serialize";
 import { newId, now } from "../util";
 import { recordActivity } from "./engagement";
@@ -142,6 +143,12 @@ export function linksHandlers(ctx: AppContext): Pick<Handlers, "links.create" | 
       const otherEnd = requireTask(ctx.db, input.task, user);
       // Compare resolved ULIDs: "START-1" and its own id are the same task.
       if (otherEnd.task.id === urlEnd.task.id) throw validationError("a task cannot link to itself");
+      // A worker may only touch links that involve its reserved ticket: linking is allowed
+      // to dependency tickets, never between two unrelated ones.
+      const worker = workerReservation(c);
+      if (worker && worker.taskId !== urlEnd.task.id && worker.taskId !== otherEnd.task.id) {
+        throw forbidden("this credential is reserved for a different ticket");
+      }
 
       const { type, src, dst } = canonicalize(input.type, urlEnd, otherEnd);
 
@@ -215,6 +222,11 @@ export function linksHandlers(ctx: AppContext): Pick<Handlers, "links.create" | 
         .all();
       const src = ends.find((e) => e.task.id === row.srcTaskId)!;
       const dst = ends.find((e) => e.task.id === row.dstTaskId)!;
+      // A worker may only touch links that involve its reserved ticket.
+      const worker = workerReservation(c);
+      if (worker && worker.taskId !== src.task.id && worker.taskId !== dst.task.id) {
+        throw forbidden("this credential is reserved for a different ticket");
+      }
       // A link is visible only when both ends are: unlink requires access to both.
       assertWorkspaceAccess(ctx.db, user, src.workspace.id, "link");
       assertWorkspaceAccess(ctx.db, user, dst.workspace.id, "link");
