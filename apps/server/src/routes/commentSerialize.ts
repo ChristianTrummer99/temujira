@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { Comment } from "@temujira/shared";
 import type { Db } from "../db";
 import { attachments, comments, users } from "../db/schema";
@@ -18,7 +18,9 @@ export function attachmentsByComment(db: Db, commentIds: string[]): Map<string, 
     .select()
     .from(attachments)
     .where(inArray(attachments.commentId, commentIds))
-    .orderBy(asc(attachments.createdAt), asc(attachments.id))
+    // rowid breaks same-millisecond ties by insertion order (ULIDs are random within
+    // a millisecond, so id order could disagree with the order things were posted).
+    .orderBy(asc(attachments.createdAt), sql`${attachments}.rowid`)
     .all();
   for (const a of rows) {
     if (!a.commentId) continue;
@@ -65,9 +67,9 @@ export function loadCommentsById(db: Db, ids: string[]): Map<string, Comment> {
 
 /**
  * A task's comments as a one-level thread: roots in chronological order, each with its
- * replies nested oldest-first. Replies never appear at the top level. A reply whose parent
- * is missing (should not happen — deleting a root cascades) is promoted to a root so it
- * can never silently vanish.
+ * replies nested oldest-first (insertion order breaks same-millisecond ties). Replies never
+ * appear at the top level. A reply whose parent is missing (should not happen — deleting a
+ * root cascades) is promoted to a root so it can never silently vanish.
  */
 export function threadedComments(db: Db, taskId: string): Comment[] {
   const rows = db
@@ -75,7 +77,7 @@ export function threadedComments(db: Db, taskId: string): Comment[] {
     .from(comments)
     .innerJoin(users, eq(comments.authorId, users.id))
     .where(eq(comments.taskId, taskId))
-    .orderBy(asc(comments.createdAt), asc(comments.id))
+    .orderBy(asc(comments.createdAt), sql`${comments}.rowid`)
     .all();
   if (rows.length === 0) return [];
   const atts = attachmentsByComment(db, rows.map((r) => r.comment.id));
@@ -102,7 +104,7 @@ export function commentWithReplies(db: Db, row: CommentRow): Comment {
           .select()
           .from(comments)
           .where(eq(comments.parentId, row.id))
-          .orderBy(asc(comments.createdAt), asc(comments.id))
+          .orderBy(asc(comments.createdAt), sql`${comments}.rowid`)
           .all()
       : [];
   const flat = serializeFlat(db, replyRows);

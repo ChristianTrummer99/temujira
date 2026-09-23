@@ -59,6 +59,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ArchiveIcon,
   CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   DownloadIcon,
   FileIcon,
   Link2Icon,
@@ -1485,6 +1487,8 @@ function CommentThread({
   onPreview: (a: Attachment) => void;
 }) {
   const [replyingTo, setReplyingTo] = React.useState<string | null>(null);
+  // Reply threads are collapsible; expanded by default so nothing is hidden.
+  const [repliesCollapsed, setRepliesCollapsed] = React.useState(false);
 
   return (
     <View className="gap-3">
@@ -1497,7 +1501,10 @@ function CommentThread({
         onPatch={onPatch}
         onMentionPress={onMentionPress}
         onPreview={onPreview}
-        onReply={() => setReplyingTo(replyingTo === root.id ? null : root.id)}
+        onReply={() => {
+          setRepliesCollapsed(false);
+          setReplyingTo(replyingTo === root.id ? null : root.id);
+        }}
       />
 
       {root.question ? (
@@ -1512,6 +1519,23 @@ function CommentThread({
       ) : null}
 
       {root.replies.length > 0 ? (
+        <Pressable
+          onPress={() => setRepliesCollapsed((v) => !v)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: !repliesCollapsed }}
+          hitSlop={8}
+          className="ml-4 flex-row items-center gap-1 self-start pl-4">
+          <Icon
+            as={repliesCollapsed ? ChevronRightIcon : ChevronDownIcon}
+            className="text-muted-foreground size-3.5"
+          />
+          <Text className="text-muted-foreground text-xs">
+            {root.replies.length} {root.replies.length === 1 ? 'reply' : 'replies'}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {root.replies.length > 0 && !repliesCollapsed ? (
         <View className="border-border ml-4 gap-3 border-l pl-4">
           {root.replies.map((reply) => (
             <CommentCard
@@ -1526,7 +1550,10 @@ function CommentThread({
               onMentionPress={onMentionPress}
               onPreview={onPreview}
               // A reply to a reply targets the root (the server coerces anyway).
-              onReply={() => setReplyingTo(replyingTo === root.id ? null : root.id)}
+              onReply={() => {
+                setRepliesCollapsed(false);
+                setReplyingTo(replyingTo === root.id ? null : root.id);
+              }}
             />
           ))}
         </View>

@@ -78,7 +78,15 @@ async function makeManager() {
   });
 }
 
-type SessionJson = { session: { id: string; user_id: string; api_key_id: string; status: string } | null };
+type SessionJson = {
+  session: {
+    id: string;
+    user_id: string;
+    api_key_id: string;
+    status: string;
+    release_reason: string | null;
+  } | null;
+};
 
 describe("shared mode (default) compatibility", () => {
   it("lets multiple keys use the same identity concurrently", async () => {

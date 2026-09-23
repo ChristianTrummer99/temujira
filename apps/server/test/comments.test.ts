@@ -58,6 +58,62 @@ const listComments = async (idOrKey: string = task.id): Promise<CommentJson[]> =
   return ((await res.json()) as { items: CommentJson[] }).items;
 };
 
+describe("comment ordering", () => {
+  it("orders replies top-down by insertion even within the same millisecond", async () => {
+    // Own workspace + task: this test seeds rows directly and must not disturb the
+    // shared thread the other tests assert on.
+    const ws = await makeWorkspace(t.app, admin.token, "ORD");
+    const own = await makeTask(t.app, admin.token, ws.id, { title: "Ordering task" });
+    const created = await t.app.request(
+      `/api/v1/tasks/${own.id}/comments`,
+      jsonReq("POST", { body: "Ordering root" }, bearer(author.token)),
+    );
+    expect(created.status).toBe(200);
+    const root = ((await created.json()) as { comment: CommentJson }).comment;
+    const { comments: commentsTable } = await import("../src/db/schema");
+    const createdAt = Date.now();
+    // Inserted directly so both rows share createdAt, with the LATER insert carrying the
+    // lexicographically SMALLER id — exactly what a random ULID suffix can produce within
+    // one millisecond. Ordering by id would put the newest reply on top; insertion order
+    // (rowid) must win instead.
+    t.ctx.db
+      .insert(commentsTable)
+      .values([
+        {
+          id: "01ZZZZZZZZZZZZZZZZZZZZZZZ9",
+          taskId: own.id,
+          parentId: root.id,
+          authorId: author.userId,
+          body: "first inserted",
+          questionOptions: null,
+          answerOptionIndex: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+        {
+          id: "01AAAAAAAAAAAAAAAAAAAAAAAA",
+          taskId: own.id,
+          parentId: root.id,
+          authorId: author.userId,
+          body: "second inserted",
+          questionOptions: null,
+          answerOptionIndex: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      ])
+      .run();
+
+    const listed = await t.app.request(`/api/v1/tasks/${own.id}/comments`, {
+      headers: bearer(author.token),
+    });
+    expect(listed.status).toBe(200);
+    const items = ((await listed.json()) as { items: CommentJson[] }).items;
+    const ordered = items.find((c) => c.id === root.id)!;
+    expect(ordered.replies.map((r) => r.body)).toEqual(["first inserted", "second inserted"]);
+  });
+});
+
 describe("comments.create + list", () => {
   it("creates a root comment authored by the current user; embeds the author", async () => {
     const comment = await createComment(author.token, "First!");
