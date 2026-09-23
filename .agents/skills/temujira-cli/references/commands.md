@@ -15,30 +15,33 @@ tmj auth logout
 tmj me update [--name <name>] [--password]
               [--current-password <password>] [--new-password <password>]
 
-tmj apikey list [--user <userId>]
+tmj apikey list [--user <userId>] [--all]
 tmj apikey create --name <name> [--user <userId>]
 tmj apikey revoke <apiKeyId>
 ```
 
 `setup` creates the first admin only. Login and setup mint and save an API key. Hidden
 password prompts require a TTY; automation must pass password options or use an API key.
-Admin-only `--user` API-key operations act on another user.
+Admin-only `--user` API-key operations act on another user; `apikey list --all`
+lists every user's keys (metadata only — secrets are never retrievable).
 
 ## Users
 
 ```text
 tmj user list [--deactivated]
 tmj user search <query> [--limit <n>]
-tmj user create --email <email> --name <name>
-                [--role admin|member] [--agent]
-                [--password <password>] [--with-key]
+tmj user create --name <name>
+                (--email <email> --password <password> | --agent)
+                [--role admin|member] [--with-key]
 tmj user get <userId>
 tmj user update <userId> [--name <name>] [--role admin|member]
                 [--password [password]] [--reactivate]
 tmj user deactivate <userId>
 ```
 
-Human users require passwords. Agent users are passwordless and API-key-only.
+Human users require an email and password. Agent users are email-less, passwordless, and
+API-key-only; their names are unique (case-insensitive) because mentions and assignee
+pickers address them by name.
 `--deactivated` includes deactivated users rather than filtering exclusively to them.
 
 ## Workspaces

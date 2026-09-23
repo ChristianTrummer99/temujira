@@ -14,18 +14,24 @@ export function registerApikey(program: Command): void {
 
   apikey
     .command("list")
-    .description("List your API keys (admins: --user lists another user's)")
+    .description("List your API keys (admins: --user <id> or --all)")
     .option("--user <id>", "list another user's keys (admin only)")
-    .action(async (opts: { user?: string }, cmd: Command) => {
+    .option("--all", "list every user's keys (admin only)")
+    .action(async (opts: { user?: string; all?: boolean }, cmd: Command) => {
       const ctx = getCtx(cmd);
-      const res = await ctx.client.listApiKeys(opts.user ? { user_id: opts.user } : {});
+      const res = await ctx.client.listApiKeys(
+        opts.all ? { all: true } : opts.user ? { user_id: opts.user } : {}
+      );
       emit(ctx.mode, {
         json: res,
         human: () =>
           table(
-            ["ID", "NAME", "PREFIX", "LAST_USED", "REVOKED", "CREATED"],
+            opts.all
+              ? ["ID", "USER", "NAME", "PREFIX", "LAST_USED", "REVOKED", "CREATED"]
+              : ["ID", "NAME", "PREFIX", "LAST_USED", "REVOKED", "CREATED"],
             res.items.map((k) => [
               k.id,
+              ...(opts.all ? [k.user_id] : []),
               k.name,
               k.token_prefix,
               ts(k.last_used_at),

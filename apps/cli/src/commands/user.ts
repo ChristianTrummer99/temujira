@@ -34,7 +34,7 @@ export const COMMAND_ROUTES = {
 function userKv(user: User): string {
   return kv([
     ["id", user.id],
-    ["email", user.email],
+    ["email", user.email ?? "—"],
     ["name", user.name],
     ["role", user.role],
     ["agent", user.is_agent ? "yes" : "no"],
@@ -50,7 +50,7 @@ function userKv(user: User): string {
 }
 
 interface UserCreateOpts {
-  email: string;
+  email?: string;
   name: string;
   role?: "admin" | "member";
   agent?: boolean;
@@ -88,7 +88,7 @@ export function registerUser(program: Command): void {
             ["ID", "EMAIL", "NAME", "ROLE", "AGENT", "DEACTIVATED"],
             res.items.map((u) => [
               u.id,
-              u.email,
+              u.email ?? "—",
               u.name,
               u.role,
               u.is_agent ? "yes" : "",
@@ -115,7 +115,7 @@ export function registerUser(program: Command): void {
         human: () =>
           table(
             ["ID", "EMAIL", "NAME", "ROLE", "AGENT"],
-            res.items.map((u) => [u.id, u.email, u.name, u.role, u.is_agent ? "yes" : ""]),
+            res.items.map((u) => [u.id, u.email ?? "—", u.name, u.role, u.is_agent ? "yes" : ""]),
           ),
         quiet: () => res.items.map((u) => u.id).join("\n"),
       });
@@ -123,11 +123,11 @@ export function registerUser(program: Command): void {
 
   user
     .command("create")
-    .description("Create a human (--password required) or agent (--agent, API-key-only) account")
-    .requiredOption("--email <email>", "email address")
+    .description("Create a human (--email + --password required) or agent (--agent, API-key-only) account")
+    .option("--email <email>", "email address (required for human accounts)")
     .requiredOption("--name <name>", "display name")
     .addOption(new Option("--role <role>", "account role").choices(["admin", "member"]))
-    .option("--agent", "create an agent account (no password; API keys only)")
+    .option("--agent", "create an agent account (no email or password; API keys only)")
     .option("--password <password>", "password (required for human accounts)")
     .option("--with-key", 'also mint an API key named "provisioned" and print its token once')
     .option("--scope <scope>", `capability scope (repeatable): ${SCOPE_IDS.join(", ")}`, collect, [] as string[])
@@ -143,6 +143,15 @@ export function registerUser(program: Command): void {
           EXIT_CODES.usage,
         );
       }
+      if (opts.agent && opts.email !== undefined) {
+        throw new CliError("agent accounts do not use email (drop --email)", EXIT_CODES.usage);
+      }
+      if (!opts.agent && opts.email === undefined) {
+        throw new CliError(
+          "--email is required for human accounts (or pass --agent for an agent account)",
+          EXIT_CODES.usage,
+        );
+      }
       const ctx = getCtx(cmd);
       if (opts.allWorkspaces && (opts.workspace?.length ?? 0) > 0) {
         throw new CliError("--all-workspaces and --workspace are mutually exclusive", EXIT_CODES.usage);
@@ -150,7 +159,7 @@ export function registerUser(program: Command): void {
       const scopes = parseScopeArgs(opts.scope ?? []);
       const workspaceIds = await resolveWorkspaceIds(ctx.client, opts.workspace ?? []);
       const { user: created } = await ctx.client.createUser({
-        email: opts.email,
+        ...(opts.email !== undefined ? { email: opts.email } : {}),
         name: opts.name,
         ...(opts.role ? { role: opts.role } : {}),
         is_agent: opts.agent ?? false,
@@ -168,7 +177,10 @@ export function registerUser(program: Command): void {
       emit(ctx.mode, {
         json: key ? { user: created, apiKey: key.apiKey, token: key.token } : { user: created },
         human: () => {
-          const lines = [`created user ${created.email} (${created.id})`, userKv(created)];
+          const lines = [
+            `created ${created.is_agent ? "agent" : "user"} ${created.email ?? created.name} (${created.id})`,
+            userKv(created),
+          ];
           if (key) {
             lines.push(
               "",

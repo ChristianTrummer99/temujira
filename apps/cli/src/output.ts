@@ -29,9 +29,10 @@ export function ts(ms: number | null | undefined): string {
   return ms == null ? "" : new Date(ms).toISOString();
 }
 
-/** "Name <email>" (empty string for null). */
-export function userRef(u: { name: string; email: string } | null | undefined): string {
-  return u ? `${u.name} <${u.email}>` : "";
+/** "Name <email>" (bare name for email-less agent accounts). */
+export function userRef(u: { name: string; email: string | null } | null | undefined): string {
+  if (!u) return "";
+  return u.email ? `${u.name} <${u.email}>` : u.name;
 }
 
 /** "Name <email> (role[, agent])" — the whoami line. */

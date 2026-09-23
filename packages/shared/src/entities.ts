@@ -34,7 +34,8 @@ export type Role = z.infer<typeof RoleSchema>;
 
 export const UserSchema = z.object({
   id: UlidSchema,
-  email: z.string(),
+  /** NULL for agent accounts — they authenticate with API keys only. */
+  email: z.string().nullable(),
   name: z.string(),
   role: RoleSchema,
   is_agent: z.boolean(),
@@ -341,7 +342,8 @@ export const CreateApiKeyInputSchema = z.object({
 
 export const CreateUserInputSchema = z
   .object({
-    email: EmailInputSchema,
+    /** Required for human accounts; not allowed for agent accounts (API-key-only login). */
+    email: EmailInputSchema.optional(),
     name: NameSchema,
     role: RoleSchema.default("member"),
     is_agent: z.boolean().default(false),
@@ -355,6 +357,9 @@ export const CreateUserInputSchema = z
   })
   .refine((v) => (v.is_agent ? v.password === undefined : v.password !== undefined), {
     message: "password is required for human accounts and not allowed for agent accounts",
+  })
+  .refine((v) => (v.is_agent ? v.email === undefined : v.email !== undefined), {
+    message: "email is required for human accounts and not allowed for agent accounts",
   });
 
 export const UpdateUserInputSchema = z.object({
@@ -492,6 +497,8 @@ export const UpdateInboxQuerySchema = z.object({
 export const ListApiKeysQuerySchema = z.object({
   /** Admin only: list another user's keys. */
   user_id: UlidSchema.optional(),
+  /** Admin only: list every user's keys. */
+  all: QueryBoolSchema,
 });
 
 export const ListUsersQuerySchema = z.object({

@@ -14,7 +14,8 @@ export const users = sqliteTable(
   "users",
   {
     id: text("id").primaryKey(),
-    email: text("email").notNull(),
+    // NULL = agent account: API-key-only, no email (SQLite unique indexes allow many NULLs).
+    email: text("email"),
     name: text("name").notNull(),
     // NULL = agent account: cannot log in with a password, API keys only.
     passwordHash: text("password_hash"),

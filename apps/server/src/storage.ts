@@ -32,29 +32,52 @@ export class LocalStorage {
     const tmpPath = join(this.uploadsDir, tmpId);
     const hash = createHash("sha256");
     let size = 0;
-    await new Promise<void>((resolve, reject) => {
-      const out = createWriteStream(tmpPath, { flags: "wx" });
-      source.on("data", (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > this.maxBytes) {
-          source.unpipe(out);
-          out.destroy();
-          source.resume(); // drain the rest so the request can finish
-          reject(new HttpError("payload_too_large", `file exceeds ${this.maxBytes} bytes`));
-          return;
-        }
-        hash.update(chunk);
-      });
-      source.pipe(out);
-      out.on("finish", resolve);
-      out.on("error", reject);
-      source.on("error", reject);
-    }).catch((err) => {
+    const removeTmp = () => {
       try {
         if (existsSync(tmpPath)) unlinkSync(tmpPath);
       } catch {
         // best effort
       }
+    };
+    await new Promise<void>((resolve, reject) => {
+      const out = createWriteStream(tmpPath, { flags: "wx" });
+      let aborted = false;
+      source.on("data", (chunk: Buffer) => {
+        if (aborted) return;
+        size += chunk.length;
+        if (size > this.maxBytes) {
+          aborted = true;
+          source.unpipe(out);
+          source.resume(); // drain the rest so the request can finish
+          const err = new HttpError("payload_too_large", `file exceeds ${this.maxBytes} bytes`);
+          // The temp file is opened asynchronously; end() (not destroy) guarantees it
+          // exists before the callback runs, and we only reject once it is unlinked —
+          // so the 413 response can never race ahead of the cleanup.
+          let cleaned = false;
+          const finishAbort = () => {
+            if (cleaned) return;
+            cleaned = true;
+            removeTmp();
+            reject(err);
+          };
+          out.end(finishAbort);
+          out.once("close", finishAbort);
+          return;
+        }
+        hash.update(chunk);
+      });
+      source.pipe(out);
+      out.on("finish", () => {
+        if (!aborted) resolve();
+      });
+      out.on("error", (err) => {
+        if (!aborted) reject(err);
+      });
+      source.on("error", (err) => {
+        if (!aborted) reject(err);
+      });
+    }).catch((err) => {
+      removeTmp();
       throw err;
     });
     return { tmpId, size, sha256: hash.digest("hex") };

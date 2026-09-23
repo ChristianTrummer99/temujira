@@ -31,7 +31,9 @@ async function resolveMentionIds(
     const { items } = await client.searchUsers({ q: needle, limit: 50 });
     const lower = needle.toLowerCase();
     const match =
-      items.find((u) => u.name.toLowerCase() === lower || u.email.toLowerCase() === lower) ??
+      items.find(
+        (u) => u.name.toLowerCase() === lower || (u.email ?? "").toLowerCase() === lower
+      ) ??
       (items.length === 1 ? items[0] : undefined);
     if (!match) {
       throw new CliError(

@@ -159,7 +159,7 @@ export const ROUTES = {
     method: "GET",
     path: "/api-keys",
     auth: "user",
-    summary: "List own API keys (admin: ?user_id= lists another user's)",
+    summary: "List own API keys (admin: ?user_id= another user's, ?all=true everyone's)",
     query: ListApiKeysQuerySchema,
     response: listOf(ApiKeySchema),
   },

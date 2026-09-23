@@ -71,6 +71,22 @@ export function createDb(dataDir: string): DbHandle {
     backupBeforeMigrate(sqlite, dbPath);
   }
   const db = drizzle(sqlite, { schema });
-  migrate(db, { migrationsFolder: migrationsDir });
+  // Drizzle runs all migrations inside one transaction, where a SQL-level
+  // `PRAGMA foreign_keys=OFF` is a no-op. SQLite table rebuilds (how drizzle-kit
+  // expresses column changes such as dropping NOT NULL) require enforcement to be
+  // off, so flip it at the connection level around the run — then verify integrity
+  // so a real FK break can't hide behind the disabled window.
+  sqlite.pragma("foreign_keys = OFF");
+  try {
+    migrate(db, { migrationsFolder: migrationsDir });
+  } finally {
+    sqlite.pragma("foreign_keys = ON");
+  }
+  const violations = sqlite.pragma("foreign_key_check") as unknown[];
+  if (violations.length > 0) {
+    throw new Error(
+      `migrations left foreign key violations: ${JSON.stringify(violations.slice(0, 5))}`,
+    );
+  }
   return { db, sqlite, dbPath };
 }

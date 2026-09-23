@@ -16,6 +16,12 @@ export function apiKeyHandlers(
     "apiKeys.list": (c) => {
       const user = currentUser(c);
       const q = query<z.infer<typeof ListApiKeysQuerySchema>>(c);
+      if (q.all) {
+        if (!hasScope(user, "api_keys:manage"))
+          throw forbidden("missing scope: api_keys:manage");
+        const all = ctx.db.select().from(apiKeys).orderBy(desc(apiKeys.createdAt)).all();
+        return c.json({ items: all.map(apiKeyToApi) });
+      }
       let targetUserId = user.id;
       if (q.user_id && q.user_id !== user.id) {
         if (!hasScope(user, "api_keys:manage"))

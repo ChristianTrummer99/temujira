@@ -21,7 +21,7 @@ export async function resolveUserId(client: TemujiraClient, spec: string): Promi
   if (spec.includes("@")) {
     const { items } = await client.listUsers();
     const needle = spec.toLowerCase();
-    const user = items.find((u) => u.email.toLowerCase() === needle);
+    const user = items.find((u) => u.email !== null && u.email.toLowerCase() === needle);
     if (!user) throw new CliError(`no user with email ${spec}`, EXIT_CODES.notFound);
     return user.id;
   }

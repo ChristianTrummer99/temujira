@@ -74,6 +74,42 @@ describe("capability scopes", () => {
     expect(allowed.status).toBe(200);
   });
 
+  it("api_keys:manage lists every user's keys; members see only their own", async () => {
+    const target = await makeMember(t.app, admin.token);
+    const manager = await makeMember(t.app, admin.token, {
+      scopes: ["tasks:write", "api_keys:manage"],
+    });
+    const adminKey = await t.app.request(
+      "/api/v1/api-keys",
+      jsonReq("POST", { name: "admin-key" }, bearer(admin.token)),
+    );
+    expect(adminKey.status).toBe(200);
+    const targetKey = await t.app.request(
+      "/api/v1/api-keys",
+      jsonReq("POST", { name: "target-key", user_id: target.userId }, bearer(manager.token)),
+    );
+    expect(targetKey.status).toBe(200);
+
+    const denied = await t.app.request("/api/v1/api-keys?all=true", {
+      headers: bearer(target.token),
+    });
+    expect(denied.status).toBe(403);
+
+    const all = await t.app.request("/api/v1/api-keys?all=true", {
+      headers: bearer(manager.token),
+    });
+    expect(all.status).toBe(200);
+    const allBody = (await all.json()) as { items: { user_id: string }[] };
+    const owners = new Set(allBody.items.map((k) => k.user_id));
+    expect(owners.has(admin.userId)).toBe(true);
+    expect(owners.has(target.userId)).toBe(true);
+
+    const own = await t.app.request("/api/v1/api-keys", { headers: bearer(target.token) });
+    const ownBody = (await own.json()) as { items: { user_id: string }[] };
+    expect(ownBody.items.length).toBeGreaterThan(0);
+    expect(ownBody.items.every((k) => k.user_id === target.userId)).toBe(true);
+  });
+
   it("non-admin managers cannot escalate", async () => {
     const manager = await makeMember(t.app, admin.token, { scopes: ["tasks:write", "users:manage"] });
     const target = await makeMember(t.app, admin.token);

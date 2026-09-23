@@ -6,7 +6,7 @@ let admin: { token: string; userId: string };
 
 interface UserJson {
   id: string;
-  email: string;
+  email: string | null;
   name: string;
   role: string;
   is_agent: boolean;
@@ -54,31 +54,69 @@ describe("users.create", () => {
     expect(((await second.json()) as { error: { code: string } }).error.code).toBe("conflict");
   });
 
-  it("creates an agent account (no password, cannot log in with one)", async () => {
-    const email = uniqueEmail("agent");
+  it("creates an agent account (no email, no password, cannot log in)", async () => {
     const res = await t.app.request(
       "/api/v1/users",
-      jsonReq("POST", { email, name: "Bot", is_agent: true }, bearer(admin.token)),
+      jsonReq("POST", { name: "Bot", is_agent: true }, bearer(admin.token)),
     );
     expect(res.status).toBe(200);
     const { user } = (await res.json()) as { user: UserJson };
     expect(user.is_agent).toBe(true);
+    expect(user.email).toBeNull();
 
-    const login = await t.app.request("/api/v1/auth/login", jsonReq("POST", { email, password: "whatever-123" }));
+    // Agents are API-key-only: no email exists that could log in.
+    const login = await t.app.request(
+      "/api/v1/auth/login",
+      jsonReq("POST", { email: uniqueEmail("agent"), password: "whatever-123" }),
+    );
     expect(login.status).toBe(401);
   });
 
-  it("rejects an agent with a password and a human without one (validation)", async () => {
-    const withPw = await t.app.request(
+  it("rejects agent accounts with email or password, and humans without them", async () => {
+    const agentWithPw = await t.app.request(
       "/api/v1/users",
-      jsonReq("POST", { email: uniqueEmail(), name: "X", is_agent: true, password: "password-123" }, bearer(admin.token)),
+      jsonReq("POST", { name: "X", is_agent: true, password: "password-123" }, bearer(admin.token)),
     );
-    expect(withPw.status).toBe(400);
-    const withoutPw = await t.app.request(
+    expect(agentWithPw.status).toBe(400);
+    const agentWithEmail = await t.app.request(
+      "/api/v1/users",
+      jsonReq("POST", { email: uniqueEmail(), name: "X2", is_agent: true }, bearer(admin.token)),
+    );
+    expect(agentWithEmail.status).toBe(400);
+    const humanWithoutPw = await t.app.request(
       "/api/v1/users",
       jsonReq("POST", { email: uniqueEmail(), name: "Y" }, bearer(admin.token)),
     );
-    expect(withoutPw.status).toBe(400);
+    expect(humanWithoutPw.status).toBe(400);
+    const humanWithoutEmail = await t.app.request(
+      "/api/v1/users",
+      jsonReq("POST", { name: "Z", password: "password-123" }, bearer(admin.token)),
+    );
+    expect(humanWithoutEmail.status).toBe(400);
+  });
+
+  it("keeps agent names unique (case-insensitive) but lets humans share names", async () => {
+    const first = await t.app.request(
+      "/api/v1/users",
+      jsonReq("POST", { name: "Scout", is_agent: true }, bearer(admin.token)),
+    );
+    expect(first.status).toBe(200);
+    const duplicate = await t.app.request(
+      "/api/v1/users",
+      jsonReq("POST", { name: "scout", is_agent: true }, bearer(admin.token)),
+    );
+    expect(duplicate.status).toBe(409);
+
+    const human1 = await t.app.request(
+      "/api/v1/users",
+      jsonReq("POST", { email: uniqueEmail(), name: "Scout", password: "password-123" }, bearer(admin.token)),
+    );
+    expect(human1.status).toBe(200);
+    const human2 = await t.app.request(
+      "/api/v1/users",
+      jsonReq("POST", { email: uniqueEmail(), name: "Scout", password: "password-123" }, bearer(admin.token)),
+    );
+    expect(human2.status).toBe(200);
   });
 });
 
@@ -244,10 +282,9 @@ describe("users.update", () => {
   });
 
   it("refuses a password reset on an agent account (409)", async () => {
-    const email = uniqueEmail("agent");
     const create = await t.app.request(
       "/api/v1/users",
-      jsonReq("POST", { email, name: "Bot", is_agent: true }, bearer(admin.token)),
+      jsonReq("POST", { name: "ResetBot", is_agent: true }, bearer(admin.token)),
     );
     const { user } = (await create.json()) as { user: UserJson };
     const res = await t.app.request(

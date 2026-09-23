@@ -97,15 +97,14 @@ export async function makeMember(
   return { userId: created.user.id, token: login.token, email, password };
 }
 
-/** Admin-create an agent account and mint an API key for it. */
+/** Admin-create an agent account (no email) and mint an API key for it. */
 export async function makeAgentWithKey(
   app: BuiltApp["app"],
   adminToken: string,
   name = "Agent",
-): Promise<{ userId: string; keyId: string; keyToken: string; email: string }> {
-  const email = uniqueEmail("agent");
+): Promise<{ userId: string; keyId: string; keyToken: string }> {
   const created = await expectOk<{ user: { id: string } }>(
-    await app.request("/api/v1/users", jsonReq("POST", { email, name, is_agent: true }, bearer(adminToken))),
+    await app.request("/api/v1/users", jsonReq("POST", { name, is_agent: true }, bearer(adminToken))),
     "makeAgentWithKey create",
   );
   const key = await expectOk<{ apiKey: { id: string }; token: string }>(
@@ -115,7 +114,7 @@ export async function makeAgentWithKey(
     ),
     "makeAgentWithKey key",
   );
-  return { userId: created.user.id, keyId: key.apiKey.id, keyToken: key.token, email };
+  return { userId: created.user.id, keyId: key.apiKey.id, keyToken: key.token };
 }
 
 export interface WorkspaceJson {

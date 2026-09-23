@@ -41,6 +41,20 @@ function workspaceIdsFor(db: Db, userId: string): string[] {
     .map((r) => r.id);
 }
 
+/**
+ * Agents are addressed by name in mentions and assignee pickers, so agent names are
+ * unique (case-insensitive). Human names may repeat.
+ */
+function assertAgentNameAvailable(db: Db, name: string, exceptUserId: string | null): void {
+  const clash = db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.isAgent, 1), sql`lower(${users.name}) = ${name.toLowerCase()}`))
+    .all()
+    .find((row) => row.id !== exceptUserId);
+  if (clash) throw conflict(`an agent named ${name} already exists`);
+}
+
 /** One query for a page of users; only called for viewers who may see access config. */
 function workspaceIdsByUser(db: Db, userIds: string[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
@@ -162,17 +176,19 @@ export function usersHandlers(
       const actor = currentUser(c);
       assertNoEscalation(ctx.db, actor, null, input, "create");
       assertWorkspacesExist(ctx.db, input.workspace_ids);
-      const existing = ctx.db
-        .select()
-        .from(users)
-        .where(eq(users.email, input.email))
-        .get();
-      if (existing)
-        throw conflict(`a user with email ${input.email} already exists`);
+      if (input.email !== undefined) {
+        const existing = ctx.db
+          .select()
+          .from(users)
+          .where(eq(users.email, input.email))
+          .get();
+        if (existing) throw conflict(`a user with email ${input.email} already exists`);
+      }
+      if (input.is_agent) assertAgentNameAvailable(ctx.db, input.name, null);
       const t = now();
       const row: typeof users.$inferSelect = {
         id: newId(),
-        email: input.email,
+        email: input.email ?? null,
         name: input.name,
         // Agent accounts have no password: web login structurally refused, API keys only.
         passwordHash: input.is_agent
@@ -213,7 +229,10 @@ export function usersHandlers(
       assertNoEscalation(ctx.db, actor, target, input, "update");
       if (input.workspace_ids !== undefined) assertWorkspacesExist(ctx.db, input.workspace_ids);
       const updates: Partial<typeof users.$inferInsert> = { updatedAt: now() };
-      if (input.name !== undefined) updates.name = input.name;
+      if (input.name !== undefined) {
+        if (target.isAgent) assertAgentNameAvailable(ctx.db, input.name, id);
+        updates.name = input.name;
+      }
       if (input.role !== undefined && input.role !== target.role) {
         if (
           target.role === "admin" &&

@@ -65,7 +65,7 @@ Protect credentials:
 - For a passwordless agent account, an admin should use:
 
   ```sh
-  tmj user create --email bot@example.com --name "Build Bot" --agent --with-key --json
+  tmj user create --name "Build Bot" --agent --with-key --json
   ```
 
 ## Use machine-readable output

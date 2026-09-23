@@ -176,7 +176,7 @@ export class TemujiraClient {
   }
 
   // ---- api keys ----
-  listApiKeys(query: { user_id?: string } = {}) {
+  listApiKeys(query: { user_id?: string; all?: boolean } = {}) {
     return this.call("apiKeys.list", {}, { query }) as Promise<{ items: ApiKey[] }>;
   }
   createApiKey(body: { name: string; user_id?: string }) {
@@ -191,7 +191,8 @@ export class TemujiraClient {
     return this.call("users.list", {}, { query }) as Promise<{ items: User[] }>;
   }
   createUser(body: {
-    email: string;
+    /** Required for human accounts; not allowed for agent accounts. */
+    email?: string;
     name: string;
     role?: "admin" | "member";
     is_agent?: boolean;

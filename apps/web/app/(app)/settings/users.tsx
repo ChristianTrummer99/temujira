@@ -133,16 +133,15 @@ export default function UsersSettingsScreen() {
   }
 
   async function onCreate() {
-    if (creating || !name.trim() || !email.trim()) return;
+    if (creating || !name.trim() || (!isAgent && !email.trim())) return;
     setCreating(true);
     setError(null);
     try {
       await client.createUser({
-        email: email.trim(),
         name: name.trim(),
         role: role?.value as 'admin' | 'member',
         is_agent: isAgent,
-        ...(isAgent ? {} : { password }),
+        ...(isAgent ? {} : { email: email.trim(), password }),
       });
       setName('');
       setEmail('');
@@ -210,7 +209,7 @@ export default function UsersSettingsScreen() {
   const isAgentOption = (v: boolean): Option => ({ value: String(v), label: v ? 'Agent' : 'Human' });
 
   return (
-    <View className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
+    <ScrollView className="flex-1" contentContainerClassName="mx-auto w-full max-w-4xl gap-4 p-6">
       <Card>
         <CardHeader>
           <View className="flex-row items-center justify-between">
@@ -257,13 +256,13 @@ export default function UsersSettingsScreen() {
               return (
                 <View
                   key={u.id}
-                  className="border-border bg-card flex-row items-center gap-3 rounded-md border p-3">
+                  className="border-border bg-card flex-row flex-wrap items-center gap-3 rounded-md border p-3">
                   <Avatar alt={u.name} className="size-8">
                     <AvatarFallback>
                       <Text className="text-xs">{initialsOf(u.name)}</Text>
                     </AvatarFallback>
                   </Avatar>
-                  <View className="min-w-0 flex-1">
+                  <View className="min-w-[180px] flex-1">
                     <View className="flex-row items-center gap-2">
                       <Text className="text-sm font-medium">
                         {u.name}
@@ -275,7 +274,9 @@ export default function UsersSettingsScreen() {
                         </Badge>
                       ) : null}
                     </View>
-                    <Text className="text-muted-foreground text-xs">{u.email}</Text>
+                    <Text className="text-muted-foreground text-xs">
+                      {u.is_agent ? 'API-key login' : (u.email ?? '—')}
+                    </Text>
                   </View>
                   <Badge variant="secondary">
                     <Text>{u.role === 'admin' ? 'Admin' : 'Member'}</Text>
@@ -284,7 +285,7 @@ export default function UsersSettingsScreen() {
                     <Text>{u.is_agent ? 'Agent' : 'Human'}</Text>
                   </Badge>
                   {canManageKeys || canManageUsers ? (
-                    <View className="flex-row gap-1">
+                    <View className="flex-row flex-wrap justify-end gap-1">
                       {canManageKeys ? (
                         <Button
                           variant="ghost"
@@ -358,16 +359,18 @@ export default function UsersSettingsScreen() {
               <Label>Name</Label>
               <Input value={name} onChangeText={setName} placeholder="Ada Lovelace" />
             </View>
-            <View className="gap-1.5">
-              <Label>Email</Label>
-              <Input
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                inputMode="email"
-                placeholder="you@example.com"
-              />
-            </View>
+            {!isAgent ? (
+              <View className="gap-1.5">
+                <Label>Email</Label>
+                <Input
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  inputMode="email"
+                  placeholder="you@example.com"
+                />
+              </View>
+            ) : null}
             <View className="flex-row gap-3">
               <View className="flex-1 gap-1.5">
                 <Label>Role</Label>
@@ -409,7 +412,7 @@ export default function UsersSettingsScreen() {
               </View>
             ) : (
               <Text className="text-muted-foreground text-xs">
-                Agent accounts use API keys for authentication and cannot sign in with a password.
+                Agent accounts use API keys for authentication — no email or password.
               </Text>
             )}
             {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
@@ -420,7 +423,7 @@ export default function UsersSettingsScreen() {
                 <Text>Cancel</Text>
               </Button>
             </DialogClose>
-            <Button onPress={onCreate} disabled={creating || !name.trim() || !email.trim()}>
+            <Button onPress={onCreate} disabled={creating || !name.trim() || (!isAgent && !email.trim())}>
               <Text>{creating ? 'Creating...' : 'Create'}</Text>
             </Button>
           </DialogFooter>
@@ -577,6 +580,6 @@ export default function UsersSettingsScreen() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </View>
+    </ScrollView>
   );
 }
