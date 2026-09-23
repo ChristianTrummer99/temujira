@@ -64,12 +64,15 @@ function DialogOverlay({
 }
 function DialogContent({
   className,
+  containerClassName,
   portalHost,
   children,
   onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   portalHost?: string;
+  /** Extra classes for the web sizing wrapper (ignored on native). */
+  containerClassName?: string;
 }) {
   const handleInteractOutside = React.useCallback(
     (event: Event) => {
@@ -116,7 +119,11 @@ function DialogContent({
         <div className="fixed inset-0 z-50">
           <DialogOverlay />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
-            <div className="pointer-events-auto w-full max-w-[calc(100%-2rem)] sm:max-w-lg">
+            <div
+              className={cn(
+                'pointer-events-auto w-full max-w-[calc(100%-2rem)] sm:max-w-lg',
+                containerClassName
+              )}>
               <DialogPrimitive.Content
                 {...contentProps}
                 onInteractOutside={Platform.select({ web: handleInteractOutside, native: undefined })}>

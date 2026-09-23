@@ -1,3 +1,13 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -101,6 +111,7 @@ function AppSidebar() {
   const { unread } = useInbox();
 
   const [archivedCollapsed, setArchivedCollapsed] = React.useState(true);
+  const [signOutOpen, setSignOutOpen] = React.useState(false);
 
   function navigate(href: Href) {
     router.push(href);
@@ -298,16 +309,34 @@ function AppSidebar() {
               <Icon as={SettingsIcon} className="size-4" />
               <Text>Settings</Text>
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onPress={async () => {
-                await logout();
-                router.replace('/login');
-              }}>
+            <DropdownMenuItem onPress={() => setSignOutOpen(true)}>
               <Icon as={LogOutIcon} className="size-4" />
               <Text>Sign out</Text>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Sign out?</AlertDialogTitle>
+              <AlertDialogDescription>
+                You will need to sign in again to get back to this instance.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>
+                <Text>Cancel</Text>
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onPress={async () => {
+                  await logout();
+                  router.replace('/login');
+                }}>
+                <Text>Sign out</Text>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SidebarFooter>
     </Sidebar>
   );
@@ -323,6 +352,58 @@ function TopBarShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+type Crumb = { label: string; href?: string };
+
+const SETTINGS_SECTION_TITLES: Record<string, string> = {
+  profile: 'Profile',
+  'api-keys': 'API Keys',
+  users: 'Users',
+  workspaces: 'Workspaces',
+};
+
+/** Trails from Overview down to the screen you are on, with every ancestor clickable. */
+function breadcrumbTrail(
+  pathname: string,
+  workspaceKey: string | null,
+  workspaceName: string | null,
+  taskNum: string | null
+): Crumb[] {
+  const overview: Crumb = { label: 'Overview', href: '/' };
+
+  if (pathname === '/') return [{ label: 'Overview' }];
+
+  if (pathname.startsWith('/settings')) {
+    const section = pathname.split('/')[2];
+    if (!section) return [overview, { label: 'Settings' }];
+    return [
+      overview,
+      { label: 'Settings', href: '/settings' },
+      { label: SETTINGS_SECTION_TITLES[section] ?? section },
+    ];
+  }
+
+  if (pathname === '/inbox') return [overview, { label: 'Inbox' }];
+  if (pathname === '/my') return [overview, { label: 'My Tasks' }];
+  if (pathname === '/queue') return [overview, { label: 'My Queue' }];
+
+  if (workspaceKey) {
+    const label = workspaceName ?? workspaceKey;
+    if (taskNum) {
+      return [
+        overview,
+        { label, href: `/w/${workspaceKey}` },
+        { label: `${workspaceKey}-${taskNum}` },
+      ];
+    }
+    if (pathname.endsWith('/activity')) {
+      return [overview, { label, href: `/w/${workspaceKey}` }, { label: 'Activity' }];
+    }
+    return [overview, { label }];
+  }
+
+  return [overview];
+}
+
 function TopBar() {
   const pathname = usePathname();
   const params = useGlobalSearchParams<{ key?: string; num?: string }>();
@@ -333,81 +414,24 @@ function TopBar() {
   const workspaceName = workspaceKey
     ? (all.find((w) => w.key === workspaceKey)?.name ?? workspaceKey)
     : null;
+  const taskNum = typeof params.num === 'string' ? params.num : null;
 
-  if (pathname === '/') {
-    return (
-      <TopBarShell>
-        <Breadcrumb active>Overview</Breadcrumb>
-      </TopBarShell>
-    );
-  }
-
-  if (pathname === '/inbox') {
-    return (
-      <TopBarShell>
-        <BreadcrumbLink onPress={() => router.push('/')}>Overview</BreadcrumbLink>
-        <BreadcrumbSep />
-        <Breadcrumb active>Inbox</Breadcrumb>
-      </TopBarShell>
-    );
-  }
-
-  if (pathname === '/my') {
-    return (
-      <TopBarShell>
-        <BreadcrumbLink onPress={() => router.push('/')}>Overview</BreadcrumbLink>
-        <BreadcrumbSep />
-        <Breadcrumb active>My Tasks</Breadcrumb>
-      </TopBarShell>
-    );
-  }
-
-  if (pathname === '/queue') {
-    return (
-      <TopBarShell>
-        <BreadcrumbLink onPress={() => router.push('/')}>Overview</BreadcrumbLink>
-        <BreadcrumbSep />
-        <Breadcrumb active>My Queue</Breadcrumb>
-      </TopBarShell>
-    );
-  }
-
-  if (pathname.startsWith('/settings')) {
-    return (
-      <TopBarShell>
-        <BreadcrumbLink onPress={() => router.push('/')}>Overview</BreadcrumbLink>
-        <BreadcrumbSep />
-        <Breadcrumb active>Settings</Breadcrumb>
-      </TopBarShell>
-    );
-  }
-
-  if (workspaceKey) {
-    const path = `/w/${workspaceKey}`;
-    const atTask = typeof params.num === 'string';
-    const atActivity = pathname.endsWith('/activity');
-    return (
-      <TopBarShell>
-        <BreadcrumbLink onPress={() => router.push('/')}>Overview</BreadcrumbLink>
-        <BreadcrumbSep />
-        {atTask || atActivity ? (
-          <>
-            <BreadcrumbLink onPress={() => router.push(path as Href)}>{workspaceName}</BreadcrumbLink>
-            <BreadcrumbSep />
-            <Breadcrumb active>
-              {atTask ? `${workspaceKey}-${params.num}` : 'Activity'}
-            </Breadcrumb>
-          </>
-        ) : (
-          <Breadcrumb active>{workspaceName}</Breadcrumb>
-        )}
-      </TopBarShell>
-    );
-  }
+  const crumbs = breadcrumbTrail(pathname, workspaceKey, workspaceName, taskNum);
 
   return (
     <TopBarShell>
-      <Breadcrumb active>Overview</Breadcrumb>
+      {crumbs.map((crumb, index) => (
+        <React.Fragment key={`${crumb.label}-${index}`}>
+          {index > 0 ? <BreadcrumbSep /> : null}
+          {crumb.href ? (
+            <BreadcrumbLink onPress={() => router.push(crumb.href as Href)}>
+              {crumb.label}
+            </BreadcrumbLink>
+          ) : (
+            <Breadcrumb active>{crumb.label}</Breadcrumb>
+          )}
+        </React.Fragment>
+      ))}
     </TopBarShell>
   );
 }

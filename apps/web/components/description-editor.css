@@ -1,0 +1,80 @@
+/* Matches the comment renderer's prose (components/markdown.tsx) inside the
+ * Atomic live-preview editor. Imported after the package stylesheet so these
+ * token-mapped variables win over Atomic's built-in dark/light palettes. */
+.tmj-description-editor .atomic-cm-editor {
+  --atomic-editor-bg: transparent;
+  --atomic-editor-fg: hsl(var(--foreground));
+  --atomic-editor-fg-muted: hsl(var(--muted-foreground));
+  --atomic-editor-fg-faint: hsl(var(--muted-foreground));
+  --atomic-editor-border: hsl(var(--border));
+  --atomic-editor-link: #3b82f6;
+  --atomic-editor-link-hover: #2563eb;
+  --atomic-editor-accent: #3b82f6;
+  --atomic-editor-accent-bright: #60a5fa;
+  --atomic-editor-accent-soft: rgba(59, 130, 246, 0.35);
+  --atomic-editor-code-bg: rgba(127, 127, 127, 0.18);
+  --atomic-editor-code-rail: hsl(var(--border));
+  --atomic-editor-selection-bg: rgba(59, 130, 246, 0.18);
+  --atomic-editor-radius: 4px;
+  --atomic-editor-bg-panel: hsl(var(--popover));
+  --atomic-editor-bg-surface: hsl(var(--card));
+}
+
+/* Auto-height: the description grows with its content and the page scrolls,
+ * instead of the editor scrolling inside a fixed box. */
+.tmj-description-editor .atomic-cm-editor,
+.tmj-description-editor .cm-editor {
+  height: auto;
+}
+.tmj-description-editor .cm-scroller {
+  overflow: visible;
+}
+.tmj-description-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.tmj-description-editor .atomic-cm-editor .cm-content {
+  max-width: none;
+  margin-inline: 0;
+  padding: 0.375rem 0.5rem;
+  min-height: 7.25rem; /* keeps the empty box at the composer's min-h-32 */
+  font-family: inherit;
+  font-size: 0.875rem; /* text-sm */
+  line-height: 1.5rem; /* leading-6 */
+}
+
+/* Headings mirror the comment renderer's scale. */
+.tmj-description-editor .cm-line.cm-atomic-h1 {
+  font-size: 1.25rem;
+  line-height: 2rem;
+}
+.tmj-description-editor .cm-line.cm-atomic-h2 {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+.tmj-description-editor .cm-line.cm-atomic-h3,
+.tmj-description-editor .cm-line.cm-atomic-h4,
+.tmj-description-editor .cm-line.cm-atomic-h5 {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+.tmj-description-editor .cm-line.cm-atomic-h6 {
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.tmj-description-editor .cm-line.cm-atomic-blockquote {
+  padding-left: 0.75rem;
+  border-left-width: 2px;
+}
+
+/* Comments render plain underlined links; the trailing open-in-new-tab icon is noise. */
+.tmj-description-editor .cm-atomic-link::after {
+  display: none;
+}
+
+.tmj-description-editor .cm-placeholder {
+  color: hsl(var(--muted-foreground));
+  font-style: normal;
+}

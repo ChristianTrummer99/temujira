@@ -13,30 +13,89 @@ import { useAuth } from './auth';
  * `mime_type` is stored verbatim from the uploader's multipart part header and `filename`'s
  * extension is equally uploader-chosen. So every path must be safe when the signal lies:
  * images decode (never script), PDFs render in a browser viewer that has no page-context
- * script access, and text kinds go through <Text> which escapes. Critically we NEVER build
- * a Blob typed `image/svg+xml` or `text/html`: a blob: URL is same-origin with the app, so
- * an svg-typed blob URL would run its script on the app's origin. SVG previews as source.
+ * script access, media elements only decode, text kinds go through <Text> which escapes,
+ * and html/svg render only inside a sandboxed iframe with scripts disabled. Critically we
+ * NEVER build a Blob typed `image/svg+xml` or `text/html`: a blob: URL is same-origin with
+ * the app, so an svg-typed blob URL would run its script on the app's origin.
  */
 
-export type PreviewKind = 'image' | 'markdown' | 'text' | 'pdf' | 'none';
+export type PreviewKind =
+  | 'image'
+  | 'svg'
+  | 'pdf'
+  | 'video'
+  | 'audio'
+  | 'markdown'
+  | 'html'
+  | 'json'
+  | 'csv'
+  | 'code'
+  | 'text'
+  | 'none';
 
 /**
- * Binary kinds (image, pdf). The server caps uploads at MAX_UPLOAD_MB=50, so this is a
- * preview budget, not an upload limit: bigger files stay downloadable, just not previewable.
+ * Binary kinds (image, pdf, video, audio). The server caps uploads at MAX_UPLOAD_MB=50, so
+ * this is a preview budget, not an upload limit: bigger files stay downloadable, just not
+ * previewable.
  */
 export const PREVIEW_MAX_BYTES = 20 * 1024 * 1024;
 /** Text kinds are rendered as React children, which is far more expensive per byte. */
 export const TEXT_PREVIEW_MAX_BYTES = 1024 * 1024;
 
-const MARKDOWN_EXTS = new Set(['md', 'markdown']);
+/** Kinds whose bytes are read as text (escaped into React, or sandboxed in an iframe). */
+const BINARY_KINDS: ReadonlySet<PreviewKind> = new Set(['image', 'pdf', 'video', 'audio']);
+
+const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdx']);
 const MARKDOWN_MIMES = new Set(['text/markdown', 'text/x-markdown']);
-const TEXT_EXTS = new Set(['txt', 'log', 'csv', 'tsv', 'json', 'yml', 'yaml', 'xml', 'svg']);
-const TEXT_MIMES = new Set([
-  'application/json',
-  'application/xml',
-  'application/yaml',
-  'application/x-yaml',
+const HTML_EXTS = new Set(['html', 'htm']);
+const JSON_EXTS = new Set(['json', 'jsonc', 'geojson']);
+const CSV_EXTS = new Set(['csv', 'tsv']);
+const VIDEO_EXTS = new Set(['mp4', 'm4v', 'mov', 'webm', 'ogv', 'mkv']);
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'oga', 'm4a', 'aac', 'flac', 'opus']);
+const CODE_EXTS = new Set([
+  'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'kt', 'kts', 'c',
+  'h', 'cc', 'cpp', 'hpp', 'cs', 'php', 'swift', 'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat',
+  'sql', 'css', 'scss', 'less', 'xml', 'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf', 'env',
+  'graphql', 'gql', 'lua', 'pl', 'pm', 'r', 'dart', 'vue', 'svelte', 'astro', 'dockerfile',
+  'makefile', 'cmake', 'gradle', 'properties', 'patch', 'diff',
 ]);
+const TEXT_EXTS = new Set(['txt', 'log', 'text', 'rst', 'srt', 'vtt', 'nfo']);
+const CODE_MIMES = new Set([
+  'application/javascript',
+  'application/x-javascript',
+  'application/typescript',
+  'application/x-typescript',
+  'application/x-httpd-php',
+  'application/x-sh',
+  'application/x-shellscript',
+  'application/x-python',
+  'application/x-ruby',
+  'application/x-perl',
+  'application/x-lua',
+  'application/x-yaml',
+  'application/yaml',
+  'application/xml',
+  'application/toml',
+  'application/sql',
+  'application/graphql',
+  'text/x-python',
+  'text/x-java-source',
+  'text/x-c',
+  'text/x-c++src',
+  'text/x-shellscript',
+  'text/x-ruby',
+  'text/x-go',
+  'text/x-rust',
+  'text/x-sql',
+  'text/x-yaml',
+  'text/x-sh',
+  'text/x-typescript',
+  'text/x-csharp',
+  'text/x-kotlin',
+  'text/x-swift',
+  'text/css',
+]);
+const TEXT_MIMES = new Set(['application/x-tex', 'application/x-latex']);
 
 function extensionOf(filename: string): string {
   const dot = filename.lastIndexOf('.');
@@ -51,35 +110,54 @@ function bareMimeOf(att: Attachment): string {
 
 /**
  * Pure detector. Resolution order matters — first match wins:
- *   1. SVG (by mime OR .svg extension) -> 'text'   [BEFORE image/*, deliberately]
+ *   1. SVG (by mime OR .svg extension) -> 'svg'     [BEFORE image/*, deliberately]
  *   2. image/*                          -> 'image'  (MIME-ONLY)
- *   3. markdown by mime or extension    -> 'markdown'
- *   4. application/pdf                  -> 'pdf'    (MIME-ONLY)
- *   5. text-ish by mime or extension    -> 'text'
- *   6. otherwise                        -> 'none'
+ *   3. video/* or a video extension     -> 'video'
+ *   4. audio/* or an audio extension    -> 'audio'
+ *   5. markdown by mime or extension    -> 'markdown'
+ *   6. application/pdf                  -> 'pdf'    (MIME-ONLY)
+ *   7. json by mime or extension        -> 'json'
+ *   8. csv/tsv by mime or extension     -> 'csv'
+ *   9. html by mime or extension        -> 'html'
+ *  10. code by mime or extension        -> 'code'
+ *  11. other text-ish                   -> 'text'
+ *  12. otherwise                        -> 'none'
  *
  * Image and PDF are MIME-ONLY because they depend on the server serving the real
  * Content-Type (only its inline safelist gets one; everything else is octet-stream) and the
  * Blob inherits that type. Widening those by extension would only mint broken blobs.
- * Markdown/text may use either signal because they are read via res.text(), where headers
- * are irrelevant.
+ * Media is typed from metadata at blob-creation time (see fetchPreview) since the server
+ * does not safelist it. Text kinds may use either signal because they are read via
+ * res.text(), where headers are irrelevant.
  */
 export function previewKind(att: Attachment): PreviewKind {
   const mime = bareMimeOf(att);
   const ext = extensionOf(att.filename);
 
   // (1) SVG first: the server deliberately excludes it from the inline safelist because
-  // uploaded SVG can carry script. We do not undo that — no rasterization, no svg blob.
-  if (mime === 'image/svg+xml' || ext === 'svg') return 'text';
+  // uploaded SVG can carry script. It renders only inside a sandboxed iframe (no scripts).
+  if (mime === 'image/svg+xml' || ext === 'svg') return 'svg';
   // (2)
   if (mime.startsWith('image/')) return 'image';
   // (3)
-  if (MARKDOWN_MIMES.has(mime) || MARKDOWN_EXTS.has(ext)) return 'markdown';
+  if (mime.startsWith('video/') || VIDEO_EXTS.has(ext)) return 'video';
   // (4)
-  if (mime === 'application/pdf') return 'pdf';
-  // (5) includes text/html — shown as SOURCE, never parsed.
-  if (mime.startsWith('text/') || TEXT_MIMES.has(mime) || TEXT_EXTS.has(ext)) return 'text';
+  if (mime.startsWith('audio/') || AUDIO_EXTS.has(ext)) return 'audio';
+  // (5)
+  if (MARKDOWN_MIMES.has(mime) || MARKDOWN_EXTS.has(ext)) return 'markdown';
   // (6)
+  if (mime === 'application/pdf') return 'pdf';
+  // (7)
+  if (mime === 'application/json' || mime.endsWith('+json') || JSON_EXTS.has(ext)) return 'json';
+  // (8)
+  if (mime === 'text/csv' || mime === 'text/tab-separated-values' || CSV_EXTS.has(ext)) return 'csv';
+  // (9) html renders only inside a sandboxed iframe, never as page markup.
+  if (mime === 'text/html' || HTML_EXTS.has(ext)) return 'html';
+  // (10)
+  if (CODE_MIMES.has(mime) || CODE_EXTS.has(ext)) return 'code';
+  // (11)
+  if (mime.startsWith('text/') || TEXT_MIMES.has(mime) || TEXT_EXTS.has(ext)) return 'text';
+  // (12)
   return 'none';
 }
 
@@ -87,13 +165,8 @@ export function isPreviewable(att: Attachment): boolean {
   return previewKind(att) !== 'none';
 }
 
-/** True when the attachment resolves to 'text' because it is an SVG (caption + no render). */
-export function isSvgSource(att: Attachment): boolean {
-  return bareMimeOf(att) === 'image/svg+xml' || extensionOf(att.filename) === 'svg';
-}
-
 export function previewMaxBytes(kind: PreviewKind): number {
-  return kind === 'markdown' || kind === 'text' ? TEXT_PREVIEW_MAX_BYTES : PREVIEW_MAX_BYTES;
+  return BINARY_KINDS.has(kind) ? PREVIEW_MAX_BYTES : TEXT_PREVIEW_MAX_BYTES;
 }
 
 // ------------------------------------------------------------------ byte cache
@@ -172,11 +245,16 @@ export async function fetchPreview(
   const promise = (async (): Promise<PreviewEntry> => {
     const res = await client.downloadAttachment(att.id);
     let entry: PreviewEntry;
-    if (kind === 'image' || kind === 'pdf') {
+    if (BINARY_KINDS.has(kind)) {
       // The blob keeps the server's Content-Type, which is correct precisely for the
-      // types the server safelists inline — the same set this branch handles.
+      // types the server safelists inline (raster images, PDFs). Media is not safelisted,
+      // so re-type it from metadata — a wrong claim can only make it fail to decode.
       const blob = await res.blob();
-      entry = { kind: 'url', url: URL.createObjectURL(blob), bytes: blob.size };
+      const typed =
+        kind === 'video' || kind === 'audio'
+          ? blob.slice(0, blob.size, bareMimeOf(att) || blob.type)
+          : blob;
+      entry = { kind: 'url', url: URL.createObjectURL(typed), bytes: blob.size };
     } else {
       const raw = await res.text();
       const truncated = raw.length > TEXT_PREVIEW_MAX_BYTES;

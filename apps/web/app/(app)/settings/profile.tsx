@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
 import * as React from 'react';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 export default function ProfileSettingsScreen() {
   const { user, client, setUser } = useAuth();
@@ -62,7 +62,7 @@ export default function ProfileSettingsScreen() {
   }
 
   return (
-    <View className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
+    <ScrollView className="flex-1" contentContainerClassName="mx-auto w-full max-w-2xl gap-4 p-6">
       <Card>
         <CardHeader>
           <CardTitle>Profile</CardTitle>
@@ -140,6 +140,6 @@ export default function ProfileSettingsScreen() {
 
       {message ? <Text className="text-sm text-emerald-600">{message}</Text> : null}
       {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-    </View>
+    </ScrollView>
   );
 }

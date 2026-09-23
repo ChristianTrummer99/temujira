@@ -54,7 +54,7 @@ import {
   TrashIcon,
 } from 'lucide-react-native';
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 
 const PRESET_COLORS = ['#6b7280', '#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#14b8a6', '#f43f5e'];
 
@@ -64,7 +64,7 @@ export default function WorkspacesSettingsScreen() {
   const isAdmin = user?.role === 'admin';
 
   return (
-    <View className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
+    <ScrollView className="flex-1" contentContainerClassName="mx-auto w-full max-w-2xl gap-4 p-6">
       {loading ? (
         <View className="gap-2">
           <Skeleton className="h-16 w-full" />
@@ -87,7 +87,7 @@ export default function WorkspacesSettingsScreen() {
           />
         ))
       )}
-    </View>
+    </ScrollView>
   );
 }
 

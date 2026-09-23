@@ -3,6 +3,7 @@ import {
   AttachmentThumb,
   attachmentIcon,
 } from '@/components/attachment-preview';
+import { DescriptionEditor } from '@/components/description-editor';
 import { Markdown } from '@/components/markdown';
 import { MentionInput } from '@/components/mention-input';
 import { RichEditor } from '@/components/rich-editor';
@@ -313,8 +314,10 @@ export default function TaskDetailScreen() {
 
       <AttachmentPreviewDialog
         attachment={previewAtt}
+        attachments={task.attachments ?? []}
         users={users}
         onClose={() => setPreviewAtt(null)}
+        onNavigate={setPreviewAtt}
         onMentionPress={setMentionedUser}
       />
       <UserInfoDialog user={mentionedUser} onClose={() => setMentionedUser(null)} />
@@ -828,7 +831,8 @@ function InlineDescriptionEditor({
         <AutoSaveStatus status={status} />
       </View>
       <View className="border-border bg-card gap-2 rounded-md border p-1.5">
-        <RichEditor
+        <DescriptionEditor
+          documentId={task.id}
           value={task.description ?? ''}
           onChangeText={(t) => {
             onChanged({ ...task, description: t });
@@ -1222,6 +1226,7 @@ function TaskAttachments({
                   variant="ghost"
                   size="sm"
                   className="h-7 w-7 p-0"
+                  accessibilityLabel={`Delete ${a.filename}`}
                   onPress={async () => {
                     try {
                       await client.deleteAttachment(a.id);

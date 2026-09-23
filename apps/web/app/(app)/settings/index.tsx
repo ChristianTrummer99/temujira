@@ -12,7 +12,7 @@ import { useAuth } from '@/lib/auth';
 import { hasScope } from '@/lib/scopes';
 import { useRouter } from 'expo-router';
 import { KeyRoundIcon, FolderCogIcon, UserIcon, UsersIcon } from 'lucide-react-native';
-import { View, Pressable } from 'react-native';
+import { ScrollView, View, Pressable } from 'react-native';
 
 export default function SettingsIndexScreen() {
   const router = useRouter();
@@ -50,7 +50,7 @@ export default function SettingsIndexScreen() {
   ].filter((l) => l.visible);
 
   return (
-    <View className="mx-auto w-full max-w-2xl gap-4 p-6">
+    <ScrollView className="flex-1" contentContainerClassName="mx-auto w-full max-w-2xl gap-4 p-6">
       <Card>
         <CardHeader>
           <CardTitle>Settings</CardTitle>
@@ -71,6 +71,6 @@ export default function SettingsIndexScreen() {
           ))}
         </CardContent>
       </Card>
-    </View>
+    </ScrollView>
   );
 }
