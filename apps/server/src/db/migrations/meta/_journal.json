@@ -50,6 +50,13 @@
       "when": 1790177565849,
       "tag": "0006_crazy_lifeguard",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790188495931,
+      "tag": "0007_sparkling_spitfire",
+      "breakpoints": true
     }
   ]
 }

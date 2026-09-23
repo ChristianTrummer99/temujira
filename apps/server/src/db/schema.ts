@@ -25,6 +25,11 @@ export const users = sqliteTable(
     /** 1 = access to every workspace (default); 0 = only `user_workspaces` rows. */
     workspaceAccessAll: integer("workspace_access_all").notNull().default(1),
     isAgent: integer("is_agent").notNull().default(0),
+    /**
+     * Opt-in per-identity access policy: 0 = shared (every key may use the identity),
+     * 1 = exclusive (only the active identity session's key may authenticate as it).
+     */
+    exclusiveIdentity: integer("exclusive_identity").notNull().default(0),
     deactivatedAt: integer("deactivated_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
@@ -454,5 +459,40 @@ export const queueEntries = sqliteTable(
     uniqueIndex("queue_entries_user_task_unique").on(t.userId, t.taskId),
     index("queue_entries_user_id_idx").on(t.userId),
     check("queue_entries_state_check", sql`${t.state} IN ('queued','ready','running')`),
+  ],
+);
+
+/**
+ * Assumed-identity sessions for exclusive identities. Policy (users.exclusive_identity)
+ * and ownership are separate: releasing a session never changes the policy. A partial
+ * unique index enforces at most one ACTIVE session per identity at the database boundary;
+ * releasing revokes the session's key, and a new acquisition mints a fresh one.
+ */
+export const identitySessions = sqliteTable(
+  "identity_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    apiKeyId: text("api_key_id")
+      .notNull()
+      .references(() => apiKeys.id),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: integer("created_at").notNull(),
+    status: text("status").notNull(),
+    releasedAt: integer("released_at"),
+    releasedBy: text("released_by").references(() => users.id),
+    releaseReason: text("release_reason"),
+  },
+  (t) => [
+    uniqueIndex("identity_sessions_active_user_unique")
+      .on(t.userId)
+      .where(sql`${t.status} = 'active'`),
+    index("identity_sessions_api_key_id_idx").on(t.apiKeyId),
+    index("identity_sessions_user_id_idx").on(t.userId),
+    check("identity_sessions_status_check", sql`${t.status} IN ('active','released')`),
   ],
 );

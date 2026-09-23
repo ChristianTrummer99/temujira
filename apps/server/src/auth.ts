@@ -11,10 +11,10 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { AuthLevel, ScopeId } from "@temujira/shared";
 import type { ServerConfig } from "./config";
 import type { Db } from "./db";
-import { apiKeys, sessions, users } from "./db/schema";
+import { apiKeys, identitySessions, sessions, users } from "./db/schema";
 import { forbidden, unauthorized, HttpError } from "./errors";
 import { hasScope } from "./access";
-import type { UserRow } from "./serialize";
+import type { IdentitySessionRow, UserRow } from "./serialize";
 import { newId, now } from "./util";
 
 const scrypt = (
@@ -196,6 +196,33 @@ export interface AuthResult {
   user: UserRow;
   kind: AuthKind;
   sessionId?: string;
+  /** Bearer `tmj_` API-key id. */
+  apiKeyId?: string;
+  /**
+   * The active identity session when this credential IS the session key of an exclusive
+   * identity. Null otherwise (including ordinary keys of an exclusive identity, which are
+   * blocked below).
+   */
+  identitySession?: IdentitySessionRow | null;
+  /**
+   * Set when the credential may not act as this identity at all (exclusive identity whose
+   * active session key is a different credential). requireAuth turns this into a 403.
+   */
+  blockedReason?: string;
+}
+
+/** The active identity session for an identity, if any. */
+export function activeIdentitySession(
+  db: Db,
+  userId: string
+): IdentitySessionRow | undefined {
+  return db
+    .select()
+    .from(identitySessions)
+    .where(
+      and(eq(identitySessions.userId, userId), eq(identitySessions.status, "active"))
+    )
+    .get();
 }
 
 function verifySessionToken(
@@ -223,7 +250,7 @@ function verifySessionToken(
   return { user: row.user, sessionId: row.session.id };
 }
 
-function verifyApiKey(db: Db, token: string): UserRow | null {
+function verifyApiKey(db: Db, token: string): { user: UserRow; keyId: string } | null {
   const t = now();
   const row = db
     .select({ key: apiKeys, user: users })
@@ -238,7 +265,35 @@ function verifyApiKey(db: Db, token: string): UserRow | null {
       .where(eq(apiKeys.id, row.key.id))
       .run();
   }
-  return row.user;
+  return { user: row.user, keyId: row.key.id };
+}
+
+/**
+ * Exclusive identities admit exactly one credential at a time: the active session's key.
+ * Every other key (including older keys of the same identity) is rejected outright — for
+ * reads, "my tasks", inbox, comments and every other operation — because this check runs
+ * at authentication, before any route logic. Policy and ownership are separate: an
+ * exclusive identity with no active session rejects ordinary keys too, so callers must
+ * acquire a session rather than guess which key owns the identity.
+ */
+function exclusiveIdentityCheck(
+  db: Db,
+  user: UserRow,
+  keyId: string
+): { identitySession: IdentitySessionRow | null; blockedReason?: string } {
+  if (!user.isAgent || !user.exclusiveIdentity) {
+    return { identitySession: null };
+  }
+  const session = activeIdentitySession(db, user.id);
+  if (session && session.apiKeyId === keyId) {
+    return { identitySession: session };
+  }
+  return {
+    identitySession: null,
+    blockedReason:
+      "identity is in exclusive mode: only the active identity-session key may be used " +
+      "(acquire one with `tmj identity acquire`)",
+  };
 }
 
 export function authenticate(c: Context, db: Db): AuthResult | null {
@@ -248,8 +303,16 @@ export function authenticate(c: Context, db: Db): AuthResult | null {
     if (!m) return null;
     const token = m[1]!;
     if (token.startsWith("tmj_")) {
-      const user = verifyApiKey(db, token);
-      return user ? { user, kind: "bearer" } : null;
+      const key = verifyApiKey(db, token);
+      if (!key) return null;
+      const { identitySession, blockedReason } = exclusiveIdentityCheck(db, key.user, key.keyId);
+      return {
+        user: key.user,
+        kind: "bearer",
+        apiKeyId: key.keyId,
+        identitySession,
+        blockedReason,
+      };
     }
     if (token.startsWith("tms_")) {
       const res = verifySessionToken(db, token);
@@ -308,6 +371,7 @@ export function requireAuth(
     if (!result) throw unauthorized();
     if (result.user.deactivatedAt !== null)
       throw unauthorized("account is deactivated");
+    if (result.blockedReason) throw forbidden(result.blockedReason);
     if (level === "admin" && result.user.role !== "admin")
       throw forbidden("admin role required");
     if (scope && !hasScope(result.user, scope))
@@ -317,6 +381,8 @@ export function requireAuth(
     c.set("user", result.user);
     c.set("authKind", result.kind);
     c.set("sessionId", result.sessionId);
+    c.set("apiKeyId", result.apiKeyId);
+    c.set("identitySession", result.identitySession ?? null);
     await next();
   };
 }

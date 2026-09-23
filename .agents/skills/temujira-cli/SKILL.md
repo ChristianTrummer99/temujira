@@ -170,6 +170,48 @@ Task field updates are partial. An empty value clears that one field. By contras
 supplying any `--tag` flags to `task update` replaces the task's complete tag set; read the
 current task first and include every tag that should remain.
 
+## Exclusive identity sessions
+
+By default an identity is **shared**: several API keys (several agent threads) can use it
+concurrently and they share its assignments, inbox and comment authorship. When that must
+not happen, turn on the **exclusive** policy for that identity. Exclusive means exactly one
+credential may act as the identity at a time — the active session's key.
+
+```sh
+# Configure (once; users:manage). Agent accounts only. Existing keys are suspended, not
+# deleted, and no key is adopted as the owner.
+tmj user update <userId> --exclusive --json
+
+# Acquire: mint the session key (api_keys:manage). No ticket is named or touched.
+tmj identity acquire <userId> --json      # prints the session key exactly once
+
+# Use: run worker commands with the session key. `identity current` self-checks.
+tmj identity current --json
+tmj task update ENG-42 --title "..." --json
+
+# Release: the worker does this itself with its own session key; no management scope.
+tmj identity release <userId> --reason "job done" --json
+```
+
+Rules that change how you write automation:
+
+- Only the session key may authenticate as the identity. Every other key of that identity —
+  older keys, keys minted later — is rejected for reads, "my tasks", inbox, comments and
+  writes alike, whether or not a session is active. Do not plan around a second key as a
+  fallback; suspend-and-acquire is the only path.
+- Acquisition is atomic: concurrent acquires conflict (409). Acquisition and release never
+  assign or unassign tickets and never change task status, and need no ticket reference.
+- Release revokes that session's key and makes the identity available; the next acquire
+  mints a new key. An old key never regains access and cannot release a newer session.
+- Releasing does not disable exclusive mode, and workers cannot change the policy
+  (management must). To return to shared use, release the session first, then
+  `tmj user update <userId> --shared`.
+- Management recovery for a vanished worker: a caller with `api_keys:manage` runs
+  `tmj identity release <userId> --reason "..."`. Quiesce the native process first — the
+  identity can be acquired again immediately after release.
+- No timeouts, heartbeats or completion detection: sessions stay active until released.
+  Sessions survive server restarts.
+
 ## Collaborate through comments and links
 
 Use both visible mention text and `--mention` so humans can read the comment and Temujira

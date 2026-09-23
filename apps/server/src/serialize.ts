@@ -7,6 +7,7 @@ import type {
   Comment,
   FieldDef,
   InboxItem,
+  IdentitySession,
   QueueEntry,
   Status,
   Tag,
@@ -22,6 +23,7 @@ import type {
   comments,
   fieldDefs,
   fieldValues,
+  identitySessions,
   inboxItems,
   queueEntries,
   statuses,
@@ -46,6 +48,21 @@ export type TaskLinkRow = typeof taskLinks.$inferSelect;
 export type FieldDefRow = typeof fieldDefs.$inferSelect;
 export type FieldValueRow = typeof fieldValues.$inferSelect;
 export type QueueEntryRow = typeof queueEntries.$inferSelect;
+export type IdentitySessionRow = typeof identitySessions.$inferSelect;
+
+export function identitySessionToApi(s: IdentitySessionRow): IdentitySession {
+  return {
+    id: s.id,
+    user_id: s.userId,
+    api_key_id: s.apiKeyId,
+    created_by: s.createdBy,
+    created_at: s.createdAt,
+    status: s.status as IdentitySession["status"],
+    released_at: s.releasedAt,
+    released_by: s.releasedBy,
+    release_reason: s.releaseReason,
+  };
+}
 
 export function userToApi(u: UserRow, workspaceIds: string[] = []): User {
   return {
@@ -54,6 +71,7 @@ export function userToApi(u: UserRow, workspaceIds: string[] = []): User {
     name: u.name,
     role: u.role as User["role"],
     is_agent: !!u.isAgent,
+    exclusive_identity: !!u.exclusiveIdentity,
     scopes: parseScopes(u.scopes),
     workspace_access_all: !!u.workspaceAccessAll,
     workspace_ids: workspaceIds,

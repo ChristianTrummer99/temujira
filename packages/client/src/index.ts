@@ -12,6 +12,7 @@ import {
   type FieldDef,
   type FieldType,
   type InboxItem,
+  type IdentitySession,
   type LinkRelation,
   type QueueEntry,
   type QueueState,
@@ -186,6 +187,33 @@ export class TemujiraClient {
     return this.call("apiKeys.revoke", { id }) as Promise<{ ok: true }>;
   }
 
+  // ---- identity sessions (optional exclusive identity use) ----
+  acquireIdentitySession(userId: string) {
+    return this.call("identitySessions.acquire", { userId }) as Promise<{
+      session: IdentitySession;
+      token: string;
+    }>;
+  }
+  releaseIdentitySession(userId: string, body: { reason?: string } = {}) {
+    return this.call("identitySessions.release", { userId }, { body }) as Promise<{
+      session: IdentitySession;
+    }>;
+  }
+  getIdentitySession(userId: string) {
+    return this.call("identitySessions.get", { userId }) as Promise<{
+      session: IdentitySession | null;
+    }>;
+  }
+  listIdentitySessions() {
+    return this.call("identitySessions.list", {}) as Promise<{ items: IdentitySession[] }>;
+  }
+  currentIdentitySession() {
+    return this.call("identitySessions.current", {}) as Promise<{
+      user: User;
+      session: IdentitySession | null;
+    }>;
+  }
+
   // ---- users ----
   listUsers(query: { include_deactivated?: boolean } = {}) {
     return this.call("users.list", {}, { query }) as Promise<{ items: User[] }>;
@@ -213,6 +241,7 @@ export class TemujiraClient {
       role?: "admin" | "member";
       password?: string;
       reactivate?: boolean;
+      exclusive_identity?: boolean;
       scopes?: ScopeId[];
       workspace_access_all?: boolean;
       workspace_ids?: string[];
@@ -490,6 +519,11 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "apiKeys.list": "listApiKeys",
   "apiKeys.create": "createApiKey",
   "apiKeys.revoke": "revokeApiKey",
+  "identitySessions.acquire": "acquireIdentitySession",
+  "identitySessions.release": "releaseIdentitySession",
+  "identitySessions.get": "getIdentitySession",
+  "identitySessions.list": "listIdentitySessions",
+  "identitySessions.current": "currentIdentitySession",
   "users.list": "listUsers",
   "users.create": "createUser",
   "users.get": "getUser",

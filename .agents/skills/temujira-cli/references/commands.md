@@ -36,12 +36,15 @@ tmj user create --name <name>
 tmj user get <userId>
 tmj user update <userId> [--name <name>] [--role admin|member]
                 [--password [password]] [--reactivate]
+                [--exclusive|--shared]
 tmj user deactivate <userId>
 ```
 
 Human users require an email and password. Agent users are email-less, passwordless, and
 API-key-only; their names are unique (case-insensitive) because mentions and assignee
 pickers address them by name.
+`--exclusive` / `--shared` set the per-identity access policy (agent accounts only, see
+Identity sessions); the default is shared.
 `--deactivated` includes deactivated users rather than filtering exclusively to them.
 
 ## Workspaces
@@ -199,6 +202,49 @@ tmj queue reorder <allQueueEntryIds...>
 Queues are owner-scoped. New entries append as queued; duplicate task addition conflicts.
 `next` prefers running, then ready, then queued. Complete/remove only removes queue
 metadata. Reorder requires the full exact list of queue-entry IDs.
+
+## Identity sessions (optional exclusive identities)
+
+An identity's access policy is `shared` (default) or `exclusive`. Shared means every key of
+that identity may use it concurrently. Exclusive means exactly one credential may act as
+the identity at a time: the active session's key. Use this when several agent threads must
+not share one identity's assignments, inbox, or comment authorship.
+
+```text
+tmj user update <userId> --exclusive      # turn the policy on (agent accounts; users:manage)
+tmj user update <userId> --shared         # turn it off (requires no active session)
+
+tmj identity acquire <userId>             # mint the session key (api_keys:manage); token once
+tmj identity current                      # worker self-check (run with the session key)
+tmj identity release <userId> [--reason <reason>]
+tmj identity get <userId>                 # active session, or none
+tmj identity list                         # every active session
+```
+
+Semantics that callers must design around:
+
+- **Policy and ownership are separate.** Enabling exclusive mode does not pick an owner;
+  existing keys are simply suspended (never deleted, never silently adopted). Releasing a
+  session does not disable exclusive mode. Workers cannot change the policy — only
+  `users:manage` can, and a session key is refused.
+- **Acquisition is atomic.** At most one active session per identity (partial unique
+  index); concurrent acquires conflict (409, with the current `session_id` in details).
+  Acquisition takes no ticket: it assigns nothing, changes no status, and needs no task.
+- **Only the session key may authenticate as the identity.** Every other key — older keys,
+  freshly minted keys — is rejected for reads ("my tasks", inbox, task lists), comments,
+  writes, and every other operation, whether or not a session is active. Suspended keys
+  resume working when the policy returns to shared.
+- **The worker releases itself** with its own session key (`tmj identity release <self>`,
+  no management scope needed). Release revokes that key and makes the identity available;
+  a later acquisition mints a new key.
+- **Old credentials cannot come back.** A released session's key is revoked, cannot
+  authenticate, and cannot release a newer session.
+- **Management recovery:** a caller with `api_keys:manage` can release an abandoned
+  session by identity (record a `--reason`). Deactivating or revoking the worker key leaves
+  the session visible and recoverable; it never silently frees the identity.
+- Sessions survive server restarts. There is no timeout, heartbeat, or completion
+  detector — the worker (or a manager) releases explicitly. Quiesce the native process
+  before releasing, since the identity can be acquired again immediately.
 
 ## Attachments
 

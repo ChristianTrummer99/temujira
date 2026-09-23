@@ -66,6 +66,8 @@ interface UserUpdateOpts {
   role?: "admin" | "member";
   password?: string | boolean;
   reactivate?: boolean;
+  exclusive?: boolean;
+  shared?: boolean;
   scope?: string[];
   workspace?: string[];
   allWorkspaces?: boolean;
@@ -219,6 +221,8 @@ export function registerUser(program: Command): void {
     .addOption(new Option("--role <role>", "new role").choices(["admin", "member"]))
     .option("--password [password]", "set a new password (no value: prompt with hidden echo)")
     .option("--reactivate", "reactivate a deactivated user")
+    .option("--exclusive", "exclusive identity policy: only one active session key may use this identity (agent accounts)")
+    .option("--shared", "shared identity policy (default): every key may use this identity")
     .option("--scope <scope>", `replace capability scopes (repeatable): ${SCOPE_IDS.join(", ")}`, collect, [] as string[])
     .option("--workspace <idOrKey>", "replace workspace allowlist (repeatable)", collect, [] as string[])
     .option("--all-workspaces", "grant access to every workspace")
@@ -230,6 +234,9 @@ export function registerUser(program: Command): void {
       if (opts.allWorkspaces && (opts.workspace?.length ?? 0) > 0) {
         throw new CliError("--all-workspaces and --workspace are mutually exclusive", EXIT_CODES.usage);
       }
+      if (opts.exclusive && opts.shared) {
+        throw new CliError("--exclusive and --shared are mutually exclusive", EXIT_CODES.usage);
+      }
       const scopes = parseScopeArgs(opts.scope ?? []);
       const workspaceIds = await resolveWorkspaceIds(ctx.client, opts.workspace ?? []);
       const body: {
@@ -237,6 +244,7 @@ export function registerUser(program: Command): void {
         role?: "admin" | "member";
         password?: string;
         reactivate?: boolean;
+        exclusive_identity?: boolean;
         scopes?: ScopeId[];
         workspace_access_all?: boolean;
         workspace_ids?: string[];
@@ -245,6 +253,8 @@ export function registerUser(program: Command): void {
       if (opts.role !== undefined) body.role = opts.role;
       if (password !== undefined) body.password = password;
       if (opts.reactivate) body.reactivate = true;
+      if (opts.exclusive) body.exclusive_identity = true;
+      if (opts.shared) body.exclusive_identity = false;
       if (scopes !== undefined) body.scopes = scopes;
       if (workspaceIds.length > 0) {
         body.workspace_access_all = false;
@@ -254,7 +264,7 @@ export function registerUser(program: Command): void {
       }
       if (Object.keys(body).length === 0) {
         throw new CliError(
-          "nothing to update — pass --name, --role, --password, --reactivate, --scope, --workspace, or --all-workspaces",
+          "nothing to update — pass --name, --role, --password, --reactivate, --exclusive/--shared, --scope, --workspace, or --all-workspaces",
           EXIT_CODES.usage,
         );
       }

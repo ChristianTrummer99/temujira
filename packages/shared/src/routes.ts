@@ -17,6 +17,7 @@ import {
   CreateWorkspaceInputSchema,
   DeleteStatusQuerySchema,
   FieldDefSchema,
+  IdentitySessionSchema,
   InboxItemSchema,
   ListActivityQuerySchema,
   ListApiKeysQuerySchema,
@@ -33,6 +34,7 @@ import {
   ReorderFieldsInputSchema,
   ReorderQueueInputSchema,
   ReorderStatusesInputSchema,
+  ReleaseIdentitySessionInputSchema,
   SetupInputSchema,
   StatusSchema,
   TagSchema,
@@ -177,6 +179,47 @@ export const ROUTES = {
     auth: "user",
     summary: "Revoke an API key (owner or admin)",
     response: okResponse,
+  },
+
+  // ---- identity sessions (optional exclusive identity use) ----
+  "identitySessions.acquire": {
+    method: "POST",
+    path: "/identities/:userId/session",
+    auth: "user",
+    scope: "api_keys:manage",
+    summary: "Acquire an exclusive identity; returns temporary credentials (token once)",
+    response: z.object({ session: IdentitySessionSchema, token: z.string() }),
+  },
+  "identitySessions.release": {
+    method: "POST",
+    path: "/identities/:userId/session/release",
+    auth: "user",
+    summary: "Release an identity session: the worker's own key, or a manager recovering it",
+    body: ReleaseIdentitySessionInputSchema,
+    response: z.object({ session: IdentitySessionSchema }),
+  },
+  "identitySessions.get": {
+    method: "GET",
+    path: "/identities/:userId/session",
+    auth: "user",
+    scope: "api_keys:manage",
+    summary: "Inspect an identity's active session (or null)",
+    response: z.object({ session: IdentitySessionSchema.nullable() }),
+  },
+  "identitySessions.list": {
+    method: "GET",
+    path: "/identity-sessions",
+    auth: "user",
+    scope: "api_keys:manage",
+    summary: "List all active identity sessions",
+    response: listOf(IdentitySessionSchema),
+  },
+  "identitySessions.current": {
+    method: "GET",
+    path: "/identity-sessions/current",
+    auth: "user",
+    summary: "Identify the caller's own identity session (worker self-check)",
+    response: z.object({ user: UserSchema, session: IdentitySessionSchema.nullable() }),
   },
 
   // ---- users ----

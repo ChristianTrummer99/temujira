@@ -39,6 +39,12 @@ export const UserSchema = z.object({
   name: z.string(),
   role: RoleSchema,
   is_agent: z.boolean(),
+  /**
+   * Opt-in per-identity access policy. false (default) = shared: every key may use the
+   * identity concurrently. true = exclusive: only the active identity session's key may
+   * authenticate as this identity. Agent accounts only.
+   */
+  exclusive_identity: z.boolean(),
   /** Member scope grants. Admins implicitly hold all scopes regardless of this list. */
   scopes: z.array(ScopeSchema),
   /** true = access to every workspace; false = only `workspace_ids`. Admins always have all. */
@@ -61,6 +67,29 @@ export const ApiKeySchema = z.object({
   created_at: TimestampSchema,
 });
 export type ApiKey = z.infer<typeof ApiKeySchema>;
+
+// ---------- identity sessions (optional exclusive identity use) ----------
+
+/**
+ * An assumed-identity session: temporary credentials minted for an exclusive identity.
+ * Policy (users.exclusive_identity) and ownership (this table) are separate — releasing a
+ * session never changes the policy. At most one session may be active per identity
+ * (partial unique index).
+ */
+export const IdentitySessionSchema = z.object({
+  id: UlidSchema,
+  user_id: UlidSchema,
+  api_key_id: UlidSchema,
+  /** The manager who acquired the session. */
+  created_by: UlidSchema,
+  created_at: TimestampSchema,
+  status: z.enum(["active", "released"]),
+  released_at: TimestampSchema.nullable(),
+  /** The releaser: the worker itself or a manager recovering it. */
+  released_by: UlidSchema.nullable(),
+  release_reason: z.string().nullable(),
+});
+export type IdentitySession = z.infer<typeof IdentitySessionSchema>;
 
 export const WorkspaceSchema = z.object({
   id: UlidSchema,
@@ -367,10 +396,16 @@ export const UpdateUserInputSchema = z.object({
   role: RoleSchema.optional(),
   password: PasswordSchema.optional(),
   reactivate: z.boolean().optional(),
+  /** Opt-in exclusive identity policy (agent accounts only; release any session first). */
+  exclusive_identity: z.boolean().optional(),
   scopes: z.array(ScopeSchema).optional(),
   workspace_access_all: z.boolean().optional(),
   /** Replaces the allowlist wholesale when provided (ignored unless workspace_access_all is false). */
   workspace_ids: z.array(UlidSchema).optional(),
+});
+
+export const ReleaseIdentitySessionInputSchema = z.object({
+  reason: z.string().trim().min(1).max(500).optional(),
 });
 
 export const CreateWorkspaceInputSchema = z.object({

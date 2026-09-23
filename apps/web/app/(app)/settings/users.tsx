@@ -76,6 +76,7 @@ export default function UsersSettingsScreen() {
   const [accessScopes, setAccessScopes] = React.useState<ScopeId[]>([]);
   const [accessAll, setAccessAll] = React.useState(true);
   const [accessWsIds, setAccessWsIds] = React.useState<string[]>([]);
+  const [accessExclusive, setAccessExclusive] = React.useState(false);
   const [accessBusy, setAccessBusy] = React.useState(false);
   const [accessError, setAccessError] = React.useState<string | null>(null);
   const wsResource = useResource(
@@ -89,6 +90,7 @@ export default function UsersSettingsScreen() {
     setAccessScopes(u.scopes);
     setAccessAll(u.workspace_access_all);
     setAccessWsIds(u.workspace_ids);
+    setAccessExclusive(u.exclusive_identity);
     setAccessError(null);
   }
 
@@ -117,6 +119,8 @@ export default function UsersSettingsScreen() {
         workspace_access_all: accessAll,
         // Persist the selection even when "all" is on, so toggling back restores it.
         workspace_ids: accessWsIds,
+        // Exclusive mode applies to agent accounts only.
+        ...(accessFor.is_agent ? { exclusive_identity: accessExclusive } : {}),
       });
       closeAccess();
       await resource.reload();
@@ -284,6 +288,11 @@ export default function UsersSettingsScreen() {
                   <Badge variant={u.is_agent ? 'default' : 'outline'}>
                     <Text>{u.is_agent ? 'Agent' : 'Human'}</Text>
                   </Badge>
+                  {u.exclusive_identity ? (
+                    <Badge variant="secondary">
+                      <Text>Exclusive</Text>
+                    </Badge>
+                  ) : null}
                   {canManageKeys || canManageUsers ? (
                     <View className="flex-row flex-wrap justify-end gap-1">
                       {canManageKeys ? (
@@ -525,6 +534,27 @@ export default function UsersSettingsScreen() {
                 );
               })}
             </View>
+
+            {accessFor?.is_agent ? (
+              <View className="gap-2">
+                <Text className="text-sm font-medium">Identity access</Text>
+                <View className="flex-row items-start gap-3">
+                  <Checkbox
+                    checked={accessExclusive}
+                    onCheckedChange={() => setAccessExclusive((v) => !v)}
+                  />
+                  <View className="min-w-0 flex-1">
+                    <Text className="text-sm">Exclusive identity</Text>
+                    <Text className="text-muted-foreground text-xs">
+                      Only one active session key may use this identity at a time. Workers
+                      acquire a session (<Text className="font-mono">tmj identity acquire</Text>)
+                      and release it when finished; other keys cannot read or write as this
+                      identity meanwhile.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
 
             <View className="gap-2">
               <Text className="text-sm font-medium">Workspace access</Text>

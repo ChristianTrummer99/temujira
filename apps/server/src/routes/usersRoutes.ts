@@ -8,7 +8,7 @@ import type {
 } from "@temujira/shared";
 import type { ScopeId } from "@temujira/shared";
 import { accessibleWorkspaceIds, hasScope, userScopes } from "../access";
-import { hashPassword, destroyUserSessions } from "../auth";
+import { hashPassword, destroyUserSessions, activeIdentitySession } from "../auth";
 import type { Db } from "../db";
 import { sessions, userWorkspaces, users, workspaces } from "../db/schema";
 import { conflict, forbidden, notFound, validationError } from "../errors";
@@ -198,6 +198,7 @@ export function usersHandlers(
         scopes: JSON.stringify(input.scopes),
         workspaceAccessAll: input.workspace_access_all ? 1 : 0,
         isAgent: input.is_agent ? 1 : 0,
+        exclusiveIdentity: 0,
         deactivatedAt: null,
         createdAt: t,
         updatedAt: t,
@@ -245,6 +246,20 @@ export function usersHandlers(
         updates.role = input.role;
       }
       if (input.scopes !== undefined) updates.scopes = JSON.stringify(input.scopes);
+      if (input.exclusive_identity !== undefined) {
+        // The policy is an identity setting managed by people, never by a worker key.
+        if (c.get("identitySession")) {
+          throw forbidden("identity-session keys cannot change the exclusivity policy");
+        }
+        if (input.exclusive_identity && !target.isAgent) {
+          throw validationError("exclusive identity sessions apply to agent accounts");
+        }
+        if (!input.exclusive_identity) {
+          const active = activeIdentitySession(ctx.db, target.id);
+          if (active) throw conflict("release the active identity session first");
+        }
+        updates.exclusiveIdentity = input.exclusive_identity ? 1 : 0;
+      }
       if (input.workspace_access_all !== undefined)
         updates.workspaceAccessAll = input.workspace_access_all ? 1 : 0;
       if (input.password !== undefined) {

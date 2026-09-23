@@ -4,7 +4,7 @@ import type { RouteId } from "@temujira/shared";
 import type { LoginRateLimiter } from "../auth";
 import type { ServerConfig } from "../config";
 import type { Db } from "../db";
-import type { UserRow } from "../serialize";
+import type { IdentitySessionRow, UserRow } from "../serialize";
 import type { LocalStorage } from "../storage";
 
 export type AppEnv = {
@@ -12,6 +12,13 @@ export type AppEnv = {
     user?: UserRow;
     authKind?: "cookie" | "bearer";
     sessionId?: string;
+    /** Set for Bearer `tmj_` API-key requests: the key that authenticated. */
+    apiKeyId?: string;
+    /**
+     * The caller's active identity session, when the credential is the session key of an
+     * exclusive identity. Null/absent for ordinary credentials.
+     */
+    identitySession?: IdentitySessionRow | null;
     body?: unknown;
     query?: unknown;
   };

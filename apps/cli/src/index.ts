@@ -9,6 +9,7 @@ import { registerAttach } from "./commands/attach";
 import { registerAuth } from "./commands/auth";
 import { registerComment } from "./commands/comment";
 import { registerField } from "./commands/field";
+import { registerIdentity } from "./commands/identity";
 import { registerInbox } from "./commands/inbox";
 import { registerMe } from "./commands/me";
 import { registerQueue } from "./commands/queue";
@@ -78,6 +79,7 @@ export function buildProgram(): Command {
   registerActivity(program);
   registerInbox(program);
   registerApi(program);
+  registerIdentity(program);
   addGlobalOptions(program);
   for (const leaf of leafCommands(program)) {
     if (leaf !== program) addGlobalOptions(leaf);

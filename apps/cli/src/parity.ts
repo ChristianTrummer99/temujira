@@ -6,6 +6,7 @@ import { COMMAND_ROUTES as ATTACH_ROUTES } from "./commands/attach";
 import { COMMAND_ROUTES as AUTH_ROUTES } from "./commands/auth";
 import { COMMAND_ROUTES as COMMENT_ROUTES } from "./commands/comment";
 import { COMMAND_ROUTES as FIELD_ROUTES } from "./commands/field";
+import { COMMAND_ROUTES as IDENTITY_ROUTES } from "./commands/identity";
 import { COMMAND_ROUTES as INBOX_ROUTES } from "./commands/inbox";
 import { COMMAND_ROUTES as ME_ROUTES } from "./commands/me";
 import { COMMAND_ROUTES as QUEUE_ROUTES } from "./commands/queue";
@@ -37,4 +38,5 @@ export const COMMAND_ROUTE_MAP: Record<string, readonly RouteId[]> = {
   ...ACTIVITY_ROUTES,
   ...INBOX_ROUTES,
   ...API_ROUTES,
+  ...IDENTITY_ROUTES,
 };

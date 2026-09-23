@@ -15,6 +15,7 @@ import { authHandlers } from "./routes/authRoutes";
 import { commentsHandlers } from "./routes/commentsRoutes";
 import { fieldsHandlers } from "./routes/fieldsRoutes";
 import { inboxHandlers } from "./routes/inboxRoutes";
+import { identitySessionHandlers } from "./routes/identitySessionsRoutes";
 import { linksHandlers } from "./routes/linksRoutes";
 import { metaHandlers } from "./routes/meta";
 import { queueHandlers } from "./routes/queueRoutes";
@@ -158,6 +159,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     ...attachmentsHandlers(ctx),
     ...activityHandlers(ctx),
     ...inboxHandlers(ctx),
+    ...identitySessionHandlers(ctx),
   };
 
   const app = new Hono<AppEnv>();

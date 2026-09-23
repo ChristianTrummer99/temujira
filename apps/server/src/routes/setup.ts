@@ -28,6 +28,7 @@ export function createFirstAdmin(
     scopes: "[]",
     workspaceAccessAll: 1,
     isAgent: 0,
+    exclusiveIdentity: 0,
     deactivatedAt: null,
     createdAt: t,
     updatedAt: t,
