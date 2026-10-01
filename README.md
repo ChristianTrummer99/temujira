@@ -11,6 +11,12 @@ cross-workspace **inbox**, comments can pose **multiple-choice questions** that 
 with a reply, admin-managed **tags** group work across statuses, and every user — human or
 agent — gets an **activity feed** and a **my tasks** view of everything they touched.
 
+**Global search** finds tasks, discussions and files across your accessible workspaces,
+with workspace/type filters and `Cmd/Ctrl+K` access. **Activity** records successful API
+mutations, with global/workspace feeds and a ticket-level Activity tab. Markdown displays
+support CommonMark and GitHub-flavored tables, nested lists, checklists, strikethrough,
+autolinks and footnotes, with Write/Preview controls in composers.
+
 > **The contract:** every action available in the web UI is also available via the API and
 > the CLI. Agents authenticate with API keys and work tickets exactly like humans do.
 
@@ -75,6 +81,9 @@ tmj inbox list          # mentions and replies aimed at you, across every worksp
 tmj inbox read          # mark them all read
 tmj task mine           # active tasks you created, were assigned, commented on or were mentioned in
 tmj activity list --workspace ENG --mine
+tmj activity list --task ENG-42
+tmj activity list                           # global, filtered by your permissions
+tmj search "calibration" --workspace ENG --type attachment --json
 ```
 
 An agent's loop is usually: `tmj inbox list --json` → work the task → `tmj comment add`

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useAuth } from '@/lib/auth';
+import { editableText } from '@/lib/editable-text';
 import { initialsOf, splitTaskKey, taskKeyBody } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useWorkspaceKeys } from '@/lib/workspaces';
@@ -552,25 +553,18 @@ function restoreCaret(el: HTMLElement, offset: number) {
   if (!sel) return;
   const total = el.textContent?.length ?? 0;
   let remaining = Math.max(0, Math.min(offset, total));
-  const nodes = Array.from(el.childNodes);
   let node: Node = el;
   let nodeOffset = 0;
-  if (nodes.length > 0) {
-    let done = false;
-    for (const n of nodes) {
-      const len = n.textContent?.length ?? 0;
-      if (remaining <= len) {
-        node = n;
-        nodeOffset = remaining;
-        done = true;
-        break;
-      }
-      remaining -= len;
-    }
-    if (!done) {
-      node = nodes[nodes.length - 1];
-      nodeOffset = node.textContent?.length ?? 0;
-    }
+  // Offsets are characters, not child-element indices. Walk through decorated spans
+  // down to their text nodes so formatting does not move the cursor after a rebuild.
+  const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let textNode: Node | null;
+  while ((textNode = walker.nextNode())) {
+    const length = textNode.textContent?.length ?? 0;
+    node = textNode;
+    nodeOffset = Math.min(remaining, length);
+    if (remaining <= length) break;
+    remaining -= length;
   }
   const range = doc.createRange();
   if (node.nodeType === Node.ELEMENT_NODE) {
@@ -793,8 +787,12 @@ React.useLayoutEffect(() => {
   function handleInput() {
     const el = rootRef.current;
     if (!el) return;
-    const text = el.textContent ?? '';
-    caretRef.current = getCaretOffset(el) ?? caretRef.current;
+    // Pasting or browser input can introduce <br>/<div> line boundaries. textContent
+    // drops those boundaries and silently destroys tables/lists/fences. Read rendered
+    // plain text once, then normalize back to our flat, decorated text-node structure.
+    const text = editableText(el);
+    const offset = getCaretOffset(el);
+    caretRef.current = offset === el.textContent?.length ? text.length : (offset ?? caretRef.current);
     setCaret(caretRef.current);
     readyRef.current = true;
     const read = readSegments(el);

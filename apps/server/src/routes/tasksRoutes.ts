@@ -31,6 +31,7 @@ import {
   type UserRow,
 } from "../serialize";
 import { newId, now } from "../util";
+import { searchExpression } from "../search";
 import { associate, recordActivity } from "./engagement";
 import { loadLinksForTask } from "./linksRoutes";
 import { requireTask, requireWorkspace } from "./resolve";
@@ -188,9 +189,14 @@ export function tasksHandlers(
         );
       }
       if (q.q !== undefined && q.q !== "") {
-        // Case-insensitive substring match; escape LIKE wildcards so they match literally.
+        // Retain title substring matching and also search descriptions, comments and files.
         const escaped = q.q.replace(/[\\%_]/g, (m) => `\\${m}`);
-        conds.push(sql`${tasks.title} LIKE ${`%${escaped}%`} ESCAPE '\\'`);
+        // Preserve literal LIKE wildcard characters in the existing workspace filter.
+        const expression = /[%_]/.test(q.q) ? null : searchExpression(q.q);
+        const textMatch = sql`(${tasks.title} LIKE ${`%${escaped}%`} ESCAPE '\\' OR ${tasks.description} LIKE ${`%${escaped}%`} ESCAPE '\\')`;
+        conds.push(expression
+          ? sql`(${textMatch} OR ${tasks.id} IN (SELECT task_id FROM search_fts WHERE search_fts MATCH ${expression}))`
+          : textMatch);
       }
       const where = and(...conds);
       const total = ctx.db.select({ c: count() }).from(tasks).where(where).get()?.c ?? 0;

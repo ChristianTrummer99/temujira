@@ -1,4 +1,3 @@
-import '@/components/description-editor.css';
 import type { DescriptionEditorProps } from '@/components/description-editor';
 import { cn } from '@/lib/utils';
 import {
@@ -6,6 +5,7 @@ import {
   type AtomicCodeMirrorEditorHandle,
 } from '@atomic-editor/editor';
 import '@atomic-editor/editor/styles.css';
+import '@/components/description-editor.css';
 import { placeholder } from '@codemirror/view';
 import * as React from 'react';
 

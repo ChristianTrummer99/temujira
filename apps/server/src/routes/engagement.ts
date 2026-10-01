@@ -3,6 +3,7 @@ import type { Db } from "../db";
 import { activityEvents, inboxItems, taskAssociations, users } from "../db/schema";
 import { newId, now } from "../util";
 import type { UserRow } from "../serialize";
+import { auditContext, type ActivityRecord } from "../audit-context";
 
 /**
  * @-mention token regex. Supports @DisplayName (letters/spaces/numbers/._-) up to a
@@ -46,18 +47,20 @@ export function associate(db: Db, taskId: string, userIds: string[], t = now()):
 /** Record an activity event in a workspace's action feed. */
 export function recordActivity(
   db: Db,
-  opts: {
-    workspaceId: string;
-    taskId?: string | null;
-    actorId: string;
-    action: string;
-    metadata?: Record<string, unknown>;
-  },
+  opts: ActivityRecord,
 ): void {
+  const collected = auditContext.getStore();
+  if (collected) {
+    collected.push(opts);
+    return;
+  }
   db.insert(activityEvents)
     .values({
       id: newId(),
-      workspaceId: opts.workspaceId,
+      workspaceId: opts.workspaceId ?? null,
+      visibility: opts.visibility ?? (opts.workspaceId ? "workspace" : "admin"),
+      ownerId: opts.ownerId ?? null,
+      relatedWorkspaceId: opts.relatedWorkspaceId ?? null,
       taskId: opts.taskId ?? null,
       actorId: opts.actorId,
       action: opts.action,
@@ -116,5 +119,4 @@ export function pushInbox(
     }
   });
 }
-
 

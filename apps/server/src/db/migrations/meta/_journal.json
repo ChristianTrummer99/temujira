@@ -57,6 +57,20 @@
       "when": 1790188495931,
       "tag": "0007_sparkling_spitfire",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790866437512,
+      "tag": "0008_lethal_phalanx",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790866437975,
+      "tag": "0009_full_text_search",
+      "breakpoints": true
     }
   ]
 }

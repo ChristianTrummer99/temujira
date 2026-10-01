@@ -122,7 +122,9 @@ export type Tag = z.infer<typeof TagSchema>;
 
 export const ActivityEventSchema = z.object({
   id: UlidSchema,
-  workspace_id: UlidSchema,
+  workspace_id: UlidSchema.nullable(),
+  workspace_key: z.string().nullable().optional(),
+  visibility: z.enum(["workspace", "private", "admin"]),
   task_id: UlidSchema.nullable(),
   task_key: z.string().nullable(),
   task_title: z.string().nullable(),
@@ -133,6 +135,31 @@ export const ActivityEventSchema = z.object({
   created_at: TimestampSchema,
 });
 export type ActivityEvent = z.infer<typeof ActivityEventSchema>;
+
+export const SEARCH_TYPES = ["all", "task", "comment", "attachment"] as const;
+export const SearchQuerySchema = z.object({
+  q: z.string().trim().min(1).max(500),
+  workspace: z.string().trim().min(1).optional(),
+  type: z.enum(SEARCH_TYPES).default("all"),
+  include_archived: QueryBoolSchema,
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export const SearchResultSchema = z.object({
+  id: UlidSchema,
+  type: z.enum(["task", "comment", "attachment"]),
+  workspace_id: UlidSchema,
+  workspace_key: z.string(),
+  workspace_name: z.string(),
+  task_id: UlidSchema,
+  task_key: z.string(),
+  task_title: z.string(),
+  title: z.string(),
+  snippet: z.string(),
+  comment_id: UlidSchema.nullable(),
+  attachment_id: UlidSchema.nullable(),
+});
+export type SearchResult = z.infer<typeof SearchResultSchema>;
 
 export const AttachmentSchema = z.object({
   id: UlidSchema,
@@ -557,7 +584,7 @@ export const ListTasksQuerySchema = z.object({
   status_id: UlidSchema.optional(),
   assignee_id: UlidSchema.optional(),
   tag_id: UlidSchema.optional(),
-  /** Substring match on title. */
+  /** Search task title/description, comments, attachment names and indexed text. */
   q: z.string().optional(),
   /** Filter to tasks with a value for this custom select field. */
   field_id: UlidSchema.optional(),
@@ -582,6 +609,13 @@ export const ListActivityQuerySchema = z.object({
   mine: QueryBoolSchema,
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+});
+
+export const ListGlobalActivityQuerySchema = ListActivityQuerySchema.extend({
+  workspace: z.string().trim().min(1).optional(),
+  task: z.string().trim().min(1).optional(),
+  actor_id: UlidSchema.optional(),
+  action: z.string().trim().min(1).max(100).optional(),
 });
 
 export const ListMyTasksQuerySchema = z.object({

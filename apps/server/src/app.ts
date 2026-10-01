@@ -16,6 +16,8 @@ import { commentsHandlers } from "./routes/commentsRoutes";
 import { fieldsHandlers } from "./routes/fieldsRoutes";
 import { inboxHandlers } from "./routes/inboxRoutes";
 import { identitySessionHandlers } from "./routes/identitySessionsRoutes";
+import { searchHandlers } from "./routes/searchRoutes";
+import { backfillAttachmentSearch } from "./search";
 import { linksHandlers } from "./routes/linksRoutes";
 import { metaHandlers } from "./routes/meta";
 import { queueHandlers } from "./routes/queueRoutes";
@@ -27,6 +29,7 @@ import { workspacesHandlers } from "./routes/workspacesRoutes";
 import type { AppContext, AppEnv, Handlers } from "./routes/types";
 import { LocalStorage } from "./storage";
 import { staticMiddleware } from "./static";
+import { auditMutation } from "./audit";
 
 const JSON_BODY_LIMIT = 2 * 1024 * 1024;
 
@@ -141,6 +144,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     console.log(`[temujira] removed ${swept} orphaned upload file(s)`);
 
   await seedAdminFromEnv(ctx);
+  backfillAttachmentSearch(ctx);
 
   const handlers: Handlers = {
     ...metaHandlers(ctx),
@@ -160,6 +164,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     ...activityHandlers(ctx),
     ...inboxHandlers(ctx),
     ...identitySessionHandlers(ctx),
+    ...searchHandlers(ctx),
   };
 
   const app = new Hono<AppEnv>();
@@ -207,6 +212,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     if (def.auth !== "public")
       middlewares.push(requireAuth(def.auth, db, config, def.scope));
     middlewares.push(validateRequest(def));
+    middlewares.push(auditMutation(ctx, id));
     app.on([def.method], [`/api/v1${def.path}`], ...middlewares, handlers[id]);
   }
 

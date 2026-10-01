@@ -46,6 +46,8 @@ import { WorkspaceListProvider, useWorkspaceList } from '@/lib/workspaces';
 import { Slot, useGlobalSearchParams, usePathname, useRouter, type Href } from 'expo-router';
 import {
   ArchiveIcon,
+  ActivityIcon,
+  SearchIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ChevronsUpDownIcon,
@@ -58,7 +60,7 @@ import {
   SettingsIcon,
 } from 'lucide-react-native';
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
 import {
   Dialog,
   DialogClose,
@@ -75,6 +77,18 @@ import { Label } from '@/components/ui/label';
 export default function AppLayout() {
   const { loading, user } = useAuth();
   const router = useRouter();
+
+  React.useEffect(() => {
+    if (Platform.OS !== 'web' || !user) return;
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        router.push('/search' as Href);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [router, user]);
 
   React.useEffect(() => {
     if (loading) return;
@@ -112,6 +126,9 @@ function AppSidebar() {
 
   const [archivedCollapsed, setArchivedCollapsed] = React.useState(true);
   const [signOutOpen, setSignOutOpen] = React.useState(false);
+  const [workspaceFilter, setWorkspaceFilter] = React.useState('');
+  const matchesWorkspace = (workspace: { name: string; key: string }) =>
+    `${workspace.name} ${workspace.key}`.toLowerCase().includes(workspaceFilter.trim().toLowerCase());
 
   function navigate(href: Href) {
     router.push(href);
@@ -146,6 +163,18 @@ function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={pathname === '/search'} onPress={() => navigate('/search' as Href)}>
+                  <Icon as={SearchIcon} className="text-sidebar-foreground size-4" />
+                  <Text className="flex-1">Search</Text>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={pathname === '/activity'} onPress={() => navigate('/activity' as Href)}>
+                  <Icon as={ActivityIcon} className="text-sidebar-foreground size-4" />
+                  <Text className="flex-1">Activity</Text>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname === '/inbox'}
@@ -205,9 +234,16 @@ function AppSidebar() {
             <SidebarGroupLabel>Workspaces</SidebarGroupLabel>
             {hasScope(user, 'workspaces:create') ? <CreateWorkspaceDialog onCreated={reload} /> : null}
           </View>
+          <Input
+            accessibilityLabel="Filter workspaces"
+            placeholder="Filter workspaces…"
+            value={workspaceFilter}
+            onChangeText={setWorkspaceFilter}
+            className="mb-2 h-8 text-xs"
+          />
           <SidebarGroupContent>
             <SidebarMenu>
-              {workspaces.map((workspace) => {
+              {workspaces.filter(matchesWorkspace).map((workspace) => {
                 const isActive = pathname.startsWith(`/w/${workspace.key}`);
                 return (
                   <SidebarMenuItem key={workspace.id}>
@@ -229,10 +265,10 @@ function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
-              {workspaces.length === 0 ? (
+              {workspaces.filter(matchesWorkspace).length === 0 ? (
                 <SidebarMenuItem>
                   <Text className="text-sidebar-foreground/60 px-2 text-xs">
-                    No workspaces yet
+                    {workspaceFilter ? 'No matching workspaces' : 'No workspaces yet'}
                   </Text>
                 </SidebarMenuItem>
               ) : null}
@@ -258,7 +294,7 @@ function AppSidebar() {
           {!archivedCollapsed ? (
             <SidebarGroupContent>
               <SidebarMenu>
-                {archived.map((workspace) => (
+                {archived.filter(matchesWorkspace).map((workspace) => (
                   <SidebarMenuItem key={workspace.id}>
                     <SidebarMenuButton
                       isActive={pathname.startsWith(`/w/${workspace.key}`)}
@@ -270,10 +306,10 @@ function AppSidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
-                {archived.length === 0 ? (
+                {archived.filter(matchesWorkspace).length === 0 ? (
                   <SidebarMenuItem>
                     <Text className="text-sidebar-foreground/60 px-2 text-xs">
-                      Nothing archived
+                      {workspaceFilter ? 'No matching archived workspaces' : 'Nothing archived'}
                     </Text>
                   </SidebarMenuItem>
                 ) : null}
@@ -343,11 +379,16 @@ function AppSidebar() {
 }
 
 function TopBarShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   return (
     <View className="border-border h-14 flex-row items-center gap-2 border-b px-4">
       <SidebarTrigger />
       <Separator orientation="vertical" className="h-4" />
-      <View className="flex-1 flex-row items-center gap-1.5">{children}</View>
+      <View className="min-w-0 flex-1 flex-row items-center gap-1.5">{children}</View>
+      <Button variant="ghost" size="sm" className="gap-1" accessibilityLabel="Open global search" onPress={() => router.push('/search' as Href)}>
+        <Icon as={SearchIcon} className="text-muted-foreground size-4" />
+        <Text className="text-xs">Search</Text>
+      </Button>
     </View>
   );
 }
@@ -385,6 +426,8 @@ function breadcrumbTrail(
   if (pathname === '/inbox') return [overview, { label: 'Inbox' }];
   if (pathname === '/my') return [overview, { label: 'My Tasks' }];
   if (pathname === '/queue') return [overview, { label: 'My Queue' }];
+  if (pathname === '/search') return [overview, { label: 'Search' }];
+  if (pathname === '/activity') return [overview, { label: 'Activity' }];
 
   if (workspaceKey) {
     const label = workspaceName ?? workspaceKey;

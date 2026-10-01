@@ -5,6 +5,8 @@ import {
 } from '@/components/attachment-preview';
 import { DescriptionEditor } from '@/components/description-editor';
 import { Markdown } from '@/components/markdown';
+import { MarkdownField } from '@/components/markdown-field';
+import { ActivityFeed } from '@/components/activity-feed';
 import { MentionInput } from '@/components/mention-input';
 import { RichEditor } from '@/components/rich-editor';
 import { TagPill } from '@/components/tag-pill';
@@ -90,7 +92,7 @@ interface TaskPageData {
 }
 
 export default function TaskDetailScreen() {
-  const { key, num } = useLocalSearchParams<{ key: string; num: string }>();
+  const { key, num, comment: focusComment, attachment: focusAttachment } = useLocalSearchParams<{ key: string; num: string; comment?: string; attachment?: string }>();
   const workspaceKey = (key ?? '').toUpperCase();
   const taskNum = num ?? '';
   const idOrKey = `${workspaceKey}-${taskNum}`;
@@ -101,6 +103,8 @@ export default function TaskDetailScreen() {
   const [open, setOpen] = React.useState(true);
   const [mentionedUser, setMentionedUser] = React.useState<User | null>(null);
   const [previewAtt, setPreviewAtt] = React.useState<Attachment | null>(null);
+  const [discussionTab, setDiscussionTab] = React.useState<'comments' | 'activity'>('comments');
+  const openedAttachment = React.useRef<string | null>(null);
 
   const resource = useResource<TaskPageData>(async () => {
     const [taskRes, statusRes, userRes, tagRes, fieldRes, queueRes, commentRes] = await Promise.all([
@@ -122,6 +126,25 @@ export default function TaskDetailScreen() {
       comments: commentRes.items,
     };
   }, [client, idOrKey, workspaceKey]);
+
+  React.useEffect(() => {
+    if (!resource.data || !focusAttachment || openedAttachment.current === focusAttachment) return;
+    const { task, comments } = resource.data;
+    const files = [...(task.attachments ?? []), ...comments.flatMap((c) => [...c.attachments, ...c.replies.flatMap((r) => r.attachments)])];
+    const attachment = files.find((a) => a.id === focusAttachment);
+    if (attachment) { openedAttachment.current = focusAttachment; setPreviewAtt(attachment); }
+  }, [focusAttachment, resource.data]);
+
+  React.useEffect(() => {
+    if (!focusComment || !resource.data || Platform.OS !== 'web') return;
+    setDiscussionTab('comments');
+    const timer = setTimeout(() => {
+      const element = document.getElementById(`comment-${focusComment}`);
+      element?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      element?.animate([{ backgroundColor: 'rgba(59,130,246,0.18)' }, { backgroundColor: 'transparent' }], { duration: 1800 });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [focusComment, resource.data?.task.id]);
 
   const setTask = React.useCallback(
     (updated: Task) => {
@@ -298,7 +321,11 @@ export default function TaskDetailScreen() {
           />
 
           <Separator />
-
+          <View className="flex-row gap-1">
+            <Button size="sm" variant={discussionTab === 'comments' ? 'secondary' : 'ghost'} accessibilityLabel="Show ticket comments" onPress={() => setDiscussionTab('comments')}><Text>Comments</Text></Button>
+            <Button size="sm" variant={discussionTab === 'activity' ? 'secondary' : 'ghost'} accessibilityLabel="Show ticket activity" onPress={() => setDiscussionTab('activity')}><Text>Activity</Text></Button>
+          </View>
+          <View style={discussionTab === 'comments' ? undefined : { display: 'none' }}>
           <CommentsSection
             taskKey={idOrKey}
             comments={comments}
@@ -310,6 +337,8 @@ export default function TaskDetailScreen() {
             onMentionPress={setMentionedUser}
             onPreview={setPreviewAtt}
           />
+          </View>
+          {discussionTab === 'activity' ? <ActivityFeed task={idOrKey} /> : null}
         </ScrollView>
         </SheetContent>
       </Sheet>
@@ -833,18 +862,20 @@ function InlineDescriptionEditor({
         <AutoSaveStatus status={status} />
       </View>
       <View className="border-border bg-card gap-2 rounded-md border p-1.5">
-        <DescriptionEditor
-          documentId={task.id}
-          value={task.description ?? ''}
-          onChangeText={(t) => {
-            onChanged({ ...task, description: t });
-            schedule(t);
-          }}
-          onBlurCommit={() => void flush()}
-          mentions={users}
-          placeholder="No description yet — start typing…"
-          className="min-h-32"
-        />
+        <MarkdownField value={task.description ?? ''} mentionUsers={users} label="description">
+          <DescriptionEditor
+            documentId={task.id}
+            value={task.description ?? ''}
+            onChangeText={(t) => {
+              onChanged({ ...task, description: t });
+              schedule(t);
+            }}
+            onBlurCommit={() => void flush()}
+            mentions={users}
+            placeholder="No description yet — start typing…"
+            className="min-h-32"
+          />
+        </MarkdownField>
         <Text className="text-muted-foreground px-2 pb-1 text-[11px]">
           Markdown supported · @ to mention · auto-saves
         </Text>
@@ -1369,14 +1400,16 @@ function CommentsSection({
 
       <View className="gap-2">
         <View className="border-border bg-card gap-2 rounded-md border p-2.5">
-          <MentionInput
-            value={body}
-            onChangeText={setBody}
-            onMentionIdsChange={setMentionIds}
-            mentions={users}
-            placeholder="Write a comment — @ to mention, markdown supported..."
-            className="min-h-20"
-          />
+          <MarkdownField value={body} mentionUsers={users} label="comment">
+            <MentionInput
+              value={body}
+              onChangeText={setBody}
+              onMentionIdsChange={setMentionIds}
+              mentions={users}
+              placeholder="Write a comment — @ to mention, markdown supported..."
+              className="min-h-20"
+            />
+          </MarkdownField>
           {asQuestion ? (
             <View className="border-border gap-2 rounded-md border border-dashed p-2.5">
               <Text className="text-xs font-medium">Multiple-choice options (2–10)</Text>
@@ -1428,8 +1461,8 @@ function CommentsSection({
             </View>
           ) : null}
           {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-          <View className="flex-row items-center justify-between gap-2">
-            <View className="flex-row items-center gap-2">
+          <View className="flex-row flex-wrap items-center justify-between gap-2">
+            <View className="max-w-full flex-row flex-wrap items-center gap-2">
               <label htmlFor="comment-attach" className="cursor-pointer">
                 <View
                   className="border-border bg-background text-foreground hover:bg-accent flex h-8 flex-row items-center gap-1.5 rounded-md border px-3 text-sm shadow-sm shadow-black/5"
@@ -1681,15 +1714,17 @@ function ReplyComposer({
 
   return (
     <View className="border-border bg-card gap-2 rounded-md border p-2.5">
-      <MentionInput
-        value={body}
-        onChangeText={setBody}
-        onMentionIdsChange={setMentionIds}
-        mentions={users}
-        placeholder="Reply…"
-        className="min-h-16"
-        autoFocus
-      />
+      <MarkdownField value={body} mentionUsers={users} label="reply">
+        <MentionInput
+          value={body}
+          onChangeText={setBody}
+          onMentionIdsChange={setMentionIds}
+          mentions={users}
+          placeholder="Reply…"
+          className="min-h-16"
+          autoFocus
+        />
+      </MarkdownField>
       {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
       <View className="flex-row justify-end gap-2">
         <Button variant="ghost" size="sm" onPress={onCancel}>
@@ -1765,7 +1800,7 @@ function CommentCard({
   }
 
   return (
-    <View className="flex-row gap-3">
+    <View nativeID={`comment-${comment.id}`} className="flex-row gap-3">
       <Avatar alt={comment.author.name} className={compact ? 'size-6' : 'size-8'}>
         <AvatarFallback>
           <Text className={compact ? 'text-[10px]' : 'text-xs'}>
@@ -1774,7 +1809,7 @@ function CommentCard({
         </AvatarFallback>
       </Avatar>
       <View className="min-w-0 flex-1 gap-1">
-        <View className="flex-row items-center gap-2">
+        <View className="flex-row flex-wrap items-center gap-2">
           <Text className="text-sm font-medium">{comment.author.name}</Text>
           <Text className="text-muted-foreground text-xs">{formatAbsolute(comment.created_at)}</Text>
           {comment.updated_at !== comment.created_at ? (
@@ -1803,7 +1838,9 @@ function CommentCard({
         </View>
         {editing ? (
           <View className="gap-2">
-            <Textarea value={editBody} onChangeText={setEditBody} className="min-h-20" />
+            <MarkdownField value={editBody} mentionUsers={users} label="edited comment">
+              <Textarea value={editBody} onChangeText={setEditBody} className="min-h-20" />
+            </MarkdownField>
             <View className="flex-row justify-end">
               <Button size="sm" onPress={onSaveEdit}>
                 <Text>Save</Text>

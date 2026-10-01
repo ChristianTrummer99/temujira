@@ -260,17 +260,55 @@ Upload requires exactly one parent. Download refuses to overwrite unless `--forc
 verifies SHA-256. A checksum mismatch keeps the file and exits 1. Comment attachments are
 embedded in comment output; `attach list` is task-only.
 
+## Global and workspace search
+
+```text
+tmj search <query> [--workspace <idOrKey>] [--type all|task|comment|attachment]
+                   [--archived] [--limit <n>] [--offset <n>]
+```
+
+Search is global by default, limited to the caller's accessible workspaces. Results include
+task titles/descriptions, comments/replies (including question options), attachment filenames,
+and UTF-8 text-file contents up to 1 MiB. Supported text includes Markdown, JSON, CSV/TSV,
+HTML/XML/SVG, logs, configuration, code, and G-code. Binary files (including PDFs, Office
+documents and images) and larger files are searchable by filename, without content extraction
+or OCR. Existing files are indexed on startup; edits and deletes update the index automatically.
+
+Keywords are ANDed prefix matches; quote a phrase for a phrase match, e.g.
+`tmj search '"bearing clearance"' --workspace ENG --json`. SQL/FTS operators are not exposed.
+The response is `{items, total, limit, offset}`. Each hit includes `type`, `id`, `task_id`,
+`task_key`, `workspace_id`, `workspace_key`, `title`, a plain-text `snippet`, and nullable
+`comment_id`/`attachment_id` so a caller can open the exact match. Counts and pagination are
+permission-filtered too. Archived tasks/workspaces are excluded unless `--archived` is set.
+`--quiet` prints result IDs. The existing `task list --search` workspace filter also finds
+matching descriptions, comments and attachments.
+
 ## Activity and inbox
 
 ```text
-tmj activity list --workspace <workspaceIdOrKey>
-                  [--mine] [--limit <n>] [--offset <n>]
+tmj activity list [--workspace <workspaceIdOrKey>] [--task <taskIdOrKey>]
+                  [--actor <userId>] [--action <action>] [--mine]
+                  [--limit <n>] [--offset <n>]
 
 tmj inbox list [--all] [--limit <n>] [--offset <n>]
 tmj inbox read
 ```
 
-Activity is newest first. `activity --mine` means events on tasks associated with the
+Activity is global by default and newest first. Every successful mutating API operation
+records its actor, action, target and timestamp. This includes edits/deletes of comments and
+files, account/key/session operations, queue/inbox actions, workspace settings and bulk
+changes. Ticket history resolves indirect targets (comment/file/link IDs) back to the ticket.
+Read requests and failed mutations do not add success events. Existing history is retained;
+previously unlogged actions cannot be reconstructed retroactively. Passwords, key tokens and
+session secrets are never written to activity metadata.
+
+Workspace activity requires current workspace access. Private account/key/inbox/queue
+events are visible to their owner and admins; user-administration events are admin-only.
+Cross-workspace link events require access to both ends. Permissions are applied before
+pagination/counting, including ticket feeds. Global/ticket responses include
+`{items,total,limit,offset}`; the legacy workspace-only endpoint retains `{items}`.
+
+`activity list --mine` means events on tasks associated with the
 current user, not only actions performed by that user. Inbox defaults to unread;
 `--all` includes read items. `inbox read` marks every item read.
 

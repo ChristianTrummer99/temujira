@@ -1,0 +1,93 @@
+/* Semantic Markdown elements, scoped so app controls keep their existing styles. */
+.tmj-markdown {
+  min-width: 0;
+  max-width: 100%;
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  overflow-wrap: anywhere;
+}
+
+.tmj-markdown > :first-child { margin-top: 0; }
+.tmj-markdown > :last-child { margin-bottom: 0; }
+.tmj-markdown p { margin: 0.5rem 0; }
+.tmj-markdown h1, .tmj-markdown h2, .tmj-markdown h3,
+.tmj-markdown h4, .tmj-markdown h5, .tmj-markdown h6 {
+  margin: 1rem 0 0.5rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.tmj-markdown h1 { font-size: 1.25rem; font-weight: 700; }
+.tmj-markdown h2 { font-size: 1.125rem; font-weight: 700; }
+.tmj-markdown h3, .tmj-markdown h4 { font-size: 1rem; }
+.tmj-markdown h5, .tmj-markdown h6 { font-size: 0.875rem; }
+.tmj-markdown h6 { color: hsl(var(--muted-foreground)); }
+.tmj-markdown strong { font-weight: 700; }
+.tmj-markdown em { font-style: italic; }
+.tmj-markdown del { text-decoration: line-through; }
+.tmj-markdown u { text-decoration: underline; }
+.tmj-markdown ul, .tmj-markdown ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+.tmj-markdown ul { list-style: disc; }
+.tmj-markdown ol { list-style: decimal; }
+.tmj-markdown ul ul { list-style: circle; }
+.tmj-markdown ul ul ul { list-style: square; }
+.tmj-markdown li { display: list-item; padding-left: 0.125rem; }
+.tmj-markdown li + li { margin-top: 0.25rem; }
+.tmj-markdown li > ul, .tmj-markdown li > ol { margin: 0.25rem 0; }
+.tmj-markdown .task-list-item { list-style: none; }
+.tmj-markdown .task-list-item > input,
+.tmj-markdown .task-list-item > p > input { margin-left: -1.25rem; margin-right: 0.4rem; }
+.tmj-markdown input[type='checkbox'] { accent-color: hsl(var(--primary)); }
+.tmj-markdown blockquote {
+  margin: 0.75rem 0;
+  border-left: 2px solid hsl(var(--border));
+  padding-left: 0.75rem;
+  color: hsl(var(--muted-foreground));
+}
+.tmj-markdown hr { margin: 1rem 0; border: 0; border-top: 1px solid hsl(var(--border)); }
+.tmj-markdown a { color: #3b82f6; text-decoration: underline; text-underline-offset: 2px; }
+.tmj-markdown a:hover { color: #2563eb; }
+.tmj-markdown .tmj-markdown-task { font-family: ui-monospace, monospace; }
+.tmj-markdown-mention {
+  display: inline;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563eb;
+  padding: 0 3px;
+  font: inherit;
+  font-weight: 500;
+}
+.tmj-markdown button.tmj-markdown-mention { cursor: pointer; }
+.tmj-markdown img { display: inline-block; max-width: 100%; height: auto; border-radius: 4px; }
+.tmj-markdown code { font-family: ui-monospace, monospace; font-size: 0.85em; }
+.tmj-markdown :not(pre) > code { background: hsl(var(--muted)); border-radius: 4px; padding: 0.1em 0.3em; }
+.tmj-markdown pre {
+  margin: 0.75rem 0;
+  max-width: 100%;
+  overflow-x: auto;
+  background: hsl(var(--muted));
+  border-radius: 6px;
+  padding: 0.75rem;
+  line-height: 1.25rem;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.tmj-markdown pre > code { font-size: 0.75rem; }
+.tmj-markdown-table { margin: 0.75rem 0; max-width: 100%; overflow-x: auto; }
+.tmj-markdown table { border-collapse: collapse; width: max-content; min-width: 100%; }
+.tmj-markdown th, .tmj-markdown td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.5rem 0.75rem;
+  min-width: 7rem;
+  max-width: 28rem;
+  text-align: left;
+  vertical-align: top;
+}
+.tmj-markdown th { font-weight: 600; background: hsl(var(--muted)); }
+.tmj-markdown tr:nth-child(even) td { background: hsl(var(--muted) / 0.4); }
+.tmj-markdown .footnotes { margin-top: 1rem; padding-top: 0.5rem; border-top: 1px solid hsl(var(--border)); font-size: 0.75rem; }
+.tmj-markdown .footnotes .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.tmj-markdown sup { font-size: 0.75em; vertical-align: super; }
+.tmj-markdown [id] { scroll-margin-top: 1rem; }
+.tmj-markdown-table:focus-visible, .tmj-markdown a:focus-visible,
+.tmj-markdown button:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }

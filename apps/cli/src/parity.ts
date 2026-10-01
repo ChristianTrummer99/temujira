@@ -1,5 +1,6 @@
 import type { RouteId } from "@temujira/shared";
 import { COMMAND_ROUTES as ACTIVITY_ROUTES } from "./commands/activity";
+import { COMMAND_ROUTES as SEARCH_ROUTES } from "./commands/search";
 import { COMMAND_ROUTES as API_ROUTES } from "./commands/api";
 import { COMMAND_ROUTES as APIKEY_ROUTES } from "./commands/apikey";
 import { COMMAND_ROUTES as ATTACH_ROUTES } from "./commands/attach";
@@ -36,6 +37,7 @@ export const COMMAND_ROUTE_MAP: Record<string, readonly RouteId[]> = {
   ...FIELD_ROUTES,
   ...QUEUE_ROUTES,
   ...ACTIVITY_ROUTES,
+  ...SEARCH_ROUTES,
   ...INBOX_ROUTES,
   ...API_ROUTES,
   ...IDENTITY_ROUTES,

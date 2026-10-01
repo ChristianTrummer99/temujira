@@ -5,23 +5,29 @@ import { emit, table, truncate, ts } from "../output";
 import { nonNegativeInt } from "../util";
 
 export const COMMAND_ROUTES = {
-  "activity list": ["activity.list"],
+  "activity list": ["activity.list", "activity.global", "activity.task"],
 } as const satisfies Record<string, readonly RouteId[]>;
 
 interface ActivityListOpts {
-  workspace: string;
+  workspace?: string;
+  task?: string;
+  actor?: string;
+  action?: string;
   mine?: boolean;
   limit?: number;
   offset?: number;
 }
 
 export function registerActivity(program: Command): void {
-  const activity = program.command("activity").description("Read a workspace's action feed");
+  const activity = program.command("activity").description("Read the permission-filtered global or ticket activity log");
 
   activity
     .command("list")
-    .description("List workspace activity, newest first")
-    .requiredOption("--workspace <idOrKey>", "workspace id or key")
+    .description("List activity, newest first; global unless scoped by workspace or ticket")
+    .option("--workspace <idOrKey>", "workspace id or key")
+    .option("--task <idOrKey>", "ticket id or key")
+    .option("--actor <userId>", "filter by actor")
+    .option("--action <action>", "filter by exact action (e.g. comment.updated)")
     .option("--mine", "only events on tasks you are associated with")
     .option("--limit <n>", "page size (max 200)", nonNegativeInt("--limit"))
     .option("--offset <n>", "page offset", nonNegativeInt("--offset"))
@@ -31,7 +37,11 @@ export function registerActivity(program: Command): void {
       if (opts.mine) query.mine = true;
       if (opts.limit !== undefined) query.limit = opts.limit;
       if (opts.offset !== undefined) query.offset = opts.offset;
-      const res = await ctx.client.listActivity(opts.workspace, query);
+      const res = opts.task && !opts.workspace && !opts.actor && !opts.action
+        ? await ctx.client.listTaskActivity(opts.task, query)
+        : opts.workspace && !opts.task && !opts.actor && !opts.action
+          ? await ctx.client.listActivity(opts.workspace, query)
+          : await ctx.client.listGlobalActivity({ ...query, workspace: opts.workspace, task: opts.task, actor_id: opts.actor, action: opts.action });
       emit(ctx.mode, {
         json: res,
         human: () =>

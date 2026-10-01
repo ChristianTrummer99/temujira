@@ -264,6 +264,7 @@ export function activityEventToApi(e: ActivityEventRow, actor: UserRow, task?: {
   return {
     id: e.id,
     workspace_id: e.workspaceId,
+    visibility: e.visibility as ActivityEvent["visibility"],
     task_id: e.taskId,
     task_key: e.taskId ? (task?.key ?? null) : null,
     task_title: e.taskId ? (task?.title ?? null) : null,

@@ -65,7 +65,7 @@ describe("activity.list", () => {
     expect(Object.keys(body)).toEqual(["items"]);
 
     const items = body.items as ActivityJson[];
-    expect(items.length).toBe(4); // 2 creates + 1 update + 1 assign
+    expect(items.length).toBe(5); // workspace creation + 2 task creates + update + assignment
     for (let i = 1; i < items.length; i++) {
       expect(items[i]!.created_at).toBeLessThanOrEqual(items[i - 1]!.created_at);
     }
@@ -79,16 +79,16 @@ describe("activity.list", () => {
 
   it("resolves the workspace by key and stays scoped to it", async () => {
     const byKey = await feed(admin.token, ws.key);
-    expect(byKey.length).toBe(4);
-    expect(byKey.every((e) => e.task_key?.startsWith("ACT-"))).toBe(true);
+    expect(byKey.length).toBe(5);
+    expect(byKey.every((e) => e.task_key === null || e.task_key.startsWith("ACT-"))).toBe(true);
 
     const elsewhere = await feed(admin.token, otherWs.key);
-    expect(elsewhere.map((e) => e.task_title)).toEqual(["Elsewhere entirely"]);
+    expect(elsewhere.map((e) => e.task_title)).toEqual(["Elsewhere entirely", null]);
   });
 
   it("?mine=1 keeps only events on the caller's associated tasks", async () => {
     const all = await feed(member.token, ws.id);
-    expect(all.length).toBe(4);
+    expect(all.length).toBe(5);
 
     const onlyMine = await feed(member.token, ws.id, "?mine=1");
     expect(onlyMine.length).toBe(2); // created + assigned, both on the member's task

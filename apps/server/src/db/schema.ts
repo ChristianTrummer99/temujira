@@ -250,6 +250,8 @@ export const attachments = sqliteTable(
       .references(() => users.id),
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull(),
+    /** Bounded searchable text; NULL means extraction has not run yet. Never returned as metadata. */
+    searchText: text("search_text"),
     size: integer("size").notNull(),
     sha256: text("sha256").notNull(),
     createdAt: integer("created_at").notNull(),
@@ -352,14 +354,15 @@ export const taskAssociations = sqliteTable(
   ],
 );
 
-/** Append-only action stream per workspace, powering the Activity view. */
+/** Append-only action stream. Null workspace events are private or administration-only. */
 export const activityEvents = sqliteTable(
   "activity_events",
   {
     id: text("id").primaryKey(),
-    workspaceId: text("workspace_id")
-      .notNull()
-      .references(() => workspaces.id),
+    workspaceId: text("workspace_id").references(() => workspaces.id),
+    visibility: text("visibility").notNull().default("workspace"),
+    ownerId: text("owner_id").references(() => users.id),
+    relatedWorkspaceId: text("related_workspace_id").references(() => workspaces.id),
     taskId: text("task_id").references(() => tasks.id),
     /** The user who performed the action. */
     actorId: text("actor_id")
@@ -374,6 +377,7 @@ export const activityEvents = sqliteTable(
     index("activity_events_workspace_id_idx").on(t.workspaceId),
     index("activity_events_task_id_idx").on(t.taskId),
     index("activity_events_actor_id_idx").on(t.actorId),
+    index("activity_events_visibility_owner_idx").on(t.visibility, t.ownerId),
   ],
 );
 

@@ -20,6 +20,9 @@ import {
   IdentitySessionSchema,
   InboxItemSchema,
   ListActivityQuerySchema,
+  ListGlobalActivityQuerySchema,
+  SearchQuerySchema,
+  SearchResultSchema,
   ListApiKeysQuerySchema,
   ListInboxQuerySchema,
   ListMyTasksQuerySchema,
@@ -91,6 +94,30 @@ const listOf = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item)
  * every id to a command. Do not add endpoints anywhere else.
  */
 export const ROUTES = {
+  "search.query": {
+    method: "GET",
+    path: "/search",
+    auth: "user",
+    summary: "Search accessible tasks, comments, attachment names and indexed text globally or by workspace",
+    query: SearchQuerySchema,
+    response: z.object({ items: z.array(SearchResultSchema), total: z.number().int(), limit: z.number().int(), offset: z.number().int() }),
+  },
+  "activity.global": {
+    method: "GET",
+    path: "/activity",
+    auth: "user",
+    summary: "Read the permission-filtered global audit log, optionally scoped to a workspace or ticket",
+    query: ListGlobalActivityQuerySchema,
+    response: z.object({ items: z.array(ActivityEventSchema), total: z.number().int(), limit: z.number().int(), offset: z.number().int() }),
+  },
+  "activity.task": {
+    method: "GET",
+    path: "/tasks/:idOrKey/activity",
+    auth: "user",
+    summary: "Read all recorded actions on an accessible ticket",
+    query: ListActivityQuerySchema,
+    response: z.object({ items: z.array(ActivityEventSchema), total: z.number().int(), limit: z.number().int(), offset: z.number().int() }),
+  },
   // ---- meta ----
   "meta.health": {
     method: "GET",

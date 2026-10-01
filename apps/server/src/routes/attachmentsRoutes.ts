@@ -5,6 +5,7 @@ import { attachments, comments } from "../db/schema";
 import { HttpError, forbidden, notFound, validationError } from "../errors";
 import { attachmentToApi, type AttachmentRow } from "../serialize";
 import { newId, now } from "../util";
+import { indexAttachmentText } from "../search";
 import { assertTaskIdAccess, requireTask } from "./resolve";
 import { currentUser, type AppContext, type Ctx, type Handlers } from "./types";
 
@@ -104,6 +105,7 @@ function storeUpload(
     uploaderId,
     filename: file.filename,
     mimeType: file.mimeType,
+    searchText: null,
     size: file.size,
     sha256: file.sha256,
     createdAt: now(),
@@ -121,6 +123,7 @@ function storeUpload(
     ctx.storage.abort(file.tmpId);
     throw err;
   }
+  indexAttachmentText(ctx, row);
   return row;
 }
 

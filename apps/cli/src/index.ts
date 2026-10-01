@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { Command, CommanderError } from "commander";
 import { ApiError } from "@temujira/client";
 import { registerActivity } from "./commands/activity";
+import { registerSearch } from "./commands/search";
 import { registerApi } from "./commands/api";
 import { registerApikey } from "./commands/apikey";
 import { registerAttach } from "./commands/attach";
@@ -77,6 +78,7 @@ export function buildProgram(): Command {
   registerQueue(program);
   registerAttach(program);
   registerActivity(program);
+  registerSearch(program);
   registerInbox(program);
   registerApi(program);
   registerIdentity(program);

@@ -130,6 +130,23 @@ Quote shell values beginning with `#`, such as colors.
 
 ## Work tasks and queues
 
+Find existing work before creating duplicates:
+
+```sh
+tmj search "bearing clearance" --json                       # global, permission-filtered
+tmj search '"bearing clearance"' --workspace ENG --type comment --json
+tmj search "calibration" --type attachment --json           # filename + supported text
+tmj activity list --task ENG-42 --json                        # complete recorded ticket history
+tmj activity list --workspace ENG --action comment.updated --json
+tmj activity list --json                                     # global history you may read
+```
+
+Search results identify the matching task/comment/attachment and include a plain-text
+snippet. Only accessible workspaces contribute results or counts. Text attachments up to
+1 MiB are indexed; binary/large files are filename-only. Activity is newest-first and logs
+successful mutations without credential values. Private account/queue/inbox events stay
+owner/admin-only. See the command reference for filters, pagination and exact coverage.
+
 A typical agent loop is:
 
 ```sh

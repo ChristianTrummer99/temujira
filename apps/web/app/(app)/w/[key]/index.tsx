@@ -19,6 +19,7 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
+import { MarkdownField } from '@/components/markdown-field';
 import { useAuth } from '@/lib/auth';
 import { hasScope } from '@/lib/scopes';
 import { formatRelative, initialsOf } from '@/lib/format';
@@ -609,12 +610,14 @@ function NewTaskDialog({
 
               <View className="gap-1.5">
                 <Label nativeID="task-description-label">Description</Label>
-                <Textarea
-                  aria-labelledby="task-description-label"
-                  placeholder="Add more context (supports markdown)..."
-                  value={description}
-                  onChangeText={setDescription}
-                />
+                <MarkdownField value={description} mentionUsers={users} label="new task description">
+                  <Textarea
+                    aria-labelledby="task-description-label"
+                    placeholder="Add more context (supports markdown)..."
+                    value={description}
+                    onChangeText={setDescription}
+                  />
+                </MarkdownField>
               </View>
 
               <View className="flex-row gap-3">

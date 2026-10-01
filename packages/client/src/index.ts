@@ -6,6 +6,7 @@ import {
   type RouteId,
   type ErrorCode,
   type ActivityEvent,
+  type SearchResult,
   type ApiKey,
   type Attachment,
   type Comment,
@@ -463,6 +464,15 @@ export class TemujiraClient {
   }
 
   // ---- activity ----
+  search(query: { q: string; workspace?: string; type?: "all" | "task" | "comment" | "attachment"; include_archived?: boolean; limit?: number; offset?: number }) {
+    return this.call("search.query", {}, { query }) as Promise<{ items: SearchResult[]; total: number; limit: number; offset: number }>;
+  }
+  listGlobalActivity(query: { workspace?: string; task?: string; actor_id?: string; action?: string; mine?: boolean; limit?: number; offset?: number } = {}) {
+    return this.call("activity.global", {}, { query }) as Promise<{ items: ActivityEvent[]; total: number; limit: number; offset: number }>;
+  }
+  listTaskActivity(task: string, query: { mine?: boolean; limit?: number; offset?: number } = {}) {
+    return this.call("activity.task", { idOrKey: task }, { query }) as Promise<{ items: ActivityEvent[]; total: number; limit: number; offset: number }>;
+  }
   listActivity(workspace: string, query: { mine?: boolean; limit?: number; offset?: number } = {}) {
     return this.call("activity.list", { idOrKey: workspace }, { query }) as Promise<{ items: ActivityEvent[] }>;
   }
@@ -508,6 +518,9 @@ export class TemujiraClient {
  * every named method exists on TemujiraClient.
  */
 export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
+  "search.query": "search",
+  "activity.global": "listGlobalActivity",
+  "activity.task": "listTaskActivity",
   "meta.health": "health",
   "meta.openapi": "openapi",
   "setup.status": "setupStatus",
@@ -575,6 +588,6 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "inbox.update": "markInboxRead",
 };
 
-export type { ActivityEvent, ApiKey, Attachment, Comment, FieldDef, FieldType, InboxItem, LinkRelation, QueueEntry, QueueState, Status, Tag, Task, TaskLink, User, Workspace, RouteId };
+export type { ActivityEvent, SearchResult, ApiKey, Attachment, Comment, FieldDef, FieldType, InboxItem, LinkRelation, QueueEntry, QueueState, Status, Tag, Task, TaskLink, User, Workspace, RouteId };
 export { QUEUE_STATES, ROUTES, buildPath };
 export { z };
