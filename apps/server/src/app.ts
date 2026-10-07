@@ -5,12 +5,13 @@ import { ROUTES, ROUTE_IDS, type RouteDef } from "@temujira/shared";
 import { LoginRateLimiter, hashPassword, requireAuth } from "./auth";
 import type { ServerConfig } from "./config";
 import { createDb } from "./db";
-import { attachments } from "./db/schema";
+import { attachments, users } from "./db/schema";
 import { HttpError } from "./errors";
 import { createFirstAdmin, needsSetup, setupHandlers } from "./routes/setup";
 import { activityHandlers } from "./routes/activityRoutes";
 import { apiKeyHandlers } from "./routes/apiKeysRoutes";
 import { attachmentsHandlers } from "./routes/attachmentsRoutes";
+import { avatarsHandlers } from "./routes/avatarsRoutes";
 import { authHandlers } from "./routes/authRoutes";
 import { commentsHandlers } from "./routes/commentsRoutes";
 import { fieldsHandlers } from "./routes/fieldsRoutes";
@@ -138,6 +139,9 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
       .all()
       .map((r) => r.id),
   );
+  for (const user of db.select({ avatarId: users.avatarId }).from(users).all()) {
+    if (user.avatarId) validIds.add(user.avatarId);
+  }
   const swept = storage.sweepOrphans(validIds);
   if (swept > 0)
     console.log(`[temujira] removed ${swept} orphaned upload file(s)`);
@@ -159,6 +163,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     ...fieldsHandlers(ctx),
     ...commentsHandlers(ctx),
     ...attachmentsHandlers(ctx),
+    ...avatarsHandlers(ctx),
     ...activityHandlers(ctx),
     ...inboxHandlers(ctx),
     ...identitySessionHandlers(ctx),

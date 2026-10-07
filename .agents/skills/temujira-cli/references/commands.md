@@ -49,6 +49,10 @@ tmj user update <userId> [--name <name>] [--role admin|member]
                 [--password [password]] [--reactivate]
                 [--exclusive|--shared]
 tmj user deactivate <userId>
+
+tmj user avatar upload <file> [--user <idOrEmailOrMe>]
+tmj user avatar download --output <path> [--user <idOrEmailOrMe>] [--force]
+tmj user avatar remove [--user <idOrEmailOrMe>]
 ```
 
 Human users require an email and password. Agent users are email-less, passwordless, and
@@ -57,6 +61,13 @@ pickers address them by name.
 `--exclusive` / `--shared` set the per-identity access policy (agent accounts only, see
 Identity sessions); the default is shared.
 `--deactivated` includes deactivated users rather than filtering exclusively to them.
+
+Avatar commands default to `--user me`. PNG, JPEG, GIF, and WebP pictures up to 2 MB are
+supported. File signatures determine the served image type. Self-service needs no write
+scope. Changing another user's picture needs `users:manage`; only admins can change other
+admins. Downloads require authentication and refuse to overwrite a file unless `--force`.
+Removing a picture restores stable per-user colored initials. User JSON includes the
+current `avatar_id` or null, not picture bytes.
 
 ## Workspaces
 
@@ -295,7 +306,7 @@ tmj activity list [--workspace <workspaceIdOrKey>] [--task <taskIdOrKey>]
                   [--limit <n>] [--offset <n>]
 
 tmj inbox list [--all] [--limit <n>] [--offset <n>]
-tmj inbox read
+tmj inbox read [itemId]
 tmj inbox watch [--after <cursor> | --cursor-file <path>]
                 [--once] [--interval <seconds>] [--limit <n>]
 ```
@@ -316,7 +327,11 @@ pagination/counting, including ticket feeds. Global/ticket responses include
 
 `activity list --mine` means events on tasks associated with the
 current user, not only actions performed by that user. Inbox defaults to unread;
-`--all` includes read items. `inbox read` marks all items in accessible workspaces read.
+`--all` includes read items. `inbox read <itemId>` marks one item read (the inbox ID, not
+the source comment ID). Without an ID, it marks all items in accessible workspaces read.
+Reading or opening items never marks them read. A successful reply or question answer
+marks only the replying user's existing notifications in that thread read. Notifications
+for other threads and other users stay unchanged. New responses start unread.
 
 `inbox watch` starts now by default. `--after 0` replays retained events, including read
 items; `--once` drains all pages and exits. Poll interval is 1–300 seconds (default 5), page

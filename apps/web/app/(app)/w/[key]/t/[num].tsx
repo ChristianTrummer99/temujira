@@ -12,7 +12,7 @@ import { MentionInput } from '@/components/mention-input';
 import { RichEditor } from '@/components/rich-editor';
 import { TagPill } from '@/components/tag-pill';
 import { UserInfoDialog } from '@/components/user-info-dialog';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,8 +40,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth';
+import { useInbox } from '@/lib/inbox';
 import { saveAttachment } from '@/lib/download';
-import { formatAbsolute, formatBytes, initialsOf, splitTaskKey } from '@/lib/format';
+import { formatAbsolute, formatBytes, splitTaskKey } from '@/lib/format';
 import { evictPreview, isPreviewable } from '@/lib/preview';
 import { useResource } from '@/lib/use-resource';
 import type {
@@ -78,6 +79,7 @@ import * as React from 'react';
 import { Platform, Pressable, ScrollView, View } from 'react-native';
 
 interface TaskPageData {
+  loadedFor: string;
   task: Task;
   statuses: Status[];
   users: User[];
@@ -91,7 +93,9 @@ export default function TaskDetailScreen() {
   const workspaceKey = (key ?? '').toUpperCase();
   const taskNum = num ?? '';
   const idOrKey = `${workspaceKey}-${taskNum}`;
+  const requestKey = JSON.stringify([idOrKey, focusComment]);
   const { client, user: currentUser } = useAuth();
+  const { refresh: refreshInbox } = useInbox();
   const router = useRouter();
 
   const [expanded, setExpanded] = React.useState(false);
@@ -100,6 +104,10 @@ export default function TaskDetailScreen() {
   const [previewAtt, setPreviewAtt] = React.useState<Attachment | null>(null);
   const [discussionTab, setDiscussionTab] = React.useState<'comments' | 'activity'>('comments');
   const openedAttachment = React.useRef<string | null>(null);
+  const scrollRef = React.useRef<ScrollView>(null);
+  const contentRef = React.useRef<View>(null);
+  const commentRef = React.useRef<View>(null);
+  const lastFocusedComment = React.useRef('');
 
   const resource = useResource<TaskPageData>(async () => {
     const [taskRes, statusRes, userRes, tagRes, fieldRes, commentRes] = await Promise.all([
@@ -111,6 +119,7 @@ export default function TaskDetailScreen() {
       client.listComments(idOrKey),
     ]);
     return {
+      loadedFor: requestKey,
       task: taskRes.task,
       statuses: statusRes.items,
       users: userRes.items,
@@ -118,7 +127,7 @@ export default function TaskDetailScreen() {
       fields: fieldRes.items,
       comments: commentRes.items,
     };
-  }, [client, idOrKey, workspaceKey]);
+  }, [client, idOrKey, workspaceKey, focusComment]);
 
   React.useEffect(() => {
     if (!resource.data || !focusAttachment || openedAttachment.current === focusAttachment) return;
@@ -128,16 +137,36 @@ export default function TaskDetailScreen() {
     if (attachment) { openedAttachment.current = focusAttachment; setPreviewAtt(attachment); }
   }, [focusAttachment, resource.data]);
 
+  const taskReady = resource.data?.loadedFor === requestKey;
+  const commentExists = !!resource.data?.comments.some((root) => root.id === focusComment || root.replies.some((reply) => reply.id === focusComment));
   React.useEffect(() => {
-    if (!focusComment || !resource.data || Platform.OS !== 'web') return;
-    setDiscussionTab('comments');
-    const timer = setTimeout(() => {
-      const element = document.getElementById(`comment-${focusComment}`);
-      element?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      element?.animate([{ backgroundColor: 'rgba(59,130,246,0.18)' }, { backgroundColor: 'transparent' }], { duration: 1800 });
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [focusComment, resource.data?.task.id]);
+    if (focusComment) setDiscussionTab('comments');
+  }, [focusComment, idOrKey]);
+  React.useEffect(() => {
+    const request = `${idOrKey}:${focusComment}`;
+    if (!focusComment || !taskReady || !commentExists || discussionTab !== 'comments' || lastFocusedComment.current === request) return;
+    let cancelled = false;
+    let frame = 0;
+    let attempts = 0;
+    // Wait for the portal, expanded reply thread, and native/web layout. A fixed
+    // timer can run before the linked comment exists or while Activity is shown.
+    const focus = () => {
+      if (cancelled || lastFocusedComment.current === request) return;
+      if (commentRef.current && contentRef.current) {
+        commentRef.current.measureLayout(contentRef.current, (_x, y, width, height) => {
+          if (cancelled || !width || !height || lastFocusedComment.current === request) return;
+          scrollRef.current?.scrollTo({ y: Math.max(0, y - 24), animated: false });
+          lastFocusedComment.current = request;
+          if (Platform.OS === 'web') {
+            (commentRef.current as unknown as HTMLElement)?.focus({ preventScroll: true });
+          }
+        }, () => {});
+      }
+      if (++attempts < 120) frame = requestAnimationFrame(focus);
+    };
+    frame = requestAnimationFrame(focus);
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [focusComment, idOrKey, taskReady, commentExists, discussionTab]);
 
   const setTask = React.useCallback(
     (updated: Task) => {
@@ -164,7 +193,8 @@ export default function TaskDetailScreen() {
   const reloadComments = React.useCallback(async () => {
     const { items } = await client.listComments(idOrKey);
     resource.setData((prev) => (prev ? { ...prev, comments: items } : prev));
-  }, [client, idOrKey, resource]);
+    await refreshInbox();
+  }, [client, idOrKey, resource, refreshInbox]);
 
   const patchComment = React.useCallback(
     (updated: Comment) => {
@@ -192,7 +222,7 @@ export default function TaskDetailScreen() {
     }
   }
 
-  if (resource.loading) {
+  if (resource.loading || (resource.data && !taskReady && !resource.error)) {
     return (
       <View className="bg-background absolute inset-0">
         <View className="gap-4 p-6">
@@ -270,8 +300,10 @@ export default function TaskDetailScreen() {
         </View>
 
         <ScrollView
-          className="flex-1"
-          contentContainerClassName={`${expanded ? 'mx-auto w-full max-w-3xl' : ''} gap-6 p-5`}>
+          ref={scrollRef}
+          testID="task-content-scroll"
+          className="flex-1">
+          <View ref={contentRef} collapsable={false} className={`${expanded ? 'mx-auto w-full max-w-3xl' : ''} gap-6 p-5`}>
           <InlineTitleEditor task={task} onChanged={setTask} mentions={users} />
 
           <View className="flex-row flex-wrap gap-6">
@@ -301,6 +333,7 @@ export default function TaskDetailScreen() {
             <Button size="sm" variant={discussionTab === 'activity' ? 'secondary' : 'ghost'} accessibilityLabel="Show ticket activity" onPress={() => setDiscussionTab('activity')}><Text>Activity</Text></Button>
           </View>
           <View style={discussionTab === 'comments' ? undefined : { display: 'none' }}>
+          {focusComment && !commentExists ? <Text role="status" className="text-muted-foreground mb-3 text-sm">This comment is no longer available.</Text> : null}
           <CommentsSection
             taskKey={idOrKey}
             comments={comments}
@@ -311,9 +344,12 @@ export default function TaskDetailScreen() {
             onPatch={patchComment}
             onMentionPress={setMentionedUser}
             onPreview={setPreviewAtt}
+            focusComment={focusComment}
+            focusRef={commentRef}
           />
           </View>
           {discussionTab === 'activity' ? <ActivityFeed task={idOrKey} /> : null}
+          </View>
         </ScrollView>
         </SheetContent>
       </Sheet>
@@ -1146,6 +1182,8 @@ function CommentsSection({
   onPatch,
   onMentionPress,
   onPreview,
+  focusComment,
+  focusRef,
 }: {
   taskKey: string;
   comments: Comment[];
@@ -1156,6 +1194,8 @@ function CommentsSection({
   onPatch: (c: Comment) => void;
   onMentionPress: (u: User) => void;
   onPreview: (a: Attachment) => void;
+  focusComment?: string;
+  focusRef: React.RefObject<View | null>;
 }) {
   const { client } = useAuth();
   const [body, setBody] = React.useState('');
@@ -1242,6 +1282,8 @@ function CommentsSection({
           onPatch={onPatch}
           onMentionPress={onMentionPress}
           onPreview={onPreview}
+          focusComment={focusComment}
+          focusRef={focusRef}
         />
       ))}
 
@@ -1355,6 +1397,8 @@ function CommentThread({
   onPatch,
   onMentionPress,
   onPreview,
+  focusComment,
+  focusRef,
 }: {
   root: Comment;
   taskKey: string;
@@ -1365,15 +1409,23 @@ function CommentThread({
   onPatch: (c: Comment) => void;
   onMentionPress: (u: User) => void;
   onPreview: (a: Attachment) => void;
+  focusComment?: string;
+  focusRef: React.RefObject<View | null>;
 }) {
   const [replyingTo, setReplyingTo] = React.useState<string | null>(null);
   // Reply threads are collapsible; expanded by default so nothing is hidden.
   const [repliesCollapsed, setRepliesCollapsed] = React.useState(false);
+  const hasFocusedReply = root.replies.some((reply) => reply.id === focusComment);
+  React.useEffect(() => {
+    if (hasFocusedReply) setRepliesCollapsed(false);
+  }, [focusComment, hasFocusedReply]);
 
   return (
     <View className="gap-3">
       <CommentCard
         comment={root}
+        focused={focusComment === root.id}
+        focusRef={focusComment === root.id ? focusRef : undefined}
         users={users}
         currentUserId={currentUserId}
         currentUserIsAdmin={currentUserIsAdmin}
@@ -1421,6 +1473,8 @@ function CommentThread({
             <CommentCard
               key={reply.id}
               comment={reply}
+              focused={focusComment === reply.id}
+              focusRef={focusComment === reply.id ? focusRef : undefined}
               users={users}
               compact
               currentUserId={currentUserId}
@@ -1429,21 +1483,22 @@ function CommentThread({
               onPatch={onPatch}
               onMentionPress={onMentionPress}
               onPreview={onPreview}
-              // A reply to a reply targets the root (the server coerces anyway).
+              // Send the actual target so its author is notified. The server stores
+              // the response under the root to keep one level of threading.
               onReply={() => {
                 setRepliesCollapsed(false);
-                setReplyingTo(replyingTo === root.id ? null : root.id);
+                setReplyingTo(replyingTo === reply.id ? null : reply.id);
               }}
             />
           ))}
         </View>
       ) : null}
 
-      {replyingTo === root.id ? (
+      {replyingTo ? (
         <View className="border-border ml-11 border-l-2 pl-4">
           <ReplyComposer
             taskKey={taskKey}
-            parentId={root.id}
+            parentId={replyingTo}
             users={users}
             onDone={async () => {
               setReplyingTo(null);
@@ -1577,7 +1632,7 @@ function ReplyComposer({
         <Button variant="ghost" size="sm" onPress={onCancel}>
           <Text>Cancel</Text>
         </Button>
-        <Button size="sm" onPress={post} disabled={posting || !body.trim()}>
+        <Button size="sm" accessibilityLabel="Post reply" onPress={post} disabled={posting || !body.trim()}>
           <Text>{posting ? 'Replying...' : 'Reply'}</Text>
         </Button>
       </View>
@@ -1596,6 +1651,8 @@ function CommentCard({
   onMentionPress,
   onPreview,
   onReply,
+  focused,
+  focusRef,
 }: {
   comment: Comment;
   users: User[];
@@ -1607,6 +1664,8 @@ function CommentCard({
   onMentionPress: (u: User) => void;
   onPreview: (a: Attachment) => void;
   onReply: () => void;
+  focused?: boolean;
+  focusRef?: React.RefObject<View | null>;
 }) {
   const { client } = useAuth();
   const canModify = currentUserId === comment.author_id || currentUserIsAdmin;
@@ -1647,15 +1706,12 @@ function CommentCard({
   }
 
   return (
-    <View nativeID={`comment-${comment.id}`} className="flex-row gap-3">
-      <Avatar alt={comment.author.name} className={compact ? 'size-6' : 'size-8'}>
-        <AvatarFallback>
-          <Text className={compact ? 'text-[10px]' : 'text-xs'}>
-            {initialsOf(comment.author.name)}
-          </Text>
-        </AvatarFallback>
-      </Avatar>
+    <View ref={focusRef} collapsable={false} nativeID={`comment-${comment.id}`} testID={`comment-${comment.id}`}
+      tabIndex={Platform.OS === 'web' ? -1 : undefined}
+      className={`flex-row gap-3 rounded-md ${focused ? 'bg-accent/60 outline-none' : ''}`}>
+      <UserAvatar user={comment.author} className={compact ? 'size-6' : 'size-8'} textClassName={compact ? 'text-[10px]' : 'text-xs'} />
       <View className="min-w-0 flex-1 gap-1">
+        {focused ? <Text className="text-muted-foreground text-xs font-medium">Linked comment</Text> : null}
         <View className="flex-row flex-wrap items-center gap-2">
           <Text className="text-sm font-medium">{comment.author.name}</Text>
           <Text className="text-muted-foreground text-xs">{formatAbsolute(comment.created_at)}</Text>

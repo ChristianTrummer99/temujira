@@ -8,7 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -135,14 +135,6 @@ function AppSidebar() {
       setOpenMobile(false);
     }
   }
-
-  const initials = user?.name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
 
   return (
     <Sidebar side="left" collapsible="offcanvas">
@@ -306,11 +298,7 @@ function AppSidebar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Pressable className="active:bg-sidebar-accent h-12 flex-row items-center gap-2 rounded-md px-2">
-              <Avatar alt={user?.name ?? ''} className="size-7">
-                <AvatarFallback>
-                  <Text className="text-xs">{initials}</Text>
-                </AvatarFallback>
-              </Avatar>
+              {user ? <UserAvatar user={user} className="size-7" /> : null}
               <View className="min-w-0 flex-1">
                 <Text numberOfLines={1} className="text-sidebar-foreground text-sm font-medium">
                   {user?.name}

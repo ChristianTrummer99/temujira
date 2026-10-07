@@ -27,7 +27,8 @@ export class LocalStorage {
    * Drain a stream to a temp file, hashing and counting bytes. Aborts mid-stream past
    * maxBytes (throws payload_too_large and removes the temp file).
    */
-  async putStream(source: Readable): Promise<{ tmpId: string } & StoredFile> {
+  async putStream(source: Readable, byteLimit = this.maxBytes): Promise<{ tmpId: string } & StoredFile> {
+    const maxBytes = Math.min(this.maxBytes, byteLimit);
     const tmpId = `.tmp-${newId()}`;
     const tmpPath = join(this.uploadsDir, tmpId);
     const hash = createHash("sha256");
@@ -45,11 +46,11 @@ export class LocalStorage {
       source.on("data", (chunk: Buffer) => {
         if (aborted) return;
         size += chunk.length;
-        if (size > this.maxBytes) {
+        if (size > maxBytes) {
           aborted = true;
           source.unpipe(out);
           source.resume(); // drain the rest so the request can finish
-          const err = new HttpError("payload_too_large", `file exceeds ${this.maxBytes} bytes`);
+          const err = new HttpError("payload_too_large", `file exceeds ${maxBytes} bytes`);
           // The temp file is opened asynchronously; end() (not destroy) guarantees it
           // exists before the callback runs, and we only reject once it is unlinked —
           // so the 413 response can never race ahead of the cleanup.

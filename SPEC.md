@@ -75,6 +75,13 @@ email/password authentication, API key management, and every feature below marke
   permission-filtered pages, optional saved progress, and machine-readable output.
 - **FR-46** Agents normally reuse one shared identity/key. Optional directory bindings live
   in private user configuration, with no credentials written into project directories.
+- **FR-47** Opening an inbox item leaves it unread and deep-links to its source comment.
+  Reveal collapsed replies and scroll to that comment. Each item has a Mark read action.
+  A recipient's reply or question answer clears their existing notifications in that thread.
+  Show the full source comment, question options, and original thread context in the inbox.
+- **FR-48** Users can set and remove profile pictures. User managers can set pictures for
+  other permitted accounts, including agents. Use stable per-user colors and initials when
+  no picture is set. Apply pictures and fallback colors wherever avatars appear.
 
 ### Task list presentation
 
@@ -111,6 +118,8 @@ email/password authentication, API key management, and every feature below marke
 
 - **FR-26 (v2)** Image attachments preview in-app rather than only downloading.
 - **FR-27 (v2)** Markdown attachments render as formatted markdown.
+- **FR-49** File previews open almost full screen, with a small outside area on all sides
+  that can be clicked to close the preview. Keep the underlying ticket open.
 - **FR-28 (v2)** Previews must not weaken the existing download-hardening policy: uploaded
   SVG and HTML stay non-inline on the cookie origin, and bytes are fetched through the
   authenticated client, never a bare URL.

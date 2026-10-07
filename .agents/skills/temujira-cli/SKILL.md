@@ -202,6 +202,13 @@ drains all pages and exits. Default polling is five seconds; `--interval` sets 1
 It emits read and unread notifications without marking them read. Current user/workspace
 permissions apply on every poll. Send messages with comments and `--mention`, or replies.
 
+Reading the inbox or opening a ticket does not mark notifications read. Use
+`tmj inbox read <itemId> --json` to clear one item, using its inbox ID from `inbox list`.
+Omitting the ID marks all accessible items read. A successful reply, including a question
+answer, marks the replying user's existing notifications in that thread read. Other threads
+and recipients stay unchanged; later incoming responses start unread. Reply to the actual
+source comment ID to notify that comment's author, even when it is a nested reply.
+
 `--json` emits NDJSON: `{type:"notification",cursor,item}` and `{type:"checkpoint",cursor}`.
 Use `--after` or `--cursor-file`, not both. Cursor files are bound to the server and user,
 and saved only after output succeeds. A crash can repeat a page; deduplicate by `item.id`.
@@ -220,6 +227,15 @@ tmj task update ENG-42 --field Priority=medium --field Estimate=3 --json
 Task field updates are partial. An empty value clears that one field. By contrast,
 supplying any `--tag` flags to `task update` replaces the task's complete tag set; read the
 current task first and include every tag that should remain.
+
+## Profile pictures
+
+Use `tmj user avatar upload <file> --json` to set your picture, `user avatar download
+--output <file>` to save it, and `user avatar remove` to use colored initials again.
+Supported files: PNG, JPEG, GIF, WebP, up to 2 MB. Each command defaults to the caller;
+`--user <idOrEmailOrMe>` selects another user. Changing another user's picture requires
+`users:manage`; non-admin managers cannot change admin pictures. Download needs login.
+The upload response is `{user}` with an `avatar_id`; no image bytes enter user JSON.
 
 ## Exclusive identity sessions
 
@@ -311,7 +327,8 @@ Pay particular attention to:
 - `comment delete`: hard-deletes the comment; deleting a root also deletes replies and
   related attachments/notifications.
 - `attach delete`: permanently deletes metadata and stored bytes.
-- `inbox read`: marks every inbox item read; there is no single-item command.
+- `inbox read` without an ID marks all accessible inbox items read. Prefer an explicit ID
+  when resolving only one notification.
 - Status and field reorders: require a fresh, complete list of all relevant IDs.
 - `apikey revoke` and `user deactivate`: immediately stop affected credentials.
 

@@ -226,6 +226,25 @@ export class TemujiraClient {
   }
 
   // ---- users ----
+  uploadUserAvatar(id: string, file: UploadInput) {
+    return this.call("avatars.upload", { id }, { formData: this.uploadForm(file) }) as Promise<{ user: User }>;
+  }
+  deleteUserAvatar(id: string) {
+    return this.call("avatars.delete", { id }) as Promise<{ user: User }>;
+  }
+  async downloadUserAvatar(id: string): Promise<Response> {
+    const def = ROUTES["avatars.get"];
+    const response = await this.send(def.method, buildPath(def.path, { id }));
+    if (!response.ok) await this.parse(response);
+    return response;
+  }
+  /** Image source: web uses its session cookie; native includes the bearer credential. */
+  userAvatarSource(id: string, version: string) {
+    return {
+      uri: `${this.baseUrl}/api/v1${buildPath(ROUTES["avatars.get"].path, { id })}?v=${encodeURIComponent(version)}`,
+      ...(this.token ? { headers: { Authorization: `Bearer ${this.token}` } } : {}),
+    };
+  }
   listUsers(query: { include_deactivated?: boolean } = {}) {
     return this.call("users.list", {}, { query }) as Promise<{ items: User[] }>;
   }
@@ -511,6 +530,9 @@ export class TemujiraClient {
   markInboxRead(query: { mark_read?: boolean } = { mark_read: true }) {
     return this.call("inbox.update", {}, { query }) as Promise<{ ok: true; updated: number }>;
   }
+  markInboxItemRead(id: string) {
+    return this.call("inbox.markRead", { id }) as Promise<{ ok: true; updated: number }>;
+  }
 }
 
 /**
@@ -538,6 +560,9 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "identitySessions.list": "listIdentitySessions",
   "identitySessions.current": "currentIdentitySession",
   "users.list": "listUsers",
+  "avatars.get": "downloadUserAvatar",
+  "avatars.upload": "uploadUserAvatar",
+  "avatars.delete": "deleteUserAvatar",
   "users.create": "createUser",
   "users.get": "getUser",
   "users.update": "updateUser",
@@ -583,6 +608,7 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "inbox.list": "listInbox",
   "inbox.watch": "watchInbox",
   "inbox.update": "markInboxRead",
+  "inbox.markRead": "markInboxItemRead",
 };
 
 export type { ActivityEvent, SearchResult, ApiKey, Attachment, Comment, FieldDef, FieldType, InboxItem, LinkRelation, Status, Tag, Task, TaskLink, User, Workspace, RouteId };

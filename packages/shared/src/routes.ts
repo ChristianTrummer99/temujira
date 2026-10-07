@@ -250,6 +250,28 @@ export const ROUTES = {
   },
 
   // ---- users ----
+  "avatars.get": {
+    method: "GET",
+    path: "/users/:id/avatar",
+    auth: "user",
+    summary: "Download a user's profile picture",
+    response: "binary",
+  },
+  "avatars.upload": {
+    method: "POST",
+    path: "/users/:id/avatar",
+    auth: "user",
+    summary: "Set a profile picture (self or user manager; PNG, JPEG, GIF, WebP; max 2 MB)",
+    bodyType: "multipart",
+    response: z.object({ user: UserSchema }),
+  },
+  "avatars.delete": {
+    method: "DELETE",
+    path: "/users/:id/avatar",
+    auth: "user",
+    summary: "Remove a profile picture and use colored initials (self or user manager)",
+    response: z.object({ user: UserSchema }),
+  },
   "users.list": {
     method: "GET",
     path: "/users",
@@ -669,6 +691,13 @@ export const ROUTES = {
     auth: "user",
     summary: "Mark all of the current user's inbox items as read (?mark_read=1)",
     query: UpdateInboxQuerySchema,
+    response: z.object({ ok: z.literal(true), updated: z.number().int() }),
+  },
+  "inbox.markRead": {
+    method: "POST",
+    path: "/inbox/:id/read",
+    auth: "user",
+    summary: "Mark one of the current user's accessible inbox items read",
     response: z.object({ ok: z.literal(true), updated: z.number().int() }),
   },
 } as const satisfies Record<string, RouteDef>;

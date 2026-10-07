@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { ProfilePictureEditor } from '@/components/profile-picture-editor';
 import {
   Card,
   CardContent,
@@ -69,6 +70,7 @@ export default function ProfileSettingsScreen() {
           <CardDescription>Your display name and account details.</CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
+          {user ? <ProfilePictureEditor user={user} onChanged={setUser} /> : null}
           <View className="gap-1.5">
             <Label>Name</Label>
             <Input value={name} onChangeText={setName} placeholder="Ada Lovelace" />

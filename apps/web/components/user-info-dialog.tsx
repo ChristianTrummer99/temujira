@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,7 +9,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Text } from '@/components/ui/text';
-import { initialsOf } from '@/lib/format';
 import type { User } from '@temujira/client';
 import { View } from 'react-native';
 
@@ -26,11 +25,7 @@ export function UserInfoDialog({ user, onClose }: { user: User | null; onClose: 
         </DialogHeader>
         {user ? (
           <View className="flex-row items-center gap-3">
-            <Avatar alt={user.name} className="size-12">
-              <AvatarFallback>
-                <Text className="text-sm">{initialsOf(user.name)}</Text>
-              </AvatarFallback>
-            </Avatar>
+            <UserAvatar user={user} className="size-12" textClassName="text-sm" />
             <View className="min-w-0 flex-1 gap-1">
               <Text className="text-muted-foreground text-xs">{user.email}</Text>
               <View className="flex-row gap-1.5">

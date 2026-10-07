@@ -1,4 +1,5 @@
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
+import { ProfilePictureEditor } from '@/components/profile-picture-editor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,7 +33,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
-import { initialsOf } from '@/lib/format';
 import { hasScope } from '@/lib/scopes';
 import { useResource } from '@/lib/use-resource';
 import type { User } from '@temujira/client';
@@ -42,7 +42,8 @@ import * as React from 'react';
 import { ScrollView, View } from 'react-native';
 
 export default function UsersSettingsScreen() {
-  const { client, user: me } = useAuth();
+  const { client, user: me, setUser } = useAuth();
+  const [pictureFor, setPictureFor] = React.useState<User | null>(null);
   // UX-only gating: the server enforces scopes on the routes regardless. Reads are never gated.
   const isAdmin = me?.role === 'admin';
   const canManageUsers = hasScope(me, 'users:manage');
@@ -261,11 +262,7 @@ export default function UsersSettingsScreen() {
                 <View
                   key={u.id}
                   className="border-border bg-card flex-row flex-wrap items-center gap-3 rounded-md border p-3">
-                  <Avatar alt={u.name} className="size-8">
-                    <AvatarFallback>
-                      <Text className="text-xs">{initialsOf(u.name)}</Text>
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar user={u} className="size-8" />
                   <View className="min-w-[180px] flex-1">
                     <View className="flex-row items-center gap-2">
                       <Text className="text-sm font-medium">
@@ -293,8 +290,11 @@ export default function UsersSettingsScreen() {
                       <Text>Exclusive</Text>
                     </Badge>
                   ) : null}
-                  {canManageKeys || canManageUsers ? (
+                  {canManageKeys || canManageUsers || isMe ? (
                     <View className="flex-row flex-wrap justify-end gap-1">
+                      {isMe || (canManageUsers && (isAdmin || u.role !== 'admin')) ? (
+                        <Button variant="ghost" size="sm" className="h-7" accessibilityLabel={`Change picture for ${u.name}`} onPress={() => setPictureFor(u)}><Text className="text-xs">Picture</Text></Button>
+                      ) : null}
                       {canManageKeys ? (
                         <Button
                           variant="ghost"
@@ -354,6 +354,17 @@ export default function UsersSettingsScreen() {
       </Card>
 
       {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
+
+      <Dialog open={!!pictureFor} onOpenChange={(open) => { if (!open) setPictureFor(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Picture for {pictureFor?.name}</DialogTitle></DialogHeader>
+          {pictureFor ? <ProfilePictureEditor key={pictureFor.id} user={pictureFor} onChanged={(updated) => {
+            setPictureFor(updated);
+            if (updated.id === me?.id) setUser(updated);
+            void resource.reload();
+          }} /> : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="w-full max-w-sm">

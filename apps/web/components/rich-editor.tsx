@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useAuth } from '@/lib/auth';
 import { editableText } from '@/lib/editable-text';
-import { initialsOf, splitTaskKey, taskKeyBody } from '@/lib/format';
+import { splitTaskKey, taskKeyBody } from '@/lib/format';
+import { UserAvatar } from '@/components/user-avatar';
 import { cn } from '@/lib/utils';
 import { useWorkspaceKeys } from '@/lib/workspaces';
 import type { User } from '@temujira/client';
@@ -951,11 +952,7 @@ React.useLayoutEffect(() => {
                     e.preventDefault();
                     insert(user);
                   }}>
-                  <div
-                    className="bg-muted text-muted-foreground flex items-center justify-center"
-                    style={{ width: 24, height: 24, borderRadius: 9999, fontSize: 10, flexShrink: 0 }}>
-                    {initialsOf(user.name)}
-                  </div>
+                  <UserAvatar user={user} className="size-6" textClassName="text-[10px]" />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div className="text-sm" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {user.name}

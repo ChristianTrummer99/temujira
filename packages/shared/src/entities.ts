@@ -38,6 +38,8 @@ export const UserSchema = z.object({
   email: z.string().nullable(),
   name: z.string(),
   role: RoleSchema,
+  /** Changes when a new profile picture is uploaded. null uses the colored initials. */
+  avatar_id: UlidSchema.nullable(),
   is_agent: z.boolean(),
   /**
    * Opt-in per-identity access policy. false (default) = shared: every key may use the

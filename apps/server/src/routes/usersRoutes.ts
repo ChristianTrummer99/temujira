@@ -190,6 +190,8 @@ export function usersHandlers(
         id: newId(),
         email: input.email ?? null,
         name: input.name,
+        avatarId: null,
+        avatarMimeType: null,
         // Agent accounts have no password: web login structurally refused, API keys only.
         passwordHash: input.is_agent
           ? null

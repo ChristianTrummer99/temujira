@@ -3,7 +3,7 @@ import { TaskStatusControl, TaskTagsControl } from '@/components/task-properties
 import { TaskDragHandle, TaskDropZone } from '@/components/task-drag';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TagPill } from '@/components/tag-pill';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -25,7 +25,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { MarkdownField } from '@/components/markdown-field';
 import { useAuth } from '@/lib/auth';
 import { hasScope } from '@/lib/scopes';
-import { initialsOf } from '@/lib/format';
 import { DEFAULT_GROUP_BY, groupTasks, type GroupBy, type TaskGroup } from '@/lib/group-tasks';
 import { useResource } from '@/lib/use-resource';
 import type { BulkUpdateTasksInput, FieldDef, Status, Tag, Task, User } from '@temujira/client';
@@ -632,11 +631,7 @@ function TaskRow({
       <View className="hidden sm:flex"><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} /></View>
       <TaskStatusControl task={task} statuses={controls.statuses} onChanged={controls.onChanged} disabled={controls.busy} />
       <View className="hidden sm:flex">{task.assignee ? (
-        <Avatar alt={task.assignee.name} className="size-6">
-          <AvatarFallback>
-            <Text className="text-[10px]">{initialsOf(task.assignee.name)}</Text>
-          </AvatarFallback>
-        </Avatar>
+        <UserAvatar user={task.assignee} className="size-6" textClassName="text-[10px]" />
       ) : (
         <View className="border-border size-6 items-center justify-center rounded-full border border-dashed">
           <Text className="text-muted-foreground text-[10px]">-</Text>

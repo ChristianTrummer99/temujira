@@ -3,14 +3,26 @@ import type { z } from "zod";
 import type { InboxItem, ListInboxQuerySchema, UpdateInboxQuerySchema, WatchInboxQuerySchema } from "@temujira/shared";
 import { accessibleWorkspaceIds, workspaceScopeWhere } from "../access";
 import { inboxEvents, inboxItems, tasks, users, workspaces } from "../db/schema";
-import { validationError } from "../errors";
+import { notFound, validationError } from "../errors";
 import { inboxItemToApi } from "../serialize";
 import { now } from "../util";
 import { loadCommentsById } from "./commentSerialize";
 import { currentUser, query, type AppContext, type Handlers } from "./types";
 
-export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "inbox.update" | "inbox.watch"> {
+export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "inbox.update" | "inbox.watch" | "inbox.markRead"> {
   return {
+    "inbox.markRead": (c) => {
+      const user = currentUser(c);
+      const where = and(
+        eq(inboxItems.id, c.req.param("id") ?? ""),
+        eq(inboxItems.userId, user.id),
+        workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user)),
+      );
+      if (!ctx.db.select({ id: inboxItems.id }).from(inboxItems).where(where).get()) throw notFound("inbox item");
+      const result = ctx.db.update(inboxItems).set({ readAt: now() })
+        .where(and(where, isNull(inboxItems.readAt))).run();
+      return c.json({ ok: true as const, updated: result.changes });
+    },
     "inbox.watch": (c) => {
       const user = currentUser(c);
       const q = query<z.infer<typeof WatchInboxQuerySchema>>(c);

@@ -5,11 +5,12 @@ import { getCtx } from "../context";
 import { emit, table, truncate, ts } from "../output";
 import { nonNegativeInt } from "../util";
 import { CliError, EXIT_CODES } from "../exit";
+import { isUlid } from "../resolve";
 import { readInboxCheckpoint, saveInboxCheckpoint, watchInbox } from "../inbox-watch";
 
 export const COMMAND_ROUTES = {
   "inbox list": ["inbox.list"],
-  "inbox read": ["inbox.update"],
+  "inbox read": ["inbox.update", "inbox.markRead"],
   "inbox watch": ["inbox.watch", "auth.me"],
 } as const satisfies Record<string, readonly RouteId[]>;
 
@@ -80,8 +81,9 @@ export function registerInbox(program: Command): void {
           json: res,
           human: () => {
             const body = table(
-              ["NEW", "KIND", "WS", "TASK", "TITLE", "ACTOR", "WHEN", "COMMENT"],
+              ["ID", "NEW", "KIND", "WS", "TASK", "TITLE", "ACTOR", "WHEN", "COMMENT"],
               res.items.map((i) => [
+                i.id,
                 i.read_at ? "" : "●",
                 i.kind,
                 i.workspace.key,
@@ -107,10 +109,14 @@ export function registerInbox(program: Command): void {
 
   inbox
     .command("read")
-    .description("Mark every inbox item as read")
-    .action(async (_opts: Record<string, never>, cmd: Command) => {
+    .description("Mark one inbox item read; omit the id to mark all accessible items read")
+    .argument("[itemId]", "inbox item id from `inbox list`, not a comment id")
+    .action(async (itemId: string | undefined, _opts: Record<string, never>, cmd: Command) => {
+      if (itemId !== undefined && !isUlid(itemId)) {
+        throw new CliError("inbox item must be an id from `tmj inbox list`", EXIT_CODES.usage);
+      }
       const ctx = getCtx(cmd);
-      const res = await ctx.client.markInboxRead({ mark_read: true });
+      const res = itemId !== undefined ? await ctx.client.markInboxItemRead(itemId) : await ctx.client.markInboxRead({ mark_read: true });
       emit(ctx.mode, {
         json: res,
         human: () => `marked ${res.updated} inbox item${res.updated === 1 ? "" : "s"} read`,

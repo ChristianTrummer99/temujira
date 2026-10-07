@@ -23,7 +23,8 @@ export const AUDIT_ACTIONS = {
   "links.create": "task.linked", "links.delete": "task.unlinked",
   "comments.create": "comment.created", "comments.update": "comment.updated", "comments.delete": "comment.deleted",
   "attachments.uploadToTask": "attachment.uploaded", "attachments.uploadToComment": "attachment.uploaded", "attachments.delete": "attachment.deleted",
-  "inbox.update": "inbox.read",
+  "inbox.update": "inbox.read", "inbox.markRead": "inbox.read",
+  "avatars.upload": "avatar.updated", "avatars.delete": "avatar.removed",
 } as const satisfies Record<MutationRoute, string>;
 
 type Row = Record<string, unknown>;
@@ -106,6 +107,8 @@ function targets(ctx: AppContext, c: Ctx, route: MutationRoute, response: Row = 
       const affected = ctx.sqlite.prepare(query).all(row.id) as Array<{ task_id: string }>;
       result.push(...affected.map((r) => task(r.task_id)));
     }
+  } else if (group === "avatars") {
+    result = [{ visibility: "private", ownerId: param }];
   } else if (group === "apiKeys") {
     row = id ? one("SELECT id,user_id,name FROM api_keys WHERE id=?", id) : {};
     result = [{ visibility: "private", ownerId: string(row.user_id) ?? string(input.user_id) ?? actor?.id }];

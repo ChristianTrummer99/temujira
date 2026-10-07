@@ -1,9 +1,8 @@
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import { WebRichEditor } from '@/components/rich-editor';
 import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth';
-import { initialsOf } from '@/lib/format';
 import type { User } from '@temujira/client';
 import * as React from 'react';
 import { Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
@@ -209,11 +208,7 @@ function NativeMentionInput({
 function SuggestionRow({ user, onPick }: { user: User; onPick: () => void }) {
   const inner = (
     <>
-      <Avatar alt={user.name} className="size-6">
-        <AvatarFallback>
-          <Text className="text-[10px]">{initialsOf(user.name)}</Text>
-        </AvatarFallback>
-      </Avatar>
+      <UserAvatar user={user} className="size-6" textClassName="text-[10px]" />
       <View className="min-w-0 flex-1">
         <Text numberOfLines={1} className="text-sm">
           {user.name}

@@ -1,8 +1,8 @@
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
-import { formatAbsolute, initialsOf, splitTaskKey } from '@/lib/format';
+import { formatAbsolute, splitTaskKey } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 import type { ActivityEvent } from '@temujira/client';
 import { useRouter } from 'expo-router';
@@ -57,7 +57,7 @@ function ActivityRow({ event, showTask }: { event: ActivityEvent; showTask: bool
   const value = (v: unknown) => v === null ? 'None' : String(v);
   return (
     <View className="border-border flex-row items-start gap-3 border-b pb-3">
-      <Avatar alt={event.actor.name} className="mt-1 size-6"><AvatarFallback><Text className="text-[10px]">{initialsOf(event.actor.name)}</Text></AvatarFallback></Avatar>
+      <UserAvatar user={event.actor} className="mt-1 size-6" textClassName="text-[10px]" />
       <View className="min-w-0 flex-1 gap-1">
         <View className="flex-row flex-wrap items-center gap-1.5">
           <Text className="text-sm font-medium">{event.actor.name}</Text>

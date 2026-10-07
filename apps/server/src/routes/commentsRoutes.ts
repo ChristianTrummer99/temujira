@@ -1,4 +1,4 @@
-import { asc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { z } from "zod";
 import type { CreateCommentInputSchema, UpdateCommentInputSchema } from "@temujira/shared";
 import { attachments, comments, inboxItems, mentions, users } from "../db/schema";
@@ -123,7 +123,7 @@ export function commentsHandlers(
       };
       const mentioned = resolveMentionIds(ctx, input.mention_ids ?? []);
 
-      ctx.db.transaction((tx) => {
+      const readCount = ctx.db.transaction((tx) => {
         tx.insert(comments).values(row).run();
         // Accepted answer on the question itself: last answer wins.
         if (input.answer_option_index !== undefined && parent) {
@@ -137,6 +137,18 @@ export function commentsHandlers(
             .values({ id: newId(), commentId: row.id, taskId: task.id, mentionedId: m.id, byId: user.id, createdAt: t })
             .run();
         }
+        // A successful response resolves this recipient's existing notifications in
+        // this thread only. Merely opening a task/comment never changes read state.
+        return parent ? tx.update(inboxItems).set({ readAt: t }).where(and(
+          eq(inboxItems.userId, user.id), eq(inboxItems.taskId, task.id), isNull(inboxItems.readAt),
+          or(eq(inboxItems.sourceCommentId, parent.id), eq(inboxItems.parentCommentId, parent.id)),
+        )).run().changes : 0;
+      });
+
+      if (readCount) recordActivity(ctx.db, {
+        workspaceId: workspace.id, taskId: task.id, actorId: user.id,
+        action: "inbox.read", visibility: "private", ownerId: user.id,
+        metadata: { reason: "reply", thread_id: parent!.id, updated: readCount },
       });
 
       // ---- side effects (each helper opens its own transaction; never nested) ----

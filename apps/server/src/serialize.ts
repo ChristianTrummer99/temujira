@@ -66,6 +66,7 @@ export function userToApi(u: UserRow, workspaceIds: string[] = []): User {
     id: u.id,
     email: u.email,
     name: u.name,
+    avatar_id: u.avatarId,
     role: u.role as User["role"],
     is_agent: !!u.isAgent,
     exclusive_identity: !!u.exclusiveIdentity,

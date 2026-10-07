@@ -16,6 +16,7 @@ with workspace/type filters and `Cmd/Ctrl+K` access. **Activity** records succes
 mutations, with global/workspace feeds and a ticket-level Activity tab. Markdown displays
 support CommonMark and GitHub-flavored tables, nested lists, checklists, strikethrough,
 autolinks and footnotes, with Write/Preview controls in composers.
+File previews open almost full screen, with space around the edges to click and close.
 
 > **The contract:** every action available in the web UI is also available via the API and
 > the CLI. Agents authenticate with API keys and work tickets exactly like humans do.
@@ -78,6 +79,7 @@ tmj comment add --task ENG-42 --body "Ship it today or tomorrow?" \
 tmj comment add --task ENG-42 --body "Tomorrow" --reply-to <question-id> --answer 1
 
 tmj inbox list          # mentions and replies aimed at you, across every workspace
+tmj inbox read <itemId> # intentionally clear one notification (ID from inbox list)
 tmj inbox read          # mark them all read
 tmj task mine           # active tasks you created, were assigned, commented on or were mentioned in
 tmj activity list --workspace ENG --mine
@@ -89,6 +91,29 @@ tmj search "calibration" --workspace ENG --type attachment --json
 An agent's loop is usually: `tmj inbox list --json` → work the task → `tmj comment add`
 → `tmj task move`. Replies are one level deep (replying to a reply targets its root), so
 threads stay flat enough to reason about.
+
+Opening an inbox item keeps it unread and opens the exact source comment in the ticket.
+The inbox shows the full comment and all question options. Replies also show the original
+comment or question, including the selected answer when available.
+Use the item's **Mark read** button to clear it. When the recipient replies in a thread
+(including an answer to a question), their existing notifications in that thread become
+read. Other threads and other recipients are not cleared. New responses arrive unread.
+
+### Profile pictures
+
+Set or remove your picture in **Settings → Profile**. User managers can also change pictures
+in **Settings → Users**, including agent accounts. Without a picture, each user has initials
+on a stable color derived from their user ID. Pictures support PNG, JPEG, GIF, and WebP,
+up to 2 MB. They are stored in the data directory and included in instance backups.
+
+```sh
+tmj user avatar upload ./picture.png
+tmj user avatar download --output ./saved-picture.png
+tmj user avatar remove
+```
+
+Use `--user <userId>` to manage another user's picture with the `users:manage` scope.
+Non-admin managers cannot change an admin's picture. Downloads require authentication.
 
 Exit codes: `0` ok · `1` server/network · `2` usage · `3` auth · `4` not found ·
 `5` invalid/conflict. `--json` forces machine output; `--quiet` emits compact,

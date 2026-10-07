@@ -23,6 +23,8 @@ export function createFirstAdmin(
     id: newId(),
     email: input.email,
     name: input.name,
+    avatarId: null,
+    avatarMimeType: null,
     passwordHash: input.passwordHash,
     role: "admin",
     scopes: "[]",

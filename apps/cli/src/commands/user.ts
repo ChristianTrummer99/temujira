@@ -7,6 +7,7 @@ import { emit, kv, table, ts } from "../output";
 import { promptHidden } from "../prompt";
 import { resolveWorkspaceIds } from "../resolve";
 import { nonNegativeInt } from "../util";
+import { registerAvatar } from "./avatar";
 
 const collect = (value: string, previous: string[]): string[] => [...previous, value];
 
@@ -75,6 +76,7 @@ interface UserUpdateOpts {
 
 export function registerUser(program: Command): void {
   const user = program.command("user").description("Manage user accounts (mostly admin)");
+  registerAvatar(user);
 
   user
     .command("list")

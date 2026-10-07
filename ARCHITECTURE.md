@@ -90,7 +90,10 @@ implementation agents report needed changes rather than editing `packages/shared
 TEXT ULID PKs, INTEGER unix-ms timestamps, INTEGER 0/1 booleans.
 
 - **users**: email (unique, lowercased), name, password_hash (NULL = agent, no web login),
-  role CHECK in (admin, member), is_agent, deactivated_at, timestamps.
+  role CHECK in (admin, member), is_agent, deactivated_at, timestamps. Nullable avatar_id
+  and avatar_mime_type refer to a raster profile picture in the shared upload store. The
+  orphan sweep retains both attachment IDs and active avatar IDs. Avatar replacement writes
+  the new file, updates the user, then removes the old file; failed updates remove new bytes.
 - **sessions**: user_id FK, token_hash (unique), expires_at, last_seen_at.
 - **api_keys**: user_id FK, name, token_hash (unique), token_prefix, last_used_at,
   revoked_at, created_at.
@@ -113,6 +116,11 @@ TEXT ULID PKs, INTEGER unix-ms timestamps, INTEGER 0/1 booleans.
   cursor. The watch endpoint pages forward after applying user/workspace permissions.
   Omitted cursor starts now; zero replays retained items, including read notifications.
 - **queue_entries**: retired. Keep the table and existing rows; no supported routes use it.
+
+Inbox read state changes only through explicit per-item/all-item read actions or a
+successful reply by the notification recipient. Reply insertion, question answers, and
+the caller's thread-scoped read changes share a transaction. Read-state audit events are
+private to the recipient/admin. Opening a deep link does not mutate inbox state.
 - **comments**: task_id FK, author_id, body (markdown), timestamps. Hard-delete allowed
   (author or admin); deletes its attachments' bytes too.
 - **attachments**: exactly-one-parent CHECK (task_id XOR comment_id), uploader_id,

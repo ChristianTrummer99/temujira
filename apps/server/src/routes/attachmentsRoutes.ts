@@ -43,11 +43,10 @@ function contentDisposition(type: "inline" | "attachment", filename: string): st
  * Parse a multipart/form-data request with a single `file` field, streaming the bytes
  * into storage (which enforces the byte cap mid-stream, hashes, and counts size).
  */
-async function readUpload(c: Ctx, ctx: AppContext): Promise<UploadedFile> {
-  const maxBytes = ctx.config.maxUploadMb * 1024 * 1024;
+export async function readUpload(c: Ctx, ctx: AppContext, maxBytes = ctx.config.maxUploadMb * 1024 * 1024): Promise<UploadedFile> {
   const declared = c.req.header("content-length");
   if (declared !== undefined && Number(declared) > maxBytes + PREFLIGHT_SLACK) {
-    throw new HttpError("payload_too_large", `file exceeds the ${ctx.config.maxUploadMb}MB upload limit`);
+    throw new HttpError("payload_too_large", `file exceeds the ${maxBytes} byte upload limit`);
   }
   const contentType = c.req.header("content-type") ?? "";
   if (!/^multipart\/form-data/i.test(contentType)) {
@@ -72,7 +71,7 @@ async function readUpload(c: Ctx, ctx: AppContext): Promise<UploadedFile> {
       }
       seenFile = true;
       ctx.storage
-        .putStream(file)
+        .putStream(file, maxBytes)
         .then((stored) =>
           resolve({
             ...stored,

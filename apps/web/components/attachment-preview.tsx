@@ -244,18 +244,21 @@ export function AttachmentPreviewDialog({
   const isFull = isFullscreen || expanded;
   const contentSize = Platform.select({
     web: isFull
-      ? 'h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none rounded-none border-0'
-      : 'h-[88vh] w-full max-w-none rounded-lg',
+      ? 'h-[calc(100dvh-1rem)] w-full max-w-none sm:max-w-none rounded-lg'
+      : 'h-[calc(100dvh-2rem)] sm:h-[calc(100dvh-4rem)] w-full max-w-none sm:max-w-none rounded-lg',
     default: 'h-[88vh] w-full sm:max-w-3xl',
   });
   const containerSize = Platform.select({
-    web: isFull ? 'max-w-none sm:max-w-none' : 'max-w-[1280px] sm:max-w-[1280px]',
+    web: isFull
+      ? 'w-[calc(100vw-1rem)] max-w-none sm:max-w-none'
+      : 'w-[calc(100vw-1.5rem)] sm:w-[calc(100vw-3rem)] max-w-none sm:max-w-none',
     default: undefined,
   });
 
   return (
     <Dialog open={!!attachment} onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent
+        testID="attachment-preview-dialog"
         className={cn('flex flex-col gap-0 overflow-hidden p-0', contentSize)}
         containerClassName={containerSize}>
         <View ref={shellRef} className="bg-background flex h-full w-full flex-col">

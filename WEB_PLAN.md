@@ -91,9 +91,11 @@ propagation if the row also navigates on web). The create dialog gains tag toggl
 **Inbox** (`inbox.tsx`): Unread/All tabs (`include_read`), "Mark all read" →
 `markInboxRead()` then refetch + badge refresh. Rows show an unread dot, kind icon/badge
 (mention vs reply), workspace badge, task key + title, actor and relative time, and a
-markdown preview of the source comment; pressing a row opens
-`/w/{workspace.key}/t/{number}`. There is no per-item mark-read in the API — do not invent
-one. Empty: "You're all caught up."
+markdown preview of the source comment. Pressing a row opens
+`/w/{workspace.key}/t/{number}?comment={source_comment.id}`, reveals its thread, and scrolls
+to that comment without marking it read. Each unread row has a Mark read button backed by
+`inbox.markRead`. A recipient's successful reply clears their existing notifications in that
+thread. Empty: "You're all caught up."
 
 **My Tasks** (`my.tsx`): `listMyTasks`, rows like task rows plus a workspace badge derived
 from `task.key`, navigating cross-workspace.

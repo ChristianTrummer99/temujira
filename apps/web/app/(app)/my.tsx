@@ -1,12 +1,12 @@
 import { EmptyState } from '@/components/empty-state';
 import { TagPills } from '@/components/tag-pill';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { UserAvatar } from '@/components/user-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
-import { formatRelative, initialsOf, splitTaskKey } from '@/lib/format';
+import { formatRelative, splitTaskKey } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 import type { Task } from '@temujira/client';
 import { useRouter } from 'expo-router';
@@ -94,11 +94,7 @@ function MyTaskRow({ task }: { task: Task }) {
         {task.updated_at ? formatRelative(task.updated_at) : ''}
       </Text>
       {task.assignee ? (
-        <Avatar alt={task.assignee.name} className="size-6">
-          <AvatarFallback>
-            <Text className="text-[10px]">{initialsOf(task.assignee.name)}</Text>
-          </AvatarFallback>
-        </Avatar>
+        <UserAvatar user={task.assignee} className="size-6" textClassName="text-[10px]" />
       ) : (
         <View className="border-border size-6 items-center justify-center rounded-full border border-dashed">
           <Text className="text-muted-foreground text-[10px]">-</Text>
