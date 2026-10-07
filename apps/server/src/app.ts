@@ -20,7 +20,6 @@ import { searchHandlers } from "./routes/searchRoutes";
 import { backfillAttachmentSearch } from "./search";
 import { linksHandlers } from "./routes/linksRoutes";
 import { metaHandlers } from "./routes/meta";
-import { queueHandlers } from "./routes/queueRoutes";
 import { statusesHandlers } from "./routes/statusesRoutes";
 import { tagsHandlers } from "./routes/tagsRoutes";
 import { tasksHandlers } from "./routes/tasksRoutes";
@@ -158,7 +157,6 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     ...tasksHandlers(ctx),
     ...linksHandlers(ctx),
     ...fieldsHandlers(ctx),
-    ...queueHandlers(ctx),
     ...commentsHandlers(ctx),
     ...attachmentsHandlers(ctx),
     ...activityHandlers(ctx),

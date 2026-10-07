@@ -27,6 +27,9 @@ it('upgrades an existing populated database without losing history or attachment
       INSERT INTO comments(id,task_id,author_id,body,created_at,updated_at) VALUES ('c','t','u','legacy discussion',1,1);
       INSERT INTO attachments(id,comment_id,uploader_id,filename,mime_type,size,sha256,created_at) VALUES ('a','c','u','legacy.txt','text/plain',14,'hash',1);
       INSERT INTO activity_events(id,workspace_id,task_id,actor_id,action,metadata,created_at) VALUES ('e','w','t','u','task.created','{"retained":true}',1);
+      INSERT INTO tasks(id,workspace_id,number,title,status_id,created_by,created_at,updated_at) VALUES ('recent','w',2,'Recent task','s','u',2,2);
+      INSERT INTO queue_entries(id,user_id,task_id,position,state,added_by,created_at,updated_at) VALUES ('q','u','t',3,'running','u',1,1);
+      INSERT INTO inbox_items(id,user_id,workspace_id,task_id,actor_id,kind,source_comment_id,created_at) VALUES ('i','u','w','t','u','mention','c',1);
     `);
     mkdirSync(join(dir, 'uploads'));
     writeFileSync(join(dir, 'uploads', 'a'), 'legacy content');
@@ -39,6 +42,10 @@ it('upgrades an existing populated database without losing history or attachment
     expect(sqlite.prepare("SELECT count(*) n FROM search_fts WHERE search_fts MATCH 'legacy'").get()).toEqual({ n: 3 });
     expect(sqlite.pragma('foreign_key_check')).toEqual([]);
     expect(app.ctx.storage.exists('a')).toBe(true);
+    expect(sqlite.prepare('SELECT id,position FROM tasks ORDER BY position').all()).toEqual([{ id: 'recent', position: 0 }, { id: 't', position: 1 }]);
+    expect(sqlite.prepare('SELECT id,position,state FROM queue_entries').all()).toEqual([{ id: 'q', position: 3, state: 'running' }]);
+    expect(sqlite.prepare('SELECT sequence,inbox_id FROM inbox_events').all()).toEqual([{ sequence: 1, inbox_id: 'i' }]);
+    expect((await app.app.request('/api/v1/queue')).status).toBe(404);
   } finally {
     sqlite?.close();
     rmSync(dir, { recursive: true, force: true });

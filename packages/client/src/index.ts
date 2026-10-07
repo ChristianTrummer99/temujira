@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  QUEUE_STATES,
   buildPath,
   ROUTES,
   type RouteId,
@@ -13,10 +12,11 @@ import {
   type FieldDef,
   type FieldType,
   type InboxItem,
+  type InboxEvent,
+  type BulkUpdateTasksInput,
+  type ReorderTaskInput,
   type IdentitySession,
   type LinkRelation,
-  type QueueEntry,
-  type QueueState,
   type ScopeId,
   type Status,
   type Tag,
@@ -50,6 +50,9 @@ export interface ClientOptions {
   /** Browser cookie mode: include credentials instead of a Bearer header. */
   useCookies?: boolean;
   fetch?: typeof fetch;
+  /** Optional cancellation and per-request timeout, used by long-running CLI monitors. */
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 type Body = Record<string, unknown>;
@@ -67,11 +70,15 @@ export class TemujiraClient {
   private token?: string;
   private useCookies: boolean;
   private fetchFn: typeof fetch;
+  private signal?: AbortSignal;
+  private timeoutMs?: number;
 
   constructor(opts: ClientOptions = {}) {
     this.baseUrl = (opts.baseUrl ?? "").replace(/\/+$/, "");
     this.token = opts.token;
     this.useCookies = opts.useCookies ?? false;
+    this.signal = opts.signal;
+    this.timeoutMs = opts.timeoutMs;
     // Bind to the global so `window.fetch` keeps its required `this` (avoids
     // "Failed to execute 'fetch' on 'Window': Illegal invocation" in browsers).
     this.fetchFn = opts.fetch ?? ((input, init) => fetch(input, init));
@@ -118,6 +125,9 @@ export class TemujiraClient {
       headers,
       body,
       credentials: this.useCookies ? "include" : "same-origin",
+      signal: this.timeoutMs
+        ? this.signal ? AbortSignal.any([this.signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs)
+        : this.signal,
     });
   }
 
@@ -309,12 +319,13 @@ export class TemujiraClient {
     query: {
       status_id?: string;
       assignee_id?: string;
+      unassigned?: boolean;
       tag_id?: string;
       field_id?: string;
       field_value?: string;
       q?: string;
       include_archived?: boolean;
-      sort?: "created_at" | "updated_at" | "number" | "title";
+      sort?: "created_at" | "updated_at" | "number" | "title" | "position";
       order?: "asc" | "desc";
       limit?: number;
       offset?: number;
@@ -368,6 +379,13 @@ export class TemujiraClient {
     },
   ) {
     return this.call("tasks.update", { idOrKey }, { body }) as Promise<{ task: Task }>;
+  }
+
+  bulkUpdateTasks(workspace: string, body: BulkUpdateTasksInput) {
+    return this.call("tasks.bulkUpdate", { idOrKey: workspace }, { body }) as Promise<{ items: Task[] }>;
+  }
+  reorderTask(workspace: string, body: ReorderTaskInput) {
+    return this.call("tasks.reorder", { idOrKey: workspace }, { body }) as Promise<{ task: Task }>;
   }
 
   // ---- custom fields ----
@@ -478,6 +496,9 @@ export class TemujiraClient {
   }
 
   // ---- inbox (unified, cross-workspace) ----
+  watchInbox(query: { after?: number; limit?: number } = {}) {
+    return this.call("inbox.watch", {}, { query }) as Promise<{ items: InboxEvent[]; cursor: number; has_more: boolean }>;
+  }
   listInbox(query: { include_read?: boolean; limit?: number; offset?: number } = {}) {
     return this.call("inbox.list", {}, { query }) as Promise<{
       items: InboxItem[];
@@ -489,27 +510,6 @@ export class TemujiraClient {
   }
   markInboxRead(query: { mark_read?: boolean } = { mark_read: true }) {
     return this.call("inbox.update", {}, { query }) as Promise<{ ok: true; updated: number }>;
-  }
-
-  // ---- queue (the current user's ordered plan) ----
-  getQueue() {
-    return this.call("queue.get", {}) as Promise<{ items: QueueEntry[] }>;
-  }
-  /** The entry to do next (running > ready > queued), or { entry: null }. */
-  queueNext() {
-    return this.call("queue.next", {}) as Promise<{ entry: QueueEntry | null }>;
-  }
-  addToQueue(task: string) {
-    return this.call("queue.add", {}, { body: { task } }) as Promise<{ entry: QueueEntry }>;
-  }
-  setQueueState(id: string, state: QueueState) {
-    return this.call("queue.setState", { id }, { body: { state } }) as Promise<{ entry: QueueEntry }>;
-  }
-  removeFromQueue(id: string) {
-    return this.call("queue.remove", { id }) as Promise<{ ok: true }>;
-  }
-  reorderQueue(entryIds: string[]) {
-    return this.call("queue.reorder", {}, { body: { entry_ids: entryIds } }) as Promise<{ items: QueueEntry[] }>;
   }
 }
 
@@ -561,6 +561,8 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "tasks.create": "createTask",
   "tasks.get": "getTask",
   "tasks.update": "updateTask",
+  "tasks.bulkUpdate": "bulkUpdateTasks",
+  "tasks.reorder": "reorderTask",
   "links.create": "createTaskLink",
   "links.delete": "deleteTaskLink",
   "fields.list": "listFields",
@@ -568,12 +570,6 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "fields.update": "updateField",
   "fields.reorder": "reorderFields",
   "fields.delete": "deleteField",
-  "queue.get": "getQueue",
-  "queue.next": "queueNext",
-  "queue.add": "addToQueue",
-  "queue.setState": "setQueueState",
-  "queue.remove": "removeFromQueue",
-  "queue.reorder": "reorderQueue",
   "comments.list": "listComments",
   "comments.create": "createComment",
   "comments.update": "updateComment",
@@ -585,9 +581,11 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "attachments.delete": "deleteAttachment",
   "activity.list": "listActivity",
   "inbox.list": "listInbox",
+  "inbox.watch": "watchInbox",
   "inbox.update": "markInboxRead",
 };
 
-export type { ActivityEvent, SearchResult, ApiKey, Attachment, Comment, FieldDef, FieldType, InboxItem, LinkRelation, QueueEntry, QueueState, Status, Tag, Task, TaskLink, User, Workspace, RouteId };
-export { QUEUE_STATES, ROUTES, buildPath };
+export type { ActivityEvent, SearchResult, ApiKey, Attachment, Comment, FieldDef, FieldType, InboxItem, LinkRelation, Status, Tag, Task, TaskLink, User, Workspace, RouteId };
+export { ROUTES, buildPath };
+export type { BulkUpdateTasksInput, ReorderTaskInput, InboxEvent };
 export { z };

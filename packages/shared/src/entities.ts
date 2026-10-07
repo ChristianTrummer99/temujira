@@ -249,6 +249,8 @@ export const TaskSchema = z.object({
   id: UlidSchema,
   workspace_id: UlidSchema,
   number: z.number().int(),
+  /** Saved workspace order. Smaller positions come first. */
+  position: z.number().int(),
   /** Human key like "TEM-42" (workspace key + number). */
   key: z.string(),
   title: z.string(),
@@ -345,27 +347,6 @@ export const FieldDefSchema = z.object({
   created_at: TimestampSchema,
 });
 export type FieldDef = z.infer<typeof FieldDefSchema>;
-
-// ---------- queue ----------
-
-export const QUEUE_STATES = ["queued", "ready", "running"] as const;
-export const QueueStateSchema = z.enum(QUEUE_STATES);
-export type QueueState = (typeof QUEUE_STATES)[number];
-
-/**
- * One position in a user's ordered plan (FR-36..40). Pure signal: state never
- * auto-transitions and no task/status query reads it. `blocked` is derived from the
- * task-links graph (FR-39): true when some task has a `blocks` edge to this entry's task.
- */
-export const QueueEntrySchema = z.object({
-  id: UlidSchema,
-  task: TaskSchema,
-  state: QueueStateSchema,
-  blocked: z.boolean(),
-  position: z.number().int(),
-  created_at: TimestampSchema,
-});
-export type QueueEntry = z.infer<typeof QueueEntrySchema>;
 
 // ---------- request bodies ----------
 
@@ -497,6 +478,29 @@ export const UpdateTaskInputSchema = z.object({
   field_values: z.record(UlidSchema, z.string().max(500)).optional(),
 });
 
+/** One workspace, one transaction. Tag changes preserve unrelated tags. */
+export const BulkUpdateTasksInputSchema = z.object({
+  task_ids: z.array(UlidSchema).min(1).max(200).refine((ids) => new Set(ids).size === ids.length, "duplicate task ids"),
+  status_id: UlidSchema.optional(),
+  assignee_id: UlidSchema.nullable().optional(),
+  archived: z.boolean().optional(),
+  add_tag_ids: z.array(UlidSchema).max(200).optional(),
+  remove_tag_ids: z.array(UlidSchema).max(200).optional(),
+  field_values: z.record(UlidSchema, z.string().max(500)).optional(),
+}).refine((v) => v.status_id !== undefined || v.assignee_id !== undefined || v.archived !== undefined ||
+  !!v.add_tag_ids?.length || !!v.remove_tag_ids?.length || !!Object.keys(v.field_values ?? {}).length, "no changes supplied")
+  .refine((v) => !v.add_tag_ids?.some((id) => v.remove_tag_ids?.includes(id)), "cannot add and remove the same tag");
+export type BulkUpdateTasksInput = z.infer<typeof BulkUpdateTasksInputSchema>;
+
+/** Move one task before an anchor, or to the end. Safe for filtered and paged lists. */
+export const ReorderTaskInputSchema = z.object({
+  task_id: UlidSchema,
+  before_id: UlidSchema.nullable(),
+  /** Also move to a status when dragging between status groups. */
+  status_id: UlidSchema.optional(),
+}).refine((v) => v.task_id !== v.before_id, "a task cannot be its own anchor");
+export type ReorderTaskInput = z.infer<typeof ReorderTaskInputSchema>;
+
 export const CreateFieldInputSchema = z.object({
   name: z.string().trim().min(1).max(50),
   type: FieldTypeSchema.default("select"),
@@ -512,18 +516,6 @@ export const UpdateFieldInputSchema = z.object({
 
 export const ReorderFieldsInputSchema = z.object({
   field_ids: z.array(UlidSchema).min(1),
-});
-
-export const AddTaskToQueueInputSchema = z.object({
-  task: TaskRefSchema,
-});
-
-export const QueueStateInputSchema = z.object({
-  state: QueueStateSchema,
-});
-
-export const ReorderQueueInputSchema = z.object({
-  entry_ids: z.array(UlidSchema).min(1),
 });
 
 export const CreateCommentInputSchema = z.object({
@@ -548,6 +540,14 @@ export const ListInboxQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
+
+export const WatchInboxQuerySchema = z.object({
+  /** Omit to start now. Zero replays retained events, including read items. */
+  after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+});
+export const InboxEventSchema = z.object({ cursor: z.number().int(), item: InboxItemSchema });
+export type InboxEvent = z.infer<typeof InboxEventSchema>;
 
 export const UpdateInboxQuerySchema = z.object({
   /** Mark all of the current user's inbox items as read. */
@@ -576,13 +576,14 @@ export const DeleteStatusQuerySchema = z.object({
   move_to: UlidSchema.optional(),
 });
 
-export const TASK_SORT_FIELDS = ["created_at", "updated_at", "number", "title"] as const;
+export const TASK_SORT_FIELDS = ["created_at", "updated_at", "number", "title", "position"] as const;
 
 export const TASK_GROUP_FIELDS = ["none", "status", "tag", "assignee"] as const;
 
 export const ListTasksQuerySchema = z.object({
   status_id: UlidSchema.optional(),
   assignee_id: UlidSchema.optional(),
+  unassigned: QueryBoolSchema,
   tag_id: UlidSchema.optional(),
   /** Search task title/description, comments, attachment names and indexed text. */
   q: z.string().optional(),

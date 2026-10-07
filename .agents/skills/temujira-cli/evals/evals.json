@@ -3,13 +3,13 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "My Temujira credentials are already configured. Give me the exact tmj command sequence an autonomous agent should use to take the next item from its personal queue, inspect it, mark it running, post a completion note, move the task to Done, and remove it from the queue. Account for a blocked item and use machine-readable output.",
-      "expected_output": "Uses queue next, task get, queue start, comment add, task move with --status, and queue complete with explicit --json; explains that blocked is advisory and that queue completion does not move task status.",
+      "prompt": "My Temujira credentials are configured. Give me a tmj command sequence to find my tasks with the review tag in workspace ENG, inspect dependencies, work one task, leave a completion note, and mark it Done. Use machine-readable output.",
+      "expected_output": "Uses task list with workspace, assignee me, tag review, task get, task links, comment add, and task move with --status and explicit --json. Verifies the resulting task state.",
       "assertions": [
         "Uses explicit --json for machine-readable reads and mutations.",
         "Uses task move <task> --status Done rather than a positional status.",
-        "Separately moves task status and completes the queue entry.",
-        "Explains that blocked queue entries require inspecting the blocker rather than automatic execution."
+        "Uses task filters rather than retired queue commands.",
+        "Fetches blocked_by tasks and inspects their state before starting dependent work."
       ],
       "files": []
     },
@@ -27,13 +27,14 @@
     },
     {
       "id": 3,
-      "prompt": "Without an interactive TTY, onboard a passwordless Temujira agent called Build Bot at bot@example.com, explain how to hand over its credential safely, then show how that agent should notify ada@example.com in a comment on ENG-42.",
+      "prompt": "Without an interactive TTY, onboard a passwordless Temujira agent called Build Bot, explain how to hand over its shared credential safely, then show how that agent should notify ada@example.com in a comment on ENG-42 and watch for replies.",
       "expected_output": "Uses user create --agent --with-key --json without --quiet, warns the token is shown once, recommends TEMUJIRA_URL/TEMUJIRA_API_KEY, and uses both visible mention text and --mention for the comment.",
       "assertions": [
         "Creates a passwordless account with user create --agent --with-key --json.",
         "Does not use --quiet when the one-time token must be captured.",
         "Recommends environment API-key authentication without logging the secret.",
-        "Uses comment add with both visible @Ada text and --mention ada@example.com."
+        "Uses comment add with both visible @Ada text and --mention ada@example.com.",
+        "Uses inbox watch --json for replies and explains cursor resume without automatic mark-read."
       ],
       "files": []
     }

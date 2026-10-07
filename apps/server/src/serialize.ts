@@ -8,7 +8,6 @@ import type {
   FieldDef,
   InboxItem,
   IdentitySession,
-  QueueEntry,
   Status,
   Tag,
   Task,
@@ -25,7 +24,6 @@ import type {
   fieldValues,
   identitySessions,
   inboxItems,
-  queueEntries,
   statuses,
   tags,
   taskLinks,
@@ -47,7 +45,6 @@ export type InboxItemRow = typeof inboxItems.$inferSelect;
 export type TaskLinkRow = typeof taskLinks.$inferSelect;
 export type FieldDefRow = typeof fieldDefs.$inferSelect;
 export type FieldValueRow = typeof fieldValues.$inferSelect;
-export type QueueEntryRow = typeof queueEntries.$inferSelect;
 export type IdentitySessionRow = typeof identitySessions.$inferSelect;
 
 export function identitySessionToApi(s: IdentitySessionRow): IdentitySession {
@@ -181,6 +178,7 @@ export function taskToApi(
     id: t.id,
     workspace_id: t.workspaceId,
     number: t.number,
+    position: t.position,
     key: `${workspaceKey}-${t.number}`,
     title: t.title,
     description: t.description,
@@ -208,21 +206,6 @@ export function fieldDefToApi(f: FieldDefRow): FieldDef {
     options: asStringArray(f.options),
     position: f.position,
     created_at: f.createdAt,
-  };
-}
-
-export function queueEntryToApi(
-  e: QueueEntryRow,
-  task: Task,
-  blocked: boolean,
-): QueueEntry {
-  return {
-    id: e.id,
-    task,
-    state: e.state as QueueEntry["state"],
-    blocked,
-    position: e.position,
-    created_at: e.createdAt,
   };
 }
 

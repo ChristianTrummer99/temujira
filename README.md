@@ -69,7 +69,7 @@ tmj api GET /workspaces/ENG/tasks       # raw escape hatch: any API route
 Working as part of a team — mentions, threads, questions and tags:
 
 ```sh
-tmj tag create --workspace ENG --name Backend --color '#3b82f6'   # admin only
+tmj tag create --workspace ENG --name Backend --color '#3b82f6'   # workspaces:manage
 tmj task list --workspace ENG --tag Backend --group-by status
 
 tmj comment add --task ENG-42 --body "@Ada can you review?" --mention ada@example.com
@@ -97,19 +97,76 @@ command-specific output such as an ID, task key, or downloaded path.
 ### Onboarding an agent
 
 ```sh
-tmj user create --email bot@example.com --name "Build Bot" --agent --with-key
+tmj user create --name "Build Bot" --agent --with-key
 # prints the bot's API key once — hand it to your agent as TEMUJIRA_API_KEY
 ```
 
-Agent accounts have no password (API-key-only) and can be `member` or `admin` like anyone
+Agent accounts have no email or password (API-key-only) and can be `member` or `admin` like anyone
 else. Deactivate an agent with `tmj user deactivate <id>`; its keys stop working instantly.
+
+Use one shared identity and API key for normal agent sessions. Existing `TEMUJIRA_URL`
+and `TEMUJIRA_API_KEY` variables continue to work. `tmj auth status` shows the active
+identity and credential source without showing the key.
+
+To save an existing key, send it through standard input:
+
+```sh
+tmj auth use-key --url https://pm.example.com --key-stdin < /secure/agent-key
+# Optional: a different key for this directory and its children.
+tmj auth use-key --url https://pm.example.com --directory . --key-stdin < /secure/project-key
+tmj auth forget --directory .   # remove the binding; the shared key stays active
+```
+
+Credentials are stored with mode 0600 under the user's Temujira config directory, never
+inside the project. Precedence: flags → nearest directory binding → environment → shared
+config. `--global-auth` skips directory bindings. `auth forget` removes stored credentials
+without revocation. `auth logout` revokes only a global key minted by CLI login/setup;
+imported shared keys have no automatic revocation ID.
+
+### Task selection and order
+
+Use row checkboxes to select tasks. The toolbar applies a status, assignee, tag, or archive
+change to the selection. “Select visible tasks” covers expanded groups on the current page.
+Selection clears when filters or pages change. Tags have separate add/remove actions.
+
+Choose **Manual order** and drag a row handle. Drag between status groups to change status
+and position together. Click the handle for Move up/Move down, or use Alt + ↑ / ↓.
+Status and tag controls also work directly in each row. The Filters button opens the filter
+controls; active filter chips can be cleared one at a time.
+
+```sh
+tmj task bulk ENG-1 ENG-2 --workspace ENG --status "In Progress" --add-tag review --json
+tmj task reorder ENG-2 --before ENG-1 --json
+tmj task list --workspace ENG --sort position --order asc --unassigned --json
+```
+
+Bulk changes accept up to 200 tasks from one workspace and apply all or none. Task order
+is shared by the workspace. Personal queues have been removed; old stored rows and audit
+history are retained.
+
+### Watch notifications
+
+```sh
+tmj inbox watch --json --cursor-file ~/.config/temujira/inbox-cursor.json
+tmj inbox watch --after 0 --once --json   # replay retained events, then exit
+```
+
+The watcher starts with new events by default and polls every five seconds. It follows
+mentions and replies for the active identity, with current workspace access checks.
+It does not mark items read. JSON output is one object per line: `notification` records
+contain `cursor` and `item`; `checkpoint` records contain the resume `cursor`.
+Use `--after` or `--cursor-file`, not both. A cursor file is tied to its server and user.
+Delivery can repeat after an interrupted output/checkpoint write; deduplicate by inbox
+item ID. Deleted notifications are no longer available for replay. Temporary request
+failures retry with a delay; authentication failures exit. Stop with Ctrl+C.
+The web inbox and unread badge check for changes every 15 seconds.
 
 ## The API
 
 Everything is under `/api/v1` — plain REST + JSON, documented by the server itself at
 `/api/v1/openapi.json`. Authenticate with `Authorization: Bearer tmj_…` (API key) or
 `Bearer tms_…` (session token from `POST /api/v1/auth/login`). Browser login also sets an
-HttpOnly cookie; the current web client sends the returned session token as a bearer token.
+HttpOnly cookie; the web client uses that cookie. Native clients use the returned token.
 Use HTTPS in production.
 
 ## Development
@@ -150,15 +207,15 @@ storage for SQLite, and run only one app process per data directory.
 
 - **SQLite on purpose.** A self-hosted team tool doesn't need Postgres ops. One process,
   one file, WAL mode; `sqlite3` CLI debuggability. The storage layer is swappable later.
-- **Global roles, no per-workspace membership.** Every member sees every workspace —
-  it's a small-team tool. Roles are `admin` and `member`.
+- **Global roles with scopes and workspace access.** Roles are `admin` and `member`.
+  Members can have a workspace allowlist and capability grants; admins have full access.
 - **Archive, don't delete.** Workspaces and tasks archive/unarchive; users deactivate.
-  Taxonomy, comments, attachments, links, and queue entries can hard-delete, so inspect
+  Taxonomy, comments, attachments, and links can hard-delete, so inspect
   targets before destructive CLI/API calls (deleting a root comment also takes its replies).
 - **Threads are one level deep.** Replying to a reply targets its root, so a discussion is
   always a root plus its replies — never a tree you have to walk.
-- **Statuses are member-editable, tags are admin-managed.** Statuses change constantly
-  during work; tags are taxonomy and shouldn't drift per-person.
+- **Explicit write scopes.** Task edits need `tasks:write`. Status and tag definitions
+  need `workspaces:manage`.
 - **Mentions notify, descriptions don't.** `@`-mentions in comments create inbox items;
   mentions in task descriptions render as links but stay quiet.
 - **No kanban.** Tasks are stacked rows, the way a backlog actually gets worked.

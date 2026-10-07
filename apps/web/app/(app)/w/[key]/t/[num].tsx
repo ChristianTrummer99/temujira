@@ -7,6 +7,7 @@ import { DescriptionEditor } from '@/components/description-editor';
 import { Markdown } from '@/components/markdown';
 import { MarkdownField } from '@/components/markdown-field';
 import { ActivityFeed } from '@/components/activity-feed';
+import { TaskStatusControl, TaskTagsControl } from '@/components/task-properties';
 import { MentionInput } from '@/components/mention-input';
 import { RichEditor } from '@/components/rich-editor';
 import { TagPill } from '@/components/tag-pill';
@@ -14,7 +15,6 @@ import { UserInfoDialog } from '@/components/user-info-dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -48,7 +48,6 @@ import type {
   Attachment,
   Comment,
   FieldDef,
-  QueueEntry,
   Status,
   Tag,
   Task,
@@ -67,13 +66,11 @@ import {
   FileIcon,
   Link2Icon,
   ListChecksIcon,
-  ListOrderedIcon,
   Maximize2Icon,
   Minimize2Icon,
   PaperclipIcon,
   PlusIcon,
   ReplyIcon,
-  TagIcon,
   TrashIcon,
   XIcon,
 } from 'lucide-react-native';
@@ -86,8 +83,6 @@ interface TaskPageData {
   users: User[];
   tags: Tag[];
   fields: FieldDef[];
-  /** The current user's queue, so the screen knows whether this task is already in it. */
-  queue: QueueEntry[];
   comments: Comment[];
 }
 
@@ -107,13 +102,12 @@ export default function TaskDetailScreen() {
   const openedAttachment = React.useRef<string | null>(null);
 
   const resource = useResource<TaskPageData>(async () => {
-    const [taskRes, statusRes, userRes, tagRes, fieldRes, queueRes, commentRes] = await Promise.all([
+    const [taskRes, statusRes, userRes, tagRes, fieldRes, commentRes] = await Promise.all([
       client.getTask(idOrKey),
       client.listStatuses(workspaceKey),
       client.listUsers(),
       client.listTags(workspaceKey),
       client.listFields(workspaceKey),
-      client.getQueue(),
       client.listComments(idOrKey),
     ]);
     return {
@@ -122,7 +116,6 @@ export default function TaskDetailScreen() {
       users: userRes.items,
       tags: tagRes.items,
       fields: fieldRes.items,
-      queue: queueRes.items,
       comments: commentRes.items,
     };
   }, [client, idOrKey, workspaceKey]);
@@ -227,9 +220,7 @@ export default function TaskDetailScreen() {
     );
   }
 
-  const { task, statuses, users, tags, fields, queue, comments } = resource.data;
-
-  const queueEntry = queue.find((e) => e.task.id === task.id) ?? null;
+  const { task, statuses, users, tags, fields, comments } = resource.data;
 
   return (
     <>
@@ -286,22 +277,6 @@ export default function TaskDetailScreen() {
           <View className="flex-row flex-wrap gap-6">
             <StatusPicker task={task} statuses={statuses} onChanged={setTask} />
             <AssigneePicker task={task} users={users} onChanged={setTask} />
-            <QueueButton
-              task={task}
-              entry={queueEntry}
-              onChanged={(entry) =>
-                resource.setData((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        queue: entry
-                          ? [...prev.queue.filter((e) => e.id !== entry.id), entry]
-                          : prev.queue.filter((e) => e.task.id !== task.id),
-                      }
-                    : prev
-                )
-              }
-            />
             <ArchiveControl task={task} onChanged={setTask} />
           </View>
 
@@ -461,35 +436,10 @@ function StatusPicker({
   statuses: Status[];
   onChanged: (t: Task) => void;
 }) {
-  const { client } = useAuth();
-  const [error, setError] = React.useState<string | null>(null);
-  const value: Option = { value: task.status_id, label: task.status.name };
-
-  async function onChange(next: Option) {
-    if (!next?.value || next.value === task.status_id) return;
-    try {
-      const { task: updated } = await client.updateTask(task.id, { status_id: next.value });
-      onChanged(updated);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to change status');
-    }
-  }
-
   return (
     <View className="gap-1.5">
       <Label>Status</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="min-w-40">
-          <SelectValue placeholder="Select status" />
-        </SelectTrigger>
-        <SelectContent>
-          {statuses.map((status) => (
-            <SelectItem key={status.id} value={status.id} label={status.name} />
-          ))}
-        </SelectContent>
-      </Select>
-      {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
+      <TaskStatusControl task={task} statuses={statuses} onChanged={onChanged} />
     </View>
   );
 }
@@ -562,58 +512,6 @@ function ArchiveControl({ task, onChanged }: { task: Task; onChanged: (t: Task) 
         <Text className="text-muted-foreground text-sm">{archived ? 'Unarchive' : 'Archive'}</Text>
       </Button>
       {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
-    </View>
-  );
-}
-
-/**
- * Adds/removes this task on the current user's personal queue (FR-36..40). State
- * transitions (queued/ready/running/complete) are driven from the Queue screen.
- */
-function QueueButton({
-  task,
-  entry,
-  onChanged,
-}: {
-  task: Task;
-  entry: QueueEntry | null;
-  onChanged: (entry: QueueEntry | null) => void;
-}) {
-  const { client } = useAuth();
-  const [working, setWorking] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  async function toggle() {
-    if (working) return;
-    setWorking(true);
-    setError(null);
-    try {
-      if (entry) {
-        await client.removeFromQueue(entry.id);
-        onChanged(null);
-      } else {
-        const { entry: added } = await client.addToQueue(task.key);
-        onChanged(added);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update queue');
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  return (
-    <View className="justify-end gap-0.5">
-      <Button variant={entry ? 'secondary' : 'outline'} onPress={toggle} className="h-9 gap-1.5">
-        <Icon
-          as={ListOrderedIcon}
-          className={entry ? 'text-muted-foreground size-4' : 'text-foreground size-4'}
-        />
-        <Text className="text-sm">
-          {entry ? `In queue · ${entry.state}` : working ? 'Adding…' : 'Add to queue'}
-        </Text>
-      </Button>
-      {error ? <Text className="text-destructive max-w-40 text-xs">{error}</Text> : null}
     </View>
   );
 }
@@ -762,7 +660,7 @@ function TextEditor({
   );
 }
 
-/** Any member may tag a task; only tag CRUD (in settings) is admin-only. */
+/** Direct tag edits use the same control as task rows. */
 function TagEditor({
   task,
   tags,
@@ -772,62 +670,11 @@ function TagEditor({
   tags: Tag[];
   onChanged: (t: Task) => void;
 }) {
-  const { client } = useAuth();
-  const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const selected = new Set(task.tags.map((t) => t.id));
-
-  async function toggle(tagId: string) {
-    if (saving) return;
-    const next = selected.has(tagId)
-      ? task.tags.filter((t) => t.id !== tagId).map((t) => t.id)
-      : [...task.tags.map((t) => t.id), tagId];
-    setSaving(true);
-    setError(null);
-    try {
-      const { task: updated } = await client.updateTask(task.id, { tag_ids: next });
-      onChanged(updated);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update tags');
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <View className="gap-2">
       <View className="flex-row items-center justify-between">
         <Text className="text-sm font-medium">Tags</Text>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 gap-1.5">
-              <Icon as={TagIcon} className="text-muted-foreground size-3.5" />
-              <Text className="text-sm">Edit</Text>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-64 p-2">
-            {tags.length === 0 ? (
-              <Text className="text-muted-foreground p-2 text-xs">
-                No tags in this workspace yet. An admin can add them in Settings → Workspaces.
-              </Text>
-            ) : (
-              <View className="gap-0.5">
-                {tags.map((tag) => (
-                  <Pressable
-                    key={tag.id}
-                    onPress={() => toggle(tag.id)}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected.has(tag.id) }}
-                    className="hover:bg-accent flex-row items-center gap-2 rounded-md px-2 py-1.5">
-                    <Checkbox checked={selected.has(tag.id)} onCheckedChange={() => toggle(tag.id)} />
-                    <TagPill tag={tag} />
-                  </Pressable>
-                ))}
-              </View>
-            )}
-            {error ? <Text className="text-destructive p-2 text-xs">{error}</Text> : null}
-          </PopoverContent>
-        </Popover>
+        <TaskTagsControl task={task} tags={tags} onChanged={onChanged} showTags={false} />
       </View>
       <View className="flex-row flex-wrap items-center gap-1.5">
         {task.tags.length === 0 ? (
@@ -1557,7 +1404,7 @@ function CommentThread({
           accessibilityRole="button"
           accessibilityState={{ expanded: !repliesCollapsed }}
           hitSlop={8}
-          className="ml-4 flex-row items-center gap-1 self-start pl-4">
+          className="ml-11 flex-row items-center gap-1 self-start pl-4">
           <Icon
             as={repliesCollapsed ? ChevronRightIcon : ChevronDownIcon}
             className="text-muted-foreground size-3.5"
@@ -1569,7 +1416,7 @@ function CommentThread({
       ) : null}
 
       {root.replies.length > 0 && !repliesCollapsed ? (
-        <View className="border-border ml-4 gap-3 border-l pl-4">
+        <View testID={`replies-${root.id}`} className="border-border ml-11 gap-4 border-l-2 pl-4">
           {root.replies.map((reply) => (
             <CommentCard
               key={reply.id}
@@ -1593,7 +1440,7 @@ function CommentThread({
       ) : null}
 
       {replyingTo === root.id ? (
-        <View className="ml-4 pl-4">
+        <View className="border-border ml-11 border-l-2 pl-4">
           <ReplyComposer
             taskKey={taskKey}
             parentId={root.id}

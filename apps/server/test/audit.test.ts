@@ -45,9 +45,9 @@ describe('mutation audit', () => {
     const b = await makeTask(t.app, admin.token, secret.id, { title: 'Confidential' });
     const member = await makeMember(t.app, admin.token, { workspace_access_all: false, workspace_ids: [ws.id] });
     await t.app.request(`/api/v1/tasks/${a.id}/links`, jsonReq('POST', { type: 'blocks', task: b.key }, bearer(admin.token)));
-    await t.app.request('/api/v1/queue', jsonReq('POST', { task: a.key }, bearer(admin.token)));
+    await t.app.request('/api/v1/auth/me', jsonReq('PATCH', { name: 'Audit admin' }, bearer(admin.token)));
     const result = await feed(member.token);
-    expect(JSON.stringify(result)).not.toMatch(/Confidential|LOGB|queue.added|task.linked/);
+    expect(JSON.stringify(result)).not.toMatch(/Confidential|LOGB|profile.updated|task.linked/);
     const ownTicket = await feed(member.token, `/api/v1/tasks/${a.id}/activity`);
     expect(ownTicket.items.some((e) => e.action === 'task.linked')).toBe(false);
     expect((await t.app.request(`/api/v1/tasks/${b.id}/activity`, { headers: bearer(member.token) })).status).toBe(404);
@@ -55,7 +55,7 @@ describe('mutation audit', () => {
     expect(paged.total).toBe(result.total);
     expect(paged.items).toHaveLength(1);
     const adminResult = await feed(admin.token);
-    expect(adminResult.items.some((e) => e.action === 'queue.added')).toBe(true);
+    expect(adminResult.items.some((e) => e.action === 'profile.updated')).toBe(true);
   });
 
   it('redacts credentials and retains administrative history without exposing it to members', async () => {

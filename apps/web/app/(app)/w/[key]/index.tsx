@@ -1,5 +1,8 @@
 import { EmptyState } from '@/components/empty-state';
-import { TagPill, TagPills } from '@/components/tag-pill';
+import { TaskStatusControl, TaskTagsControl } from '@/components/task-properties';
+import { TaskDragHandle, TaskDropZone } from '@/components/task-drag';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { TagPill } from '@/components/tag-pill';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,13 +25,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { MarkdownField } from '@/components/markdown-field';
 import { useAuth } from '@/lib/auth';
 import { hasScope } from '@/lib/scopes';
-import { formatRelative, initialsOf } from '@/lib/format';
+import { initialsOf } from '@/lib/format';
 import { DEFAULT_GROUP_BY, groupTasks, type GroupBy, type TaskGroup } from '@/lib/group-tasks';
 import { useResource } from '@/lib/use-resource';
-import type { FieldDef, Status, Tag, Task, User } from '@temujira/client';
+import type { BulkUpdateTasksInput, FieldDef, Status, Tag, Task, User } from '@temujira/client';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ActivityIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  GripVerticalIcon,
+  SlidersHorizontalIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ListTodoIcon,
@@ -39,8 +46,8 @@ import {
 import * as React from 'react';
 import { Platform, Pressable, ScrollView, View } from 'react-native';
 
-/** The list is always grouped; "status" is the default. */
 const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
+  { value: 'none', label: 'No grouping' },
   { value: 'status', label: 'Group by status' },
   { value: 'tag', label: 'Group by tag' },
   { value: 'assignee', label: 'Group by assignee' },
@@ -96,7 +103,16 @@ export default function WorkspaceTasksScreen() {
   const { key } = useLocalSearchParams<{ key: string }>();
   const workspaceKey = (key ?? '').toUpperCase();
   const router = useRouter();
-  const { client } = useAuth();
+  const { client, user: me } = useAuth();
+  const canWrite = hasScope(me, 'tasks:write');
+  const [showFilters, setShowFilters] = React.useState(false);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [dragged, setDragged] = React.useState<{ task: Task; groupId: string } | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [actionError, setActionError] = React.useState('');
+  const [notice, setNotice] = React.useState('');
+  const [offset, setOffset] = React.useState(0);
+  const [sortOption, setSortOption] = React.useState<Option>({ value: 'position', label: 'Manual order' });
 
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<Option>(undefined);
@@ -123,6 +139,10 @@ export default function WorkspaceTasksScreen() {
       ? fieldValueFilter.value
       : '';
   const groupBy = (groupOption?.value ?? DEFAULT_GROUP_BY) as GroupBy | string;
+  const sort = (sortOption?.value ?? 'position') as 'position' | 'created_at' | 'updated_at' | 'title';
+  const filterKey = JSON.stringify([workspaceKey, debouncedSearch, statusId, assigneeValue, tagId, fieldId, fieldValue, includeArchived, groupBy, sort]);
+  const queryKey = `${filterKey}:${offset}`;
+  React.useEffect(() => { setSelected(new Set()); setOffset(0); setActionError(''); setNotice(''); }, [filterKey]);
 
   const resource = useResource(
     async () => {
@@ -136,13 +156,15 @@ export default function WorkspaceTasksScreen() {
           status_id: statusId || undefined,
           assignee_id:
             assigneeValue !== 'all' && assigneeValue !== 'unassigned' ? assigneeValue : undefined,
+          unassigned: assigneeValue === 'unassigned',
           tag_id: tagId || undefined,
           field_id: fieldId || undefined,
           field_value: fieldValue || undefined,
           include_archived: includeArchived || undefined,
-          sort: 'created_at',
-          order: 'desc',
-          limit: 200,
+          sort,
+          order: sort === 'position' || sort === 'title' ? 'asc' : 'desc',
+          limit: 100,
+          offset,
           group_by: groupBy,
         }),
       ]);
@@ -152,6 +174,8 @@ export default function WorkspaceTasksScreen() {
         tags: tagRes.items,
         fields: fieldRes.items,
         tasks: taskRes.items,
+        total: taskRes.total,
+        queryKey,
       };
     },
     [
@@ -165,6 +189,8 @@ export default function WorkspaceTasksScreen() {
       fieldValue,
       includeArchived,
       groupBy,
+      sort,
+      offset,
     ]
   );
 
@@ -174,11 +200,15 @@ export default function WorkspaceTasksScreen() {
   const fields = resource.data?.fields ?? [];
   const selectFields = React.useMemo(() => fields.filter((f) => f.type === 'select'), [fields]);
 
-  // "Unassigned" has no server-side representation (assignee_id is a ulid) — filter locally.
-  const tasks = React.useMemo(() => {
-    const all = resource.data?.tasks ?? [];
-    return assigneeValue === 'unassigned' ? all.filter((t) => t.assignee_id === null) : all;
-  }, [resource.data, assigneeValue]);
+  const ready = resource.data?.queryKey === queryKey;
+  const tasks = React.useMemo(() => ready ? resource.data?.tasks ?? [] : [], [resource.data, ready]);
+  React.useEffect(() => {
+    if (ready && offset > 0 && offset >= (resource.data?.total ?? 0)) {
+      setOffset(Math.max(0, Math.floor(((resource.data?.total ?? 0) - 1) / 100) * 100));
+      setSelected(new Set());
+    }
+  }, [ready, offset, resource.data?.total]);
+  React.useEffect(() => { setSelected(new Set()); }, [search]);
 
   const groupField = React.useMemo(
     () => (GROUP_OPTIONS.some((o) => o.value === groupBy) ? undefined : fields.find((f) => f.id === groupBy)),
@@ -186,8 +216,8 @@ export default function WorkspaceTasksScreen() {
   );
 
   const groups = React.useMemo(
-    () => groupTasks(tasks, groupBy, { statuses, tags, field: groupField }),
-    [tasks, groupBy, statuses, tags, groupField]
+    () => groupTasks(tasks, groupBy, { statuses, tags, field: groupField, includeEmptyStatuses: tasks.length > 0 && canWrite && sort === 'position' && Platform.OS === 'web' }),
+    [tasks, groupBy, statuses, tags, groupField, canWrite, sort]
   );
 
   // Groups start expanded; only the ids the user has explicitly collapsed live here.
@@ -219,10 +249,50 @@ export default function WorkspaceTasksScreen() {
     [selectFields, fieldId]
   );
 
+  const visibleIds = [...new Set(groups.filter((g) => !collapsed.has(g.id)).flatMap((g) => g.tasks.map((t) => t.id)))];
+  const selectedIds = tasks.filter((t) => selected.has(t.id)).map((t) => t.id);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+  const filterChips = [
+    ...(statusId ? [{ label: statuses.find((s) => s.id === statusId)?.name ?? 'Status', clear: () => setStatusFilter(undefined) }] : []),
+    ...(assigneeValue !== 'all' ? [{ label: assigneeValue === 'unassigned' ? 'Unassigned' : users.find((u) => u.id === assigneeValue)?.name ?? 'Assignee', clear: () => setAssigneeFilter(undefined) }] : []),
+    ...(tagId ? [{ label: tags.find((t) => t.id === tagId)?.name ?? 'Tag', clear: () => setTagFilter(undefined) }] : []),
+    ...(fieldId ? [{ label: `${activeField?.name ?? 'Field'}${fieldValue ? `: ${fieldValue}` : ''}`, clear: () => { setFieldFilter(undefined); setFieldValueFilter(undefined); } }] : []),
+    ...(includeArchived ? [{ label: 'Includes archived', clear: () => setIncludeArchived(false) }] : []),
+  ];
+  function toggleSelection(id: string) {
+    setSelected((old) => { const next = new Set(old); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }
+  function onTaskChanged(updated: Task) {
+    resource.setData((old) => old ? { ...old, tasks: old.tasks.map((t) => t.id === updated.id ? updated : t) } : old);
+    void resource.reload();
+  }
+  async function bulk(changes: Omit<BulkUpdateTasksInput, 'task_ids'>) {
+    if (busy || !selectedIds.length || !ready) return;
+    setBusy(true); setActionError(''); setNotice('');
+    try {
+      await client.bulkUpdateTasks(workspaceKey, { task_ids: selectedIds, ...changes });
+      setNotice(`Updated ${selectedIds.length} tasks`); setSelected(new Set());
+      await resource.reload();
+    } catch (e) { setActionError(e instanceof Error ? e.message : 'Could not update tasks'); }
+    finally { setBusy(false); }
+  }
+  async function move(task: Task, before: string | null, group: TaskGroup) {
+    if (busy || !ready || task.id === before) return;
+    setBusy(true); setActionError(''); setDragged(null);
+    try {
+      await client.reorderTask(workspaceKey, { task_id: task.id, before_id: before, status_id: groupBy === 'status' ? group.id : undefined });
+      setNotice(`Saved order for ${task.key}`); await resource.reload();
+    } catch (e) { setActionError(e instanceof Error ? e.message : 'Could not save order'); }
+    finally { setBusy(false); }
+  }
+  const canOrder = canWrite && sort === 'position' && !busy && ready;
+
   return (
     <View className="flex-1">
-      <View className="border-border flex-row flex-wrap items-center gap-2 border-b p-4">
-        <View className="relative min-w-48 flex-1">
+      <View className="border-border gap-3 border-b px-5 py-4">
+        <View className="flex-row flex-wrap items-center gap-3">
+          <View className="mr-2 flex-row items-baseline gap-2"><Text className="text-xl font-semibold tracking-tight">Tasks</Text><Text className="text-muted-foreground font-mono text-xs">{resource.data?.total ?? 0}</Text></View>
+        <View className="relative min-w-40 flex-1">
           <View className="pointer-events-none absolute left-3 top-0 z-10 h-full justify-center">
             <Icon as={SearchIcon} className="text-muted-foreground size-4" />
           </View>
@@ -231,8 +301,22 @@ export default function WorkspaceTasksScreen() {
             value={search}
             onChangeText={setSearch}
             className="pl-9"
+            accessibilityLabel="Search workspace tasks"
           />
         </View>
+        <Button variant={showFilters || filterChips.length ? 'secondary' : 'outline'} size="sm" onPress={() => setShowFilters((v) => !v)} accessibilityLabel="Filters" aria-expanded={showFilters}>
+          <Icon as={SlidersHorizontalIcon} className="size-4" /><Text>Filters{filterChips.length ? ` · ${filterChips.length}` : ''}</Text>
+        </Button>
+        <Select value={sortOption} onValueChange={setSortOption}><SelectTrigger size="sm" accessibilityLabel="Task order"><SelectValue placeholder="Manual order" /></SelectTrigger><SelectContent>
+          <SelectItem value="position" label="Manual order" /><SelectItem value="created_at" label="Newest first" /><SelectItem value="updated_at" label="Recently updated" /><SelectItem value="title" label="Title A–Z" />
+        </SelectContent></Select>
+        <Select value={groupOption} onValueChange={setGroupOption}>
+          <SelectTrigger size="sm" accessibilityLabel="Group tasks"><SelectValue placeholder="Group by status" /></SelectTrigger>
+          <SelectContent>{groupOptions.map((o) => <SelectItem key={o.value} value={o.value} label={o.label} />)}</SelectContent>
+        </Select>
+        <NewTaskDialog workspaceKey={workspaceKey} statuses={statuses} users={users} tags={tags} fields={fields} onCreated={() => resource.reload()} />
+        </View>
+        {showFilters ? <View className="bg-muted/30 flex-row flex-wrap items-center gap-2 rounded-lg p-3">
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="min-w-36">
             <SelectValue placeholder="All statuses" />
@@ -298,16 +382,6 @@ export default function WorkspaceTasksScreen() {
             </SelectContent>
           </Select>
         ) : null}
-        <Select value={groupOption} onValueChange={setGroupOption}>
-          <SelectTrigger className="min-w-40">
-            <SelectValue placeholder="Group by status" />
-          </SelectTrigger>
-          <SelectContent>
-            {groupOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value} label={o.label} />
-            ))}
-          </SelectContent>
-        </Select>
         <Pressable
           className="flex-row items-center gap-2 px-1"
           onPress={() => setIncludeArchived((v) => !v)}
@@ -323,17 +397,30 @@ export default function WorkspaceTasksScreen() {
           <Icon as={ActivityIcon} className="text-muted-foreground size-4" />
           <Text>Activity</Text>
         </Button>
-        <NewTaskDialog
-          workspaceKey={workspaceKey}
-          statuses={statuses}
-          users={users}
-          tags={tags}
-          fields={fields}
-          onCreated={() => resource.reload()}
-        />
+        </View> : null}
+        {filterChips.length ? <View className="flex-row flex-wrap items-center gap-2">
+          {filterChips.map((chip, i) => <Button key={i} variant="secondary" size="sm" className="h-7 gap-1.5 rounded-full" onPress={chip.clear} accessibilityLabel={`Clear ${chip.label} filter`}><Text className="text-xs">{chip.label}</Text><Icon as={XIcon} className="size-3" /></Button>)}
+          <Button variant="ghost" size="sm" className="h-7" onPress={() => filterChips.forEach((chip) => chip.clear())}><Text className="text-muted-foreground text-xs">Clear filters</Text></Button>
+        </View> : null}
       </View>
 
-      {resource.loading ? (
+      {canWrite ? <View className={`border-border flex-row flex-wrap items-center gap-3 border-b px-5 py-2 ${selectedIds.length ? 'bg-primary/5' : ''}`}>
+        <Checkbox accessibilityLabel="Select visible tasks" checked={allSelected} disabled={busy || !ready || !visibleIds.length} onCheckedChange={() => setSelected(allSelected ? new Set() : new Set(visibleIds))} />
+        <Text className="text-muted-foreground min-w-24 text-xs">{selectedIds.length ? `${selectedIds.length} selected` : 'Select tasks'}</Text>
+        {selectedIds.length ? <>
+          <BulkSelect label="Set status" options={statuses.map((s) => ({ value: s.id, label: s.name }))} disabled={busy} onChoose={(id) => bulk({ status_id: id })} />
+          <BulkSelect label="Assign" options={[{ value: 'none', label: 'Unassigned' }, ...users.map((u) => ({ value: u.id, label: u.name }))]} disabled={busy} onChoose={(id) => bulk({ assignee_id: id === 'none' ? null : id })} />
+          <BulkSelect label="Add tag" options={tags.map((t) => ({ value: t.id, label: t.name }))} disabled={busy} onChoose={(id) => bulk({ add_tag_ids: [id] })} />
+          <BulkSelect label="Remove tag" options={tags.map((t) => ({ value: t.id, label: t.name }))} disabled={busy} onChoose={(id) => bulk({ remove_tag_ids: [id] })} />
+          <Button variant="ghost" size="sm" disabled={busy} onPress={() => bulk({ archived: true })}><Text>Archive</Text></Button>
+          {includeArchived ? <Button variant="ghost" size="sm" disabled={busy} onPress={() => bulk({ archived: false })}><Text>Restore</Text></Button> : null}
+          <Button variant="ghost" size="sm" disabled={busy} onPress={() => setSelected(new Set())} accessibilityLabel="Clear selection"><Icon as={XIcon} className="size-4" /></Button>
+        </> : <Text className="text-muted-foreground text-xs">{sort === 'position' ? 'Drag a handle to reorder. Select tasks to edit them together.' : 'Use Manual order to drag tasks.'}</Text>}
+      </View> : null}
+      {actionError ? <Text role="alert" className="text-destructive px-5 py-2 text-sm">{actionError}</Text> : null}
+      {notice ? <Text role="status" className="text-muted-foreground px-5 pt-2 text-xs">{notice}</Text> : null}
+
+      {resource.loading || (!ready && !resource.error) ? (
         <View className="gap-3 p-4">
           <Skeleton className="h-32 w-full rounded-lg" />
           <Skeleton className="h-24 w-full rounded-lg" />
@@ -355,6 +442,25 @@ export default function WorkspaceTasksScreen() {
               expanded={!collapsed.has(group.id)}
               onToggle={() => toggleGroup(group.id)}
               field={groupField}
+              canWrite={canWrite}
+              canOrder={canOrder}
+              showOrder={canWrite && sort === 'position' && Platform.OS === 'web'}
+              busy={busy}
+              statuses={statuses}
+              tags={tags}
+              selected={selected}
+              onSelect={toggleSelection}
+              onChanged={onTaskChanged}
+              onTagsChanged={() => resource.reload()}
+              onDragStart={(task) => setDragged({ task, groupId: group.id })}
+              onDragEnd={() => setDragged(null)}
+              dragEnabled={!!dragged && canOrder && (groupBy === 'status' || group.id === dragged.groupId)}
+              onDrop={(before) => { if (dragged) void move(dragged.task, before, group); }}
+              onMove={(task, direction) => {
+                const index = group.tasks.findIndex((t) => t.id === task.id);
+                const before = direction === -1 ? group.tasks[index - 1]?.id : group.tasks[index + 2]?.id ?? null;
+                if (before !== undefined) void move(task, before, group);
+              }}
             />
           ))}
           {groups.length === 0 ? (
@@ -364,33 +470,60 @@ export default function WorkspaceTasksScreen() {
               description="Adjust the filters above, or create the first task for this workspace."
             />
           ) : null}
+          <View className="flex-row items-center justify-between gap-3 py-4">
+            <Text className="text-muted-foreground text-xs">{tasks.length ? offset + 1 : 0}–{offset + tasks.length} of {resource.data?.total ?? 0} tasks</Text>
+            <View className="flex-row gap-2"><Button variant="outline" size="sm" disabled={busy || offset === 0} onPress={() => { setSelected(new Set()); setOffset((v) => Math.max(0, v - 100)); }}><Text>Previous</Text></Button>
+              <Button variant="outline" size="sm" disabled={busy || offset + tasks.length >= (resource.data?.total ?? 0)} onPress={() => { setSelected(new Set()); setOffset((v) => v + 100); }}><Text>Next</Text></Button></View>
+          </View>
         </ScrollView>
       )}
     </View>
   );
 }
 
-/**
- * One grouping bucket, rendered as a JIRA-backlog-style card: a tinted header row
- * that toggles collapse, and the task rows hairline-separated inside it.
- */
+function BulkSelect({ label, options, disabled, onChoose }: { label: string; options: { value: string; label: string }[]; disabled: boolean; onChoose: (id: string) => void }) {
+  return <Select value={undefined} onValueChange={(o) => { if (o) onChoose(o.value); }}>
+    <SelectTrigger size="sm" accessibilityLabel={label} disabled={disabled || !options.length} className="h-7 min-w-24 bg-background"><SelectValue placeholder={label} className="text-xs" /></SelectTrigger>
+    <SelectContent>{options.map((o) => <SelectItem key={o.value} value={o.value} label={o.label} />)}</SelectContent>
+  </Select>;
+}
+
+interface TaskGroupControls {
+  canWrite: boolean;
+  canOrder: boolean;
+  showOrder: boolean;
+  busy: boolean;
+  statuses: Status[];
+  tags: Tag[];
+  selected: Set<string>;
+  onSelect: (id: string) => void;
+  onChanged: (task: Task) => void;
+  onTagsChanged: () => void;
+  onDragStart: (task: Task) => void;
+  onDragEnd: () => void;
+  dragEnabled: boolean;
+  onDrop: (before: string | null) => void;
+  onMove: (task: Task, direction: -1 | 1) => void;
+}
+
 function TaskGroupCard({
   group,
   workspaceKey,
   expanded,
   onToggle,
   field,
+  ...controls
 }: {
   group: TaskGroup;
   workspaceKey: string;
   expanded: boolean;
   onToggle: () => void;
   field?: FieldDef;
-}) {
+} & TaskGroupControls) {
   const count = group.tasks.length;
   return (
     <View className="border-border mb-3 overflow-hidden rounded-lg border">
-      <Pressable
+      <TaskDropZone enabled={controls.dragEnabled} onDrop={() => controls.onDrop(group.tasks[0]?.id ?? null)}><Pressable
         onPress={onToggle}
         accessibilityRole="button"
         // Both: RN Web 0.21 only forwards the ARIA prop to the DOM, native reads the state.
@@ -413,7 +546,7 @@ function TaskGroupCard({
         <Text className="text-muted-foreground text-xs">
           {count} {count === 1 ? 'task' : 'tasks'}
         </Text>
-      </Pressable>
+      </Pressable></TaskDropZone>
       {expanded
         ? group.tasks.map((task, i) => (
             <TaskRow
@@ -422,9 +555,17 @@ function TaskGroupCard({
               workspaceKey={workspaceKey}
               last={i === count - 1}
               field={field}
+              {...controls}
+              canMoveUp={i > 0}
+              canMoveDown={i < count - 1}
             />
           ))
         : null}
+      {expanded && controls.showOrder ? <TaskDropZone enabled={controls.dragEnabled} onDrop={() => controls.onDrop(null)}>
+        <View className={`border-border items-center border-t border-dashed py-2 ${controls.dragEnabled ? 'bg-muted/50' : 'bg-muted/10'}`}>
+          <Text className="text-muted-foreground text-[11px]">{count ? `Drop at end of ${group.label}` : `Drop a task in ${group.label}`}</Text>
+        </View>
+      </TaskDropZone> : null}
     </View>
   );
 }
@@ -434,6 +575,9 @@ function TaskRow({
   workspaceKey,
   last,
   field,
+  canMoveUp,
+  canMoveDown,
+  ...controls
 }: {
   task: Task;
   workspaceKey: string;
@@ -441,27 +585,40 @@ function TaskRow({
   last?: boolean;
   /** Set when the list is grouped by a custom field — show that field's value as a pill. */
   field?: FieldDef;
-}) {
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+} & TaskGroupControls) {
   const router = useRouter();
   const archived = task.archived_at != null;
   const fieldValue = field ? (task.field_values ?? {})[field.id] : undefined;
 
-  // Archiving lives in the task view, not here: a control that only appears on hover
-  // changes the row's height as the pointer crosses it, which reads as a flicker.
   return (
-    <Pressable
-      onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)}
+    <TaskDropZone enabled={controls.dragEnabled} onDrop={() => controls.onDrop(task.id)}><View
+      testID={`task-row-${task.key}`}
       className={
-        'border-border active:bg-accent/70 flex-row items-center gap-3 px-4 py-3' +
+        'border-border flex-row items-center gap-2 px-3 py-2' +
         (last ? '' : ' border-b') +
         (Platform.OS === 'web' ? ' hover:bg-accent/50 transition-colors' : '') +
+        (controls.selected.has(task.id) ? ' bg-primary/5' : '') +
         (archived ? ' opacity-55' : '')
       }>
-      <View style={{ backgroundColor: task.status.color }} className="h-2.5 w-2.5 rounded-full" />
-      <Text className="text-muted-foreground w-16 shrink-0 font-mono text-xs">{task.key}</Text>
-      <Text numberOfLines={1} className="min-w-0 flex-1 text-sm">
-        {task.title}
-      </Text>
+      {controls.canWrite ? <>
+        <Checkbox accessibilityLabel={`Select ${task.key}`} checked={controls.selected.has(task.id)} disabled={controls.busy} onCheckedChange={() => controls.onSelect(task.id)} />
+        <Popover><TaskDragHandle disabled={!controls.canOrder} onStart={() => controls.onDragStart(task)} onEnd={controls.onDragEnd}
+          onMove={(dir) => { if (dir === -1 ? canMoveUp : canMoveDown) controls.onMove(task, dir); }}>
+          <PopoverTrigger asChild><Button variant="ghost" size="sm" className="h-7 w-6 p-0" disabled={!controls.canOrder} accessibilityLabel={`Reorder ${task.key}`}>
+            <Icon as={GripVerticalIcon} className="text-muted-foreground size-3.5" />
+          </Button></PopoverTrigger>
+        </TaskDragHandle><PopoverContent className="w-44 gap-1 p-1" align="start">
+          <Button variant="ghost" size="sm" disabled={!canMoveUp || controls.busy} onPress={() => controls.onMove(task, -1)}><Icon as={ArrowUpIcon} className="size-3" /><Text>Move up</Text></Button>
+          <Button variant="ghost" size="sm" disabled={!canMoveDown || controls.busy} onPress={() => controls.onMove(task, 1)}><Icon as={ArrowDownIcon} className="size-3" /><Text>Move down</Text></Button>
+          <Text className="text-muted-foreground p-2 text-xs">Keyboard: Alt + ↑ / ↓</Text>
+        </PopoverContent></Popover>
+      </> : null}
+      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)} className="min-w-0 flex-1 flex-row flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
+        <Text className="text-muted-foreground w-16 shrink-0 font-mono text-xs">{task.key}</Text>
+        <Text numberOfLines={1} className="min-w-24 flex-1 text-sm">{task.title}</Text>
+      </Pressable>
       {fieldValue ? (
         <Badge variant="outline">
           <Text className="text-xs">{fieldValue}</Text>
@@ -472,14 +629,9 @@ function TaskRow({
           <Text>Archived</Text>
         </Badge>
       ) : null}
-      <TagPills tags={task.tags} />
-      <Badge variant="secondary" className="hidden sm:flex">
-        <Text>{task.status.name}</Text>
-      </Badge>
-      <Text className="text-muted-foreground hidden w-16 text-xs sm:flex">
-        {task.updated_at ? formatRelative(task.updated_at) : ''}
-      </Text>
-      {task.assignee ? (
+      <View className="hidden sm:flex"><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} /></View>
+      <TaskStatusControl task={task} statuses={controls.statuses} onChanged={controls.onChanged} disabled={controls.busy} />
+      <View className="hidden sm:flex">{task.assignee ? (
         <Avatar alt={task.assignee.name} className="size-6">
           <AvatarFallback>
             <Text className="text-[10px]">{initialsOf(task.assignee.name)}</Text>
@@ -489,8 +641,8 @@ function TaskRow({
         <View className="border-border size-6 items-center justify-center rounded-full border border-dashed">
           <Text className="text-muted-foreground text-[10px]">-</Text>
         </View>
-      )}
-    </Pressable>
+      )}</View>
+    </View></TaskDropZone>
   );
 }
 

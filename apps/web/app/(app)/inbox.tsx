@@ -19,7 +19,7 @@ import { Platform, Pressable, ScrollView, View } from 'react-native';
 
 export default function InboxScreen() {
   const { client } = useAuth();
-  const { refresh: refreshBadge } = useInbox();
+  const { refresh: refreshBadge, version } = useInbox();
   const [tab, setTab] = React.useState<'unread' | 'all'>('unread');
   const [marking, setMarking] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
@@ -27,7 +27,7 @@ export default function InboxScreen() {
   const includeRead = tab === 'all';
   const resource = useResource(
     () => client.listInbox({ include_read: includeRead, limit: 100 }),
-    [client, includeRead]
+    [client, includeRead, version]
   );
 
   const items = resource.data?.items ?? [];

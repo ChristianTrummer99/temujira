@@ -202,7 +202,7 @@ describe("workspace-scoped access", () => {
     ).toBe(404);
   });
 
-  it("scoped members cannot see hidden tasks in mine/queue/inbox", async () => {
+  it("scoped members cannot see hidden tasks in mine/inbox", async () => {
     const ws1 = await makeWorkspace(t.app, admin.token, "HIDA");
     const ws2 = await makeWorkspace(t.app, admin.token, "HIDB");
     const visible = await makeTask(t.app, admin.token, ws1.id, { title: "Visible" });
@@ -210,15 +210,13 @@ describe("workspace-scoped access", () => {
 
     const member = await makeMember(t.app, admin.token);
 
-    // Build associations + inbox rows + queue entries while access is still unrestricted.
+    // Build associations and inbox rows while access is still unrestricted.
     for (const task of [visible, hidden]) {
       const comment = await t.app.request(
         `/api/v1/tasks/${task.id}/comments`,
         jsonReq("POST", { body: "ping", mention_ids: [member.userId] }, bearer(admin.token)),
       );
       expect(comment.status).toBe(200);
-      const queued = await t.app.request("/api/v1/queue", jsonReq("POST", { task: task.id }, bearer(member.token)));
-      expect(queued.status).toBe(200);
     }
 
     const patch = await t.app.request(
@@ -231,13 +229,6 @@ describe("workspace-scoped access", () => {
     const mineIds = ((await mine.json()) as { items: Array<{ id: string }> }).items.map((x) => x.id);
     expect(mineIds).toContain(visible.id);
     expect(mineIds).not.toContain(hidden.id);
-
-    const queue = await t.app.request("/api/v1/queue", { headers: bearer(member.token) });
-    const queueTaskIds = ((await queue.json()) as { items: Array<{ task: { id: string } }> }).items.map(
-      (x) => x.task.id,
-    );
-    expect(queueTaskIds).toContain(visible.id);
-    expect(queueTaskIds).not.toContain(hidden.id);
 
     const inbox = await t.app.request("/api/v1/inbox", { headers: bearer(member.token) });
     const inboxJson = (await inbox.json()) as { items: Array<{ task_id: string }>; unread: number };

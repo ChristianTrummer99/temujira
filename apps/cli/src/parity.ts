@@ -10,7 +10,6 @@ import { COMMAND_ROUTES as FIELD_ROUTES } from "./commands/field";
 import { COMMAND_ROUTES as IDENTITY_ROUTES } from "./commands/identity";
 import { COMMAND_ROUTES as INBOX_ROUTES } from "./commands/inbox";
 import { COMMAND_ROUTES as ME_ROUTES } from "./commands/me";
-import { COMMAND_ROUTES as QUEUE_ROUTES } from "./commands/queue";
 import { COMMAND_ROUTES as SETUP_ROUTES } from "./commands/setup";
 import { COMMAND_ROUTES as STATUS_ROUTES } from "./commands/status";
 import { COMMAND_ROUTES as TAG_ROUTES } from "./commands/tag";
@@ -35,7 +34,6 @@ export const COMMAND_ROUTE_MAP: Record<string, readonly RouteId[]> = {
   ...COMMENT_ROUTES,
   ...ATTACH_ROUTES,
   ...FIELD_ROUTES,
-  ...QUEUE_ROUTES,
   ...ACTIVITY_ROUTES,
   ...SEARCH_ROUTES,
   ...INBOX_ROUTES,

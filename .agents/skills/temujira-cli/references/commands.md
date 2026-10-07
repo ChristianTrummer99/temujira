@@ -1,7 +1,7 @@
 # Temujira CLI command reference
 
 Use `tmj <group> <command> --help` as the live authority. All leaf commands accept
-`--url <url>`, `--api-key <key>`, `--json`, and `--quiet`.
+`--url <url>`, `--api-key <key>`, `--global-auth`, `--json`, and `--quiet`.
 
 ## Setup, authentication, and account
 
@@ -11,6 +11,9 @@ tmj setup --email <email> --password <password> [--name <name>]
 tmj auth login --email <email> [--password <password>]
 tmj auth whoami
 tmj auth logout
+tmj auth status
+tmj auth use-key --key-stdin [--directory <path>]
+tmj auth forget [--directory <path>]
 
 tmj me update [--name <name>] [--password]
               [--current-password <password>] [--new-password <password>]
@@ -24,6 +27,14 @@ tmj apikey revoke <apiKeyId>
 password prompts require a TTY; automation must pass password options or use an API key.
 Admin-only `--user` API-key operations act on another user; `apikey list --all`
 lists every user's keys (metadata only — secrets are never retrievable).
+
+Normal agent sessions reuse a shared identity/key. `use-key` verifies an existing key from
+stdin and never prints it. It saves shared credentials by default; `--directory` creates
+an explicit binding for that directory and its children. Files are mode 0600 in private user
+configuration, outside the project. Nearest directory binding overrides environment/shared
+config; flags override the binding. `--global-auth` skips bindings. `auth status` reports
+the resolved identity and source. `forget` removes local credentials without revocation.
+Only keys minted by CLI login/setup have a saved revocation ID used by global `auth logout`.
 
 ## Users
 
@@ -83,7 +94,7 @@ tmj tag update <tagId> [--name <name>] [--color <#hex>]
 tmj tag delete <tagId>
 ```
 
-Tag writes are admin-only. Deletion permanently unlinks the tag from all tasks.
+Tag definitions require `workspaces:manage`. Deletion permanently unlinks the tag from all tasks.
 
 ## Custom fields
 
@@ -106,11 +117,11 @@ before removing options. Deletion also deletes all task values for that field.
 ```text
 tmj task list --workspace <workspaceIdOrKey>
               [--status <statusIdOrName>]
-              [--assignee <userIdOrEmailOrMe>]
+              [--assignee <userIdOrEmailOrMe> | --unassigned]
               [--tag <tagIdOrName>]
               [--field-id <fieldId>] [--field-value <value>]
               [--search <query>] [--archived]
-              [--sort created_at|updated_at|number|title]
+              [--sort created_at|updated_at|number|title|position]
               [--order asc|desc]
               [--group-by none|status|tag|assignee|<selectFieldId>]
               [--limit <n>] [--offset <n>]
@@ -137,16 +148,27 @@ tmj task assign <taskIdOrKey> --user <userIdOrEmailOrMe>
 tmj task unassign <taskIdOrKey>
 tmj task archive <taskIdOrKey>
 tmj task unarchive <taskIdOrKey>
+
+tmj task bulk <idsOrKeys...> --workspace <idOrKey>
+              [--status <idOrName>] [--assignee <idOrEmailOrMe> | --unassign]
+              [--add-tag <idOrName>]... [--remove-tag <idOrName>]...
+              [--field <nameOrId=value>]... [--archive | --unarchive]
+tmj task reorder <idOrKey> (--before <idOrKey> | --end) [--status <idOrName>]
 ```
 
-Task list defaults to 50 results and groups only the returned page. `--search` is a title
-substring search. `--archived` includes archived tasks. JSON stays flat when human output
+Task list defaults to 50 results and groups only the returned page. `--search` finds task
+text, comments, filenames, and indexed attachment text. `--archived` includes archived tasks. JSON stays flat when human output
 uses `--group-by`. `task mine` includes tasks associated through creation, assignment,
 comments, or mentions.
 
 `--description-file -` reads stdin. Repeated task-create tags form the initial set.
 Supplying tags to task update replaces the full set. Fields update only the supplied
 values; `Field=` clears a value. Select values must exactly match an option.
+
+Bulk edits are atomic and limited to 200 unique tasks in one workspace. Add/remove tag
+deltas preserve other tags. No changes apply if any target or value is invalid.
+Reorder moves one task relative to another in the saved workspace order (null anchor via
+`--end`). Use `--sort position --order asc` to read that order. All other tasks are retained.
 
 ## Task links
 
@@ -184,24 +206,6 @@ tmj comment delete <commentId>
 Questions require 2-10 options and can only be root comments. Answers require a reply and
 use a zero-based index. Threads are one level deep; replying to a reply targets the root.
 Use `--mention` to create notifications; visible `@text` alone does not do so.
-
-## Personal queue
-
-```text
-tmj queue list
-tmj queue next
-tmj queue add <taskIdOrKey>
-tmj queue start <entryIdOrTaskIdOrTaskKey>
-tmj queue ready <entryIdOrTaskIdOrTaskKey>
-tmj queue pause <entryIdOrTaskIdOrTaskKey>
-tmj queue complete <entryIdOrTaskIdOrTaskKey>
-tmj queue remove <entryIdOrTaskIdOrTaskKey>
-tmj queue reorder <allQueueEntryIds...>
-```
-
-Queues are owner-scoped. New entries append as queued; duplicate task addition conflicts.
-`next` prefers running, then ready, then queued. Complete/remove only removes queue
-metadata. Reorder requires the full exact list of queue-entry IDs.
 
 ## Identity sessions (optional exclusive identities)
 
@@ -292,17 +296,19 @@ tmj activity list [--workspace <workspaceIdOrKey>] [--task <taskIdOrKey>]
 
 tmj inbox list [--all] [--limit <n>] [--offset <n>]
 tmj inbox read
+tmj inbox watch [--after <cursor> | --cursor-file <path>]
+                [--once] [--interval <seconds>] [--limit <n>]
 ```
 
 Activity is global by default and newest first. Every successful mutating API operation
 records its actor, action, target and timestamp. This includes edits/deletes of comments and
-files, account/key/session operations, queue/inbox actions, workspace settings and bulk
+files, account/key/session operations, inbox actions, workspace settings and bulk
 changes. Ticket history resolves indirect targets (comment/file/link IDs) back to the ticket.
 Read requests and failed mutations do not add success events. Existing history is retained;
 previously unlogged actions cannot be reconstructed retroactively. Passwords, key tokens and
 session secrets are never written to activity metadata.
 
-Workspace activity requires current workspace access. Private account/key/inbox/queue
+Workspace activity requires current workspace access. Private account/key/inbox
 events are visible to their owner and admins; user-administration events are admin-only.
 Cross-workspace link events require access to both ends. Permissions are applied before
 pagination/counting, including ticket feeds. Global/ticket responses include
@@ -310,7 +316,15 @@ pagination/counting, including ticket feeds. Global/ticket responses include
 
 `activity list --mine` means events on tasks associated with the
 current user, not only actions performed by that user. Inbox defaults to unread;
-`--all` includes read items. `inbox read` marks every item read.
+`--all` includes read items. `inbox read` marks all items in accessible workspaces read.
+
+`inbox watch` starts now by default. `--after 0` replays retained events, including read
+items; `--once` drains all pages and exits. Poll interval is 1–300 seconds (default 5), page
+size 1–200 (default 100). Each poll applies current permissions. Output does not mark read.
+NDJSON uses `notification` records with `cursor,item` and `checkpoint` records with `cursor`.
+Cursor files are server/user-bound and mode 0600. Advance happens after output succeeds;
+deduplicate by inbox item ID after restart. Deleted items cannot be replayed. Temporary
+failures retry with capped backoff; authentication errors exit. Ctrl+C stops cleanly.
 
 ## Raw API
 

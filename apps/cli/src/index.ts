@@ -13,7 +13,6 @@ import { registerField } from "./commands/field";
 import { registerIdentity } from "./commands/identity";
 import { registerInbox } from "./commands/inbox";
 import { registerMe } from "./commands/me";
-import { registerQueue } from "./commands/queue";
 import { registerSetup } from "./commands/setup";
 import { registerStatus } from "./commands/status";
 import { registerTag } from "./commands/tag";
@@ -26,10 +25,12 @@ import { EXIT_CODES, exitCodeForError } from "./exit";
 const CONFIG_HELP = `
 Configuration (highest wins):
   1. Flags:        --url, --api-key
-  2. Environment:  TEMUJIRA_URL, TEMUJIRA_API_KEY
-  3. Config file:  ${configPath()}
+  2. Directory:    nearest binding made by \`tmj auth use-key --directory\`
+  3. Environment:  TEMUJIRA_URL, TEMUJIRA_API_KEY
+  4. Config file:  ${configPath()}
                    (written by \`tmj setup\` / \`tmj auth login\`; respects
                    XDG_CONFIG_HOME; contents: {"url", "api_key", "api_key_id"})
+  Use --global-auth to skip directory bindings. No credentials are read from project files.
 
 Output:
   default   human-readable; JSON is auto-enabled when stdout is not a TTY
@@ -46,6 +47,7 @@ function addGlobalOptions(cmd: Command): void {
   cmd
     .option("--url <url>", "server URL (else TEMUJIRA_URL, else config file)")
     .option("--api-key <key>", "API key (else TEMUJIRA_API_KEY, else config file)")
+    .option("--global-auth", "skip directory bindings; use flags, environment, or shared config")
     .option("--json", "print the raw JSON API response (auto when stdout is not a TTY)")
     .option("--quiet", "print only ids");
 }
@@ -75,7 +77,6 @@ export function buildProgram(): Command {
   registerTask(program);
   registerComment(program);
   registerField(program);
-  registerQueue(program);
   registerAttach(program);
   registerActivity(program);
   registerSearch(program);

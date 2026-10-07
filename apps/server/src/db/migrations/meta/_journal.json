@@ -71,6 +71,13 @@
       "when": 1790866437975,
       "tag": "0009_full_text_search",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1791341327500,
+      "tag": "0010_task_order_and_inbox_events",
+      "breakpoints": true
     }
   ]
 }

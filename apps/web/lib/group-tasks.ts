@@ -1,7 +1,6 @@
 import type { FieldDef, Status, Tag, Task } from '@temujira/client';
 
-/** The list is always grouped — there is no "no grouping" mode. */
-export const GROUP_BY_VALUES = ['status', 'tag', 'assignee'] as const;
+export const GROUP_BY_VALUES = ['none', 'status', 'tag', 'assignee'] as const;
 export type GroupBy = (typeof GROUP_BY_VALUES)[number];
 
 export const DEFAULT_GROUP_BY: GroupBy = 'status';
@@ -21,8 +20,7 @@ export interface TaskGroup {
  * Grouping is client-side on purpose: `group_by` is only a presentational hint on
  * `tasks.list` — the server always returns a flat page.
  *
- * Empty groups are never returned: a group only exists once at least one task
- * (after filtering) lands in it.
+ * Empty groups are omitted unless includeEmptyStatuses keeps status drop targets visible.
  *
  * - status: workspace status order (`position`), colored.
  * - tag: `listTags` order; a task with two tags appears in BOTH groups, plus "No tag".
@@ -32,14 +30,15 @@ export interface TaskGroup {
 export function groupTasks(
   tasks: Task[],
   groupBy: GroupBy | string,
-  opts: { statuses: Status[]; tags: Tag[]; field?: FieldDef }
+  opts: { statuses: Status[]; tags: Tag[]; field?: FieldDef; includeEmptyStatuses?: boolean }
 ): TaskGroup[] {
+  if (groupBy === 'none') return tasks.length ? [{ id: '__all', label: 'All tasks', tasks }] : [];
   if (groupBy === 'status') {
     const ordered = [...opts.statuses].sort((a, b) => a.position - b.position);
     const groups: TaskGroup[] = [];
     for (const status of ordered) {
       const inGroup = tasks.filter((t) => t.status_id === status.id);
-      if (inGroup.length > 0) {
+      if (inGroup.length > 0 || opts.includeEmptyStatuses) {
         groups.push({ id: status.id, label: status.name, color: status.color, tasks: inGroup });
       }
     }

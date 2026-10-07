@@ -1,6 +1,6 @@
 ---
 name: temujira-cli
-description: Operate Temujira safely through its `tmj` CLI. Use this skill whenever an AI agent needs to inspect or change Temujira workspaces, tasks, statuses, tags, custom fields, links, comments, inbox items, personal queues, attachments, users, or API keys; receives a task key such as ENG-42; or is asked to update a ticket, check what to work on, leave a project update, or automate project work, even when the user does not explicitly mention `tmj`.
+description: Operate Temujira safely through its `tmj` CLI. Use this skill whenever an AI agent needs to inspect or change Temujira workspaces, tasks, statuses, tags, custom fields, links, comments, notifications, attachments, users, or API keys; receives a task key such as ENG-42; or is asked to update tickets, watch an inbox, check what to work on, leave a project update, or automate project work, even when the user does not explicitly mention `tmj`.
 compatibility: Requires access to a Temujira server and the `tmj` CLI, Docker Compose service, or this repository with Node.js 22 and pnpm.
 ---
 
@@ -45,9 +45,21 @@ export TEMUJIRA_API_KEY=tmj_...
 tmj auth whoami --json
 ```
 
-Explicit `--url` and `--api-key` override environment variables. Environment variables
-override `$XDG_CONFIG_HOME/temujira/config.json` or
-`~/.config/temujira/config.json`.
+Use one shared identity/key for normal agent sessions. Do not create a new account or key
+for each session. Run `tmj auth status --json` to check the active identity, server, and
+credential source without printing the key.
+
+Precedence: explicit flags → nearest directory binding → environment → shared config
+(`$XDG_CONFIG_HOME/temujira/config.json`, otherwise `~/.config/temujira/config.json`).
+Use `--global-auth` to skip directory bindings, including when a job must use its explicit
+environment credential.
+
+`tmj auth use-key --url <server> --key-stdin` verifies and saves an existing shared key.
+Pass `--directory <path>` only when a separate directory credential is needed. Supply the
+key through protected standard input. The binding covers that directory and its children;
+credentials stay in the private user config, not in the project. Invalid bindings fail
+instead of falling back to another identity. `auth forget [--directory <path>]` removes
+stored credentials without revoking the key. Imported keys have no automatic revocation ID.
 
 Protect credentials:
 
@@ -123,12 +135,10 @@ Identifier rules:
 - Assignment accepts a user ID, exact email, or `me`; it does not resolve display names.
 - Task tags accept a tag ID or case-insensitive name.
 - Task fields accept a field ID or case-insensitive name in `field=value` form.
-- Queue state/remove commands accept a queue-entry ID, task ID, or task key. Queue reorder
-  accepts queue-entry IDs only.
 
 Quote shell values beginning with `#`, such as colors.
 
-## Work tasks and queues
+## Find and work tasks
 
 Find existing work before creating duplicates:
 
@@ -144,35 +154,59 @@ tmj activity list --json                                     # global history yo
 Search results identify the matching task/comment/attachment and include a plain-text
 snippet. Only accessible workspaces contribute results or counts. Text attachments up to
 1 MiB are indexed; binary/large files are filename-only. Activity is newest-first and logs
-successful mutations without credential values. Private account/queue/inbox events stay
+successful mutations without credential values. Private account/inbox events stay
 owner/admin-only. See the command reference for filters, pagination and exact coverage.
 
 A typical agent loop is:
 
 ```sh
 tmj inbox list --json
-tmj queue next --json
+tmj task list --workspace ENG --assignee me --tag review --json
 tmj task get ENG-42 --json
-tmj queue start ENG-42 --json
+tmj task move ENG-42 --status "In Progress" --json
 
 # Perform the work, then communicate and update explicit task state.
 tmj comment add --task ENG-42 --body "Implemented and verified." --json
 tmj task move ENG-42 --status Done --json
-tmj queue complete ENG-42 --json
 ```
 
-Queue state is personal metadata, independent of task status:
+Personal queues are retired. Use task filters, tags, assignees, and explicit statuses.
+Run `task links`, fetch each `blocked_by` task with `task get`, and inspect its state before
+starting dependent work. Embedded link summaries are not enough to inspect blockers.
+After completion, fetch the task and assert the intended status.
 
-- `queue start`, `queue ready`, and `queue pause` set `running`, `ready`, and `queued`.
-- `queue next` returns the first running entry, otherwise ready, otherwise queued.
-- `queue complete` and `queue remove` only remove the queue entry. They never mark the
-  task Done.
-- A blocked flag is advisory and derived from task links. Run `task links`, fetch every
-  `blocked_by` task with `task get`, and inspect its full state before proceeding. Do not
-  treat embedded link summaries as sufficient blocker inspection.
+For bulk edits, first read the selected tasks and verify their workspace. Then use:
 
-After completion, assert that the task has the intended status and that the selected queue
-entry ID is absent. A final `task get` or `queue list` that is not checked is not verification.
+```sh
+tmj task bulk ENG-1 ENG-2 --workspace ENG --status "In Progress" --add-tag review --json
+tmj task bulk ENG-1 ENG-2 --workspace ENG --remove-tag review --unassign --json
+tmj task reorder ENG-2 --before ENG-1 --json
+tmj task list --workspace ENG --sort position --order asc --json
+```
+
+Bulk requests accept up to 200 unique tasks in one workspace and apply all or none.
+`--add-tag` and `--remove-tag` preserve unrelated tags. Custom fields, archive, and restore
+are also supported. Task reorder moves one task relative to an anchor; it does not need
+every task ID. Manual order is shared by the workspace. Verify each selected task after a
+bulk change. Do not assume a selected page represents all matching tasks.
+
+### Watch messages
+
+```sh
+tmj inbox watch --json --cursor-file ~/.config/temujira/inbox-cursor.json
+tmj inbox watch --after 0 --once --json
+```
+
+The watcher starts now unless a cursor is supplied. Zero replays retained events. `--once`
+drains all pages and exits. Default polling is five seconds; `--interval` sets 1–300 seconds.
+It emits read and unread notifications without marking them read. Current user/workspace
+permissions apply on every poll. Send messages with comments and `--mention`, or replies.
+
+`--json` emits NDJSON: `{type:"notification",cursor,item}` and `{type:"checkpoint",cursor}`.
+Use `--after` or `--cursor-file`, not both. Cursor files are bound to the server and user,
+and saved only after output succeeds. A crash can repeat a page; deduplicate by `item.id`.
+Deleted items cannot be replayed. Temporary request failures retry; authentication failures
+exit. Stop with Ctrl+C. Do not treat this stream as an exactly-once job runner.
 
 Create or update tasks with repeated tag and field flags:
 
@@ -278,7 +312,7 @@ Pay particular attention to:
   related attachments/notifications.
 - `attach delete`: permanently deletes metadata and stored bytes.
 - `inbox read`: marks every inbox item read; there is no single-item command.
-- Status, field, and queue reorders: require a fresh, complete list of all relevant IDs.
+- Status and field reorders: require a fresh, complete list of all relevant IDs.
 - `apikey revoke` and `user deactivate`: immediately stop affected credentials.
 
 Changing select options does not migrate stored task values. Before removing an option,

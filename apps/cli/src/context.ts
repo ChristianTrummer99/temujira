@@ -7,6 +7,7 @@ import { resolveMode, type OutputMode } from "./output";
 export interface GlobalOpts {
   url?: string;
   apiKey?: string;
+  globalAuth?: boolean;
   json?: boolean;
   quiet?: boolean;
 }
@@ -24,7 +25,7 @@ export interface Ctx {
  */
 export function getCtx(cmd: Command, opts: { requireAuth?: boolean } = {}): Ctx {
   const g = cmd.optsWithGlobals<GlobalOpts>();
-  const settings = resolveSettings({ url: g.url, apiKey: g.apiKey });
+  const settings = resolveSettings({ url: g.url, apiKey: g.apiKey, globalAuth: g.globalAuth });
   const mode = resolveMode(g);
   if (!settings.url) {
     throw new CliError(

@@ -2,7 +2,10 @@ import { z } from "zod";
 import type { ScopeId } from "./scopes";
 import {
   ActivityEventSchema,
-  AddTaskToQueueInputSchema,
+  BulkUpdateTasksInputSchema,
+  ReorderTaskInputSchema,
+  WatchInboxQuerySchema,
+  InboxEventSchema,
   ApiKeySchema,
   AttachmentSchema,
   CommentSchema,
@@ -32,10 +35,7 @@ import {
   ListWorkspacesQuerySchema,
   LoginInputSchema,
   MentionSearchQuerySchema,
-  QueueEntrySchema,
-  QueueStateInputSchema,
   ReorderFieldsInputSchema,
-  ReorderQueueInputSchema,
   ReorderStatusesInputSchema,
   ReleaseIdentitySessionInputSchema,
   SetupInputSchema,
@@ -463,6 +463,24 @@ export const ROUTES = {
   },
 
   // ---- tasks ----
+  "tasks.bulkUpdate": {
+    method: "PATCH",
+    path: "/workspaces/:idOrKey/tasks/bulk",
+    auth: "user",
+    scope: "tasks:write",
+    summary: "Update up to 200 selected tasks in one transaction",
+    body: BulkUpdateTasksInputSchema,
+    response: listOf(TaskSchema),
+  },
+  "tasks.reorder": {
+    method: "PUT",
+    path: "/workspaces/:idOrKey/tasks/order",
+    auth: "user",
+    scope: "tasks:write",
+    summary: "Move a task before an anchor or to the end of the saved workspace order",
+    body: ReorderTaskInputSchema,
+    response: z.object({ task: TaskSchema }),
+  },
   "tasks.mine": {
     method: "GET",
     path: "/tasks/mine",
@@ -533,53 +551,6 @@ export const ROUTES = {
     scope: "tasks:write",
     summary: "Remove a link by id; one call removes it from both tasks",
     response: okResponse,
-  },
-
-  // ---- queue ----
-  "queue.get": {
-    method: "GET",
-    path: "/queue",
-    auth: "user",
-    summary: "The current user's queue, ordered (position asc); derived blocked per entry",
-    response: z.object({ items: z.array(QueueEntrySchema) }),
-  },
-  "queue.next": {
-    method: "GET",
-    path: "/queue/next",
-    auth: "user",
-    summary: "The entry to do next (running > ready > queued); {entry:null} when empty",
-    response: z.object({ entry: QueueEntrySchema.nullable() }),
-  },
-  "queue.add": {
-    method: "POST",
-    path: "/queue",
-    auth: "user",
-    summary: "Append a task to the current user's queue (409 when already queued)",
-    body: AddTaskToQueueInputSchema,
-    response: z.object({ entry: QueueEntrySchema }),
-  },
-  "queue.setState": {
-    method: "PATCH",
-    path: "/queue/:id",
-    auth: "user",
-    summary: "Set an entry's state: running | ready | queued (owner only)",
-    body: QueueStateInputSchema,
-    response: z.object({ entry: QueueEntrySchema }),
-  },
-  "queue.remove": {
-    method: "DELETE",
-    path: "/queue/:id",
-    auth: "user",
-    summary: "Remove an entry from the current user's queue (the 'complete' act)",
-    response: okResponse,
-  },
-  "queue.reorder": {
-    method: "PUT",
-    path: "/queue/order",
-    auth: "user",
-    summary: "Reorder the current user's queue: full ordered array of all entry ids",
-    body: ReorderQueueInputSchema,
-    response: z.object({ items: z.array(QueueEntrySchema) }),
   },
 
   // ---- comments ----
@@ -670,6 +641,14 @@ export const ROUTES = {
   },
 
   // ---- inbox ----
+  "inbox.watch": {
+    method: "GET",
+    path: "/inbox/events",
+    auth: "user",
+    summary: "Poll new inbox events with a durable cursor; does not mark items read",
+    query: WatchInboxQuerySchema,
+    response: z.object({ items: z.array(InboxEventSchema), cursor: z.number().int(), has_more: z.boolean() }),
+  },
   "inbox.list": {
     method: "GET",
     path: "/inbox",

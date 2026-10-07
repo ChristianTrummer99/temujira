@@ -1,12 +1,16 @@
-import type { Command } from "commander";
+import { Option, type Command } from "commander";
+import { TemujiraClient } from "@temujira/client";
 import type { RouteId } from "@temujira/shared";
 import { getCtx } from "../context";
 import { emit, table, truncate, ts } from "../output";
 import { nonNegativeInt } from "../util";
+import { CliError, EXIT_CODES } from "../exit";
+import { readInboxCheckpoint, saveInboxCheckpoint, watchInbox } from "../inbox-watch";
 
 export const COMMAND_ROUTES = {
   "inbox list": ["inbox.list"],
   "inbox read": ["inbox.update"],
+  "inbox watch": ["inbox.watch", "auth.me"],
 } as const satisfies Record<string, readonly RouteId[]>;
 
 /** One-line excerpt of a markdown comment body (newlines collapsed). */
@@ -18,6 +22,45 @@ export function registerInbox(program: Command): void {
   const inbox = program
     .command("inbox")
     .description("Your cross-workspace inbox of mentions and replies");
+
+  inbox.command("watch")
+    .description("Poll new notifications; starts now, does not mark read. --json emits NDJSON")
+    .addOption(new Option("--after <cursor>", "resume after a cursor; 0 replays retained events").argParser(nonNegativeInt("--after")).conflicts("cursorFile"))
+    .option("--cursor-file <path>", "save/resume a cursor bound to the current server and user")
+    .option("--once", "drain one poll, including every page, then exit")
+    .option("--interval <seconds>", "poll interval (1–300 seconds)", nonNegativeInt("--interval"), 5)
+    .option("--limit <n>", "events per page (1–200)", nonNegativeInt("--limit"), 100)
+    .action(async (opts: { after?: number; cursorFile?: string; once?: boolean; interval: number; limit: number }, cmd: Command) => {
+      if (opts.interval < 1 || opts.interval > 300 || opts.limit < 1 || opts.limit > 200 || (opts.after !== undefined && !Number.isSafeInteger(opts.after))) {
+        throw new CliError("use interval 1–300, limit 1–200, and a safe integer cursor", EXIT_CODES.usage);
+      }
+      const ctx = getCtx(cmd);
+      const controller = new AbortController();
+      const stop = () => controller.abort();
+      process.on("SIGINT", stop); process.on("SIGTERM", stop);
+      const write = (text: string) => new Promise<void>((resolve, reject) => process.stdout.write(`${text}\n`, (error) => error ? reject(error) : resolve()));
+      try {
+        const client = new TemujiraClient({ baseUrl: ctx.url, token: ctx.settings.apiKey,
+          signal: controller.signal, timeoutMs: 30_000,
+        });
+        const { user } = await client.me();
+        const identity = { url: ctx.url.replace(/\/+$/, ""), user_id: user.id };
+        const after = opts.cursorFile ? readInboxCheckpoint(opts.cursorFile, identity) : opts.after;
+        await watchInbox(client, { ...opts, after, signal: controller.signal,
+          event: async (event) => {
+            if (ctx.mode === "json") await write(JSON.stringify({ type: "notification", ...event }));
+            else if (ctx.mode === "quiet") await write(event.item.id);
+            else await write(`${event.item.task_key} · ${event.item.kind} · ${event.item.actor.name}: ${excerpt(event.item.source_comment.body)}`);
+          },
+          checkpoint: async (cursor) => {
+            if (ctx.mode === "json") await write(JSON.stringify({ type: "checkpoint", cursor }));
+            if (opts.cursorFile) saveInboxCheckpoint(opts.cursorFile, { ...identity, cursor });
+          },
+          warn: (message) => process.stderr.write(`${message}\n`),
+        });
+      } catch (e) { if (!controller.signal.aborted) throw e; }
+      finally { process.off("SIGINT", stop); process.off("SIGTERM", stop); }
+    });
 
   inbox
     .command("list")

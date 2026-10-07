@@ -19,10 +19,10 @@ export const AUDIT_ACTIONS = {
   "tags.create": "tag.created", "tags.update": "tag.updated", "tags.delete": "tag.deleted",
   "fields.create": "field.created", "fields.update": "field.updated", "fields.delete": "field.deleted", "fields.reorder": "fields.reordered",
   "tasks.create": "task.created", "tasks.update": "task.updated",
+  "tasks.bulkUpdate": "task.updated", "tasks.reorder": "task.reordered",
   "links.create": "task.linked", "links.delete": "task.unlinked",
   "comments.create": "comment.created", "comments.update": "comment.updated", "comments.delete": "comment.deleted",
   "attachments.uploadToTask": "attachment.uploaded", "attachments.uploadToComment": "attachment.uploaded", "attachments.delete": "attachment.deleted",
-  "queue.add": "queue.added", "queue.setState": "queue.state_changed", "queue.remove": "queue.removed", "queue.reorder": "queue.reordered",
   "inbox.update": "inbox.read",
 } as const satisfies Record<MutationRoute, string>;
 
@@ -71,11 +71,13 @@ function targets(ctx: AppContext, c: Ctx, route: MutationRoute, response: Row = 
     return row.id ? { workspaceId: String(row.id), snapshot: summary(row) } : {};
   };
   const entity = object(response[{ tasks: "task", comments: "comment", attachments: "attachment", workspaces: "workspace",
-    users: "user", apiKeys: "apiKey", statuses: "status", fields: "field", tags: "tag", queue: "entry", identitySessions: "session" }[group!] ?? ""]);
+    users: "user", apiKeys: "apiKey", statuses: "status", fields: "field", tags: "tag", identitySessions: "session" }[group!] ?? ""]);
   const id = string(entity.id) ?? param;
   let row: Row = {};
   let result: Target[] = [];
-  if (group === "tasks") result = [task(id ?? ref)];
+  if (route === "tasks.bulkUpdate") result = (Array.isArray(input.task_ids) ? input.task_ids : []).map((id) => task(string(id)));
+  else if (route === "tasks.reorder") result = [task(string(input.task_id))];
+  else if (group === "tasks") result = [task(id ?? ref)];
   else if (group === "comments") {
     row = id ? one("SELECT * FROM comments WHERE id=?", id) : {};
     result = [task(string(row.task_id) ?? ref)];
@@ -104,14 +106,6 @@ function targets(ctx: AppContext, c: Ctx, route: MutationRoute, response: Row = 
       const affected = ctx.sqlite.prepare(query).all(row.id) as Array<{ task_id: string }>;
       result.push(...affected.map((r) => task(r.task_id)));
     }
-  } else if (group === "queue") {
-    row = id ? one("SELECT * FROM queue_entries WHERE id=?", id) : {};
-    result = verb === "reorder"
-      ? (ctx.sqlite.prepare("SELECT task_id FROM queue_entries WHERE user_id=?").all(actor?.id) as Array<{ task_id: string }>).map((entry) => task(entry.task_id))
-      : [task(string(row.task_id) ?? string(input.task))];
-    if (!result.length) result = [{}];
-    for (const target of result) { target.visibility = "private"; target.ownerId = actor?.id; }
-    if (row.id) result[0]!.snapshot = summary(row);
   } else if (group === "apiKeys") {
     row = id ? one("SELECT id,user_id,name FROM api_keys WHERE id=?", id) : {};
     result = [{ visibility: "private", ownerId: string(row.user_id) ?? string(input.user_id) ?? actor?.id }];
@@ -149,18 +143,10 @@ export function auditMutation(ctx: AppContext, routeId: RouteId): MiddlewareHand
     const input = object(c.get("body"));
     // Field names only, never arbitrary values (passwords, tokens, document bodies, etc.).
     const fields = Object.keys(input).filter((key) => !/password|token|secret/i.test(key));
-    const metadata: Row = { route, ...(/update|setState|reorder/.test(route) && fields.length ? { fields } : {}) };
+    const metadata: Row = { route, ...(/update|setState|reorder/i.test(route) && fields.length ? { fields } : {}) };
     if ((route === "auth.updateMe" || route === "users.update") && Object.keys(input).some((key) => /password/.test(key))) metadata.password_changed = true;
     if (c.get("apiKeyId")) metadata.credential_id = c.get("apiKeyId");
     if (c.get("identitySession")) metadata.identity_session_id = c.get("identitySession")!.id;
-    const changes: Row[] = [];
-    const old = before[0]?.snapshot ?? {};
-    const current = after[0]?.snapshot ?? {};
-    for (const key of Object.keys(current)) {
-      if (old[key] !== undefined && old[key] !== current[key]) changes.push({ field: key, from: old[key], to: current[key] });
-    }
-    if (changes.length) metadata.changes = changes;
-
     if (!records.length) {
       for (const target of resolved) records.push({
         ...target, actorId, action: AUDIT_ACTIONS[route], metadata: { ...target.metadata },
@@ -177,13 +163,17 @@ export function auditMutation(ctx: AppContext, routeId: RouteId): MiddlewareHand
     ctx.db.transaction((tx) => {
       for (const record of records) {
         const target = resolved.find((t) => t.taskId === record.taskId) ?? resolved[0];
+        const old = (before.find((t) => t.taskId === record.taskId) ?? before[0])?.snapshot ?? {};
+        const current = (after.find((t) => t.taskId === record.taskId) ?? after[0])?.snapshot ?? {};
+        const changes = Object.keys(current).filter((key) => old[key] !== undefined && old[key] !== current[key])
+          .map((key) => ({ field: key, from: old[key], to: current[key] }));
         tx.insert(activityEvents).values({
           id: newId(), workspaceId: record.workspaceId ?? null, taskId: record.taskId ?? null,
           actorId: record.actorId, action: record.action,
           visibility: record.visibility ?? (record.workspaceId ? "workspace" : "admin"),
           ownerId: record.ownerId ?? null,
           relatedWorkspaceId: record.relatedWorkspaceId ?? target?.relatedWorkspaceId ?? null,
-          metadata: JSON.stringify({ ...metadata, ...record.metadata }), createdAt: now(),
+          metadata: JSON.stringify({ ...metadata, ...(changes.length ? { changes } : {}), ...record.metadata }), createdAt: now(),
         }).run();
       }
     });

@@ -1,15 +1,43 @@
-import { and, count, desc, eq, isNull, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, isNull, type SQL } from "drizzle-orm";
 import type { z } from "zod";
-import type { InboxItem, ListInboxQuerySchema, UpdateInboxQuerySchema } from "@temujira/shared";
+import type { InboxItem, ListInboxQuerySchema, UpdateInboxQuerySchema, WatchInboxQuerySchema } from "@temujira/shared";
 import { accessibleWorkspaceIds, workspaceScopeWhere } from "../access";
-import { inboxItems, tasks, users, workspaces } from "../db/schema";
+import { inboxEvents, inboxItems, tasks, users, workspaces } from "../db/schema";
+import { validationError } from "../errors";
 import { inboxItemToApi } from "../serialize";
 import { now } from "../util";
 import { loadCommentsById } from "./commentSerialize";
 import { currentUser, query, type AppContext, type Handlers } from "./types";
 
-export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "inbox.update"> {
+export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "inbox.update" | "inbox.watch"> {
   return {
+    "inbox.watch": (c) => {
+      const user = currentUser(c);
+      const q = query<z.infer<typeof WatchInboxQuerySchema>>(c);
+      // Read the durable high-water mark, even when the newest inbox item was deleted.
+      // This handler is synchronous: the mark and page come from the same DB state.
+      const high = (ctx.sqlite.prepare("SELECT seq FROM sqlite_sequence WHERE name='inbox_events'").get() as { seq: number } | undefined)?.seq ?? 0;
+      const after = q.after ?? high;
+      if (after > high) throw validationError("cursor is ahead of this server; use after=0 to replay");
+      const rows = ctx.db.select({ sequence: inboxEvents.sequence, item: inboxItems, actor: users, workspace: workspaces, task: tasks })
+        .from(inboxEvents).innerJoin(inboxItems, eq(inboxEvents.inboxId, inboxItems.id))
+        .innerJoin(users, eq(inboxItems.actorId, users.id))
+        .innerJoin(workspaces, eq(inboxItems.workspaceId, workspaces.id))
+        .innerJoin(tasks, eq(inboxItems.taskId, tasks.id))
+        .where(and(gt(inboxEvents.sequence, after), eq(inboxItems.userId, user.id),
+          workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user))))
+        .orderBy(asc(inboxEvents.sequence)).limit(q.limit + 1).all();
+      const has_more = rows.length > q.limit;
+      const page = rows.slice(0, q.limit);
+      const byId = loadCommentsById(ctx.db, page.flatMap((r) => [r.item.sourceCommentId, ...(r.item.parentCommentId ? [r.item.parentCommentId] : [])]));
+      const items = page.flatMap((r) => {
+        const source = byId.get(r.item.sourceCommentId);
+        if (!source) return [];
+        const parent = r.item.parentCommentId ? byId.get(r.item.parentCommentId) ?? null : null;
+        return [{ cursor: r.sequence, item: inboxItemToApi(r.item, r.actor, r.workspace, r.task, r.workspace.key, source, parent) }];
+      });
+      return c.json({ items, cursor: has_more ? page[page.length - 1]!.sequence : high, has_more });
+    },
     /**
      * The current user's unified, cross-workspace inbox: newest first, unread only unless
      * `include_read=1`. `unread` counts ALL of the user's unread rows, not just this page.
@@ -67,7 +95,8 @@ export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "i
       const res = ctx.db
         .update(inboxItems)
         .set({ readAt: now() })
-        .where(and(eq(inboxItems.userId, user.id), isNull(inboxItems.readAt)))
+        .where(and(eq(inboxItems.userId, user.id), isNull(inboxItems.readAt),
+          workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user))))
         .run();
       return c.json({ ok: true as const, updated: res.changes });
     },

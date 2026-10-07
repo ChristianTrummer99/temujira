@@ -5,6 +5,8 @@ import type {
   ListMyTasksQuerySchema,
   ListTasksQuerySchema,
   UpdateTaskInputSchema,
+  BulkUpdateTasksInput,
+  ReorderTaskInput,
 } from "@temujira/shared";
 import type { Db } from "../db";
 import { accessibleWorkspaceIds, workspaceScopeWhere } from "../access";
@@ -20,7 +22,7 @@ import {
   users,
   workspaces,
 } from "../db/schema";
-import { conflict, validationError } from "../errors";
+import { conflict, notFound, validationError } from "../errors";
 import {
   asStringArray,
   taskToApi,
@@ -38,6 +40,7 @@ import { requireTask, requireWorkspace } from "./resolve";
 import { body, currentUser, query, type AppContext, type Handlers } from "./types";
 
 const SORT_COLUMNS = {
+  position: tasks.position,
   created_at: tasks.createdAt,
   updated_at: tasks.updatedAt,
   number: tasks.number,
@@ -165,8 +168,77 @@ function sameRecord(a: Record<string, string>, b: Record<string, string>): boole
 
 export function tasksHandlers(
   ctx: AppContext,
-): Pick<Handlers, "tasks.list" | "tasks.mine" | "tasks.create" | "tasks.get" | "tasks.update"> {
+): Pick<Handlers, "tasks.list" | "tasks.mine" | "tasks.create" | "tasks.get" | "tasks.update" | "tasks.bulkUpdate" | "tasks.reorder"> {
+  const serializeTask = (row: TaskRow, key: string) => taskToApi(
+    row, key,
+    ctx.db.select().from(statuses).where(eq(statuses.id, row.statusId)).get()!,
+    row.assigneeId ? ctx.db.select().from(users).where(eq(users.id, row.assigneeId)).get() ?? null : null,
+    loadTagsForTasks(ctx.db, [row.id]).get(row.id) ?? [], undefined, undefined,
+    loadFieldValuesForTasks(ctx.db, [row.id]).get(row.id),
+  );
   return {
+    "tasks.bulkUpdate": (c) => {
+      const user = currentUser(c);
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", user);
+      const input = body<BulkUpdateTasksInput>(c);
+      const rows = ctx.db.transaction((tx) => {
+        const selected = tx.select().from(tasks).where(and(eq(tasks.workspaceId, ws.id), inArray(tasks.id, input.task_ids))).all();
+        if (selected.length !== input.task_ids.length) throw notFound("task not found in this workspace");
+        // Validate the entire request before the first write. No partial bulk edits.
+        if (input.status_id) statusOfWorkspace(tx, input.status_id, ws.id);
+        const assignee = input.assignee_id ? requireActiveAssignee(tx, input.assignee_id) : null;
+        const add = validateTagIds(tx, ws.id, input.add_tag_ids ?? []);
+        const remove = new Set(validateTagIds(tx, ws.id, input.remove_tag_ids ?? []));
+        const fields = input.field_values ? validateFieldValues(tx, ws.id, input.field_values) : undefined;
+        const existingTags = loadTagsForTasks(tx, input.task_ids);
+        const t = now();
+        return selected.map((task) => {
+          const updates: Partial<typeof tasks.$inferInsert> = { updatedAt: t };
+          if (input.status_id !== undefined) updates.statusId = input.status_id;
+          if (input.assignee_id !== undefined) updates.assigneeId = input.assignee_id;
+          if (input.archived !== undefined) updates.archivedAt = input.archived ? task.archivedAt ?? t : null;
+          const updated = tx.update(tasks).set(updates).where(eq(tasks.id, task.id)).returning().get()!;
+          if (add.length || remove.size) {
+            const ids = new Set((existingTags.get(task.id) ?? []).map((tag) => tag.id).filter((id) => !remove.has(id)));
+            for (const id of add) ids.add(id);
+            tx.delete(taskTags).where(eq(taskTags.taskId, task.id)).run();
+            for (const tagId of ids) tx.insert(taskTags).values({ taskId: task.id, tagId }).run();
+          }
+          if (fields) {
+            deleteClearedFieldValues(tx, task.id, input.field_values!);
+            upsertFieldValues(tx, task.id, fields, user.id, t);
+          }
+          if (assignee && task.assigneeId !== assignee.id) associate(tx, task.id, [assignee.id], t);
+          return updated;
+        });
+      });
+      return c.json({ items: rows.map((row) => serializeTask(row, ws.key)) });
+    },
+
+    "tasks.reorder": (c) => {
+      const user = currentUser(c);
+      const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", user);
+      const input = body<ReorderTaskInput>(c);
+      const moved = ctx.db.transaction((tx) => {
+        const ordered = tx.select().from(tasks).where(eq(tasks.workspaceId, ws.id)).orderBy(asc(tasks.position), asc(tasks.number)).all();
+        const task = ordered.find((row) => row.id === input.task_id);
+        const anchor = input.before_id ? ordered.find((row) => row.id === input.before_id) : undefined;
+        if (!task || (input.before_id && !anchor)) throw notFound("task not found in this workspace");
+        if (input.status_id) {
+          statusOfWorkspace(tx, input.status_id, ws.id);
+          if (anchor && anchor.statusId !== input.status_id) throw validationError("anchor must have the target status");
+        }
+        const rest = ordered.filter((row) => row.id !== task.id);
+        rest.splice(anchor ? rest.findIndex((row) => row.id === anchor.id) : rest.length, 0, task);
+        for (const [position, row] of rest.entries()) {
+          if (row.position !== position) tx.update(tasks).set({ position }).where(eq(tasks.id, row.id)).run();
+        }
+        return tx.update(tasks).set({ updatedAt: now(), ...(input.status_id ? { statusId: input.status_id } : {}) })
+          .where(eq(tasks.id, task.id)).returning().get()!;
+      });
+      return c.json({ task: serializeTask(moved, ws.key) });
+    },
+
     "tasks.list": (c) => {
       const ws = requireWorkspace(ctx.db, c.req.param("idOrKey") ?? "", currentUser(c));
       const q = query<z.infer<typeof ListTasksQuerySchema>>(c);
@@ -174,6 +246,7 @@ export function tasksHandlers(
       if (!q.include_archived) conds.push(isNull(tasks.archivedAt));
       if (q.status_id !== undefined) conds.push(eq(tasks.statusId, q.status_id));
       if (q.assignee_id !== undefined) conds.push(eq(tasks.assigneeId, q.assignee_id));
+      if (q.unassigned) conds.push(isNull(tasks.assigneeId));
       if (q.tag_id !== undefined) {
         // Semi-join: keeps `total` honest and never duplicates a task row.
         conds.push(
@@ -318,6 +391,7 @@ export function tasksHandlers(
           id: newId(),
           workspaceId: ws.id,
           number,
+          position: (tx.select({ p: sql<number>`min(${tasks.position})` }).from(tasks).where(eq(tasks.workspaceId, ws.id)).get()?.p ?? 0) - 1,
           title: input.title,
           description: input.description,
           statusId: status.id,

@@ -1,5 +1,10 @@
 # Per-user work queue — build spec
 
+> Retired. This is a historical design, not a current implementation plan.
+> Personal queues have been removed from the UI, API, and CLI. Existing rows and history
+> are retained. Use task filters, tags, assignees, statuses, and saved task order instead.
+> See `SPEC.md` and the CLI command reference for the current workflow.
+
 _Requirement source: SPEC.md FR-36..40. Every user (human or agent) has an ordered list
 of tickets — "the order it will be done" — distinct from task status. Three states
 (running now / ready to start / queued remainder), reorderable, add/remove, blocked

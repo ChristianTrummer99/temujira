@@ -19,6 +19,8 @@ export const COMMAND_ROUTES = {
   "task create": ["tasks.create", "statuses.list", "users.list", "auth.me", "tags.list", "fields.list", "workspaces.get"],
   "task get": ["tasks.get", "fields.list"],
   "task update": ["tasks.update", "tasks.get", "tags.list", "fields.list"],
+  "task bulk": ["tasks.bulkUpdate", "tasks.get", "statuses.list", "tags.list", "users.list", "auth.me", "fields.list"],
+  "task reorder": ["tasks.reorder", "tasks.get", "statuses.list"],
   "task move": ["tasks.update", "tasks.get", "statuses.list"],
   "task assign": ["tasks.update", "users.list", "auth.me"],
   "task unassign": ["tasks.update"],
@@ -154,6 +156,7 @@ interface TaskListOpts {
   workspace: string;
   status?: string;
   assignee?: string;
+  unassigned?: boolean;
   tag?: string;
   fieldId?: string;
   fieldValue?: string;
@@ -244,10 +247,11 @@ export function registerTask(program: Command): void {
     .requiredOption("--workspace <idOrKey>", "workspace id or key")
     .option("--status <idOrName>", "filter by status (id or case-insensitive name)")
     .option("--assignee <idOrEmailOrMe>", 'filter by assignee (id, email, or "me")')
+    .addOption(new Option("--unassigned", "only tasks with no assignee").conflicts("assignee"))
     .option("--tag <idOrName>", "filter by tag (id or case-insensitive name)")
     .option("--field-id <fieldId>", "filter by a custom select field (tasks with any value)")
     .option("--field-value <value>", 'with --field-id: filter to this option value')
-    .option("--search <q>", "substring match on title")
+    .option("--search <q>", "search tasks, comments, and indexed attachment text")
     .option("--archived", "include archived tasks")
     .addOption(new Option("--sort <field>", "sort field").choices(TASK_SORT_FIELDS))
     .addOption(new Option("--order <dir>", "sort direction").choices(["asc", "desc"]))
@@ -264,6 +268,7 @@ export function registerTask(program: Command): void {
         query.status_id = await resolveStatusId(ctx.client, opts.workspace, opts.status);
       }
       if (opts.assignee) query.assignee_id = await resolveUserId(ctx.client, opts.assignee);
+      if (opts.unassigned) query.unassigned = true;
       if (opts.tag) query.tag_id = await resolveTagId(ctx.client, opts.workspace, opts.tag);
       if (opts.fieldId) {
         query.field_id = opts.fieldId;
@@ -301,6 +306,56 @@ export function registerTask(program: Command): void {
         },
         quiet: () => res.items.map((t) => t.key).join("\n"),
       });
+    });
+
+  task
+    .command("bulk")
+    .description("Update selected tasks in one workspace, all or none (max 200)")
+    .argument("<idsOrKeys...>", "selected task ids or keys")
+    .requiredOption("--workspace <idOrKey>", "workspace id or key")
+    .option("--status <idOrName>", "set the status")
+    .option("--assignee <idOrEmailOrMe>", "set the assignee")
+    .addOption(new Option("--unassign", "clear the assignee").conflicts("assignee"))
+    .addOption(new Option("--archive", "archive selected tasks").conflicts("unarchive"))
+    .option("--unarchive", "restore selected tasks")
+    .option("--add-tag <idOrName>", "add a tag without replacing other tags (repeatable)", collect, [] as string[])
+    .option("--remove-tag <idOrName>", "remove a tag (repeatable)", collect, [] as string[])
+    .option("--field <nameOrId=value>", "set or clear a custom field (repeatable)", collect, [] as string[])
+    .action(async (refs: string[], opts: { workspace: string; status?: string; assignee?: string; unassign?: boolean; archive?: boolean; unarchive?: boolean; addTag: string[]; removeTag: string[]; field: string[] }, cmd: Command) => {
+      if (refs.length > 200) throw new CliError("select at most 200 tasks", EXIT_CODES.usage);
+      if (!opts.status && !opts.assignee && !opts.unassign && !opts.archive && !opts.unarchive && !opts.addTag.length && !opts.removeTag.length && !opts.field.length) {
+        throw new CliError("supply a status, assignee, tag, field, or archive change", EXIT_CODES.usage);
+      }
+      const ctx = getCtx(cmd);
+      const ids: string[] = [];
+      for (const ref of refs) ids.push(isUlid(ref) ? ref : (await ctx.client.getTask(ref)).task.id);
+      const input: Parameters<typeof ctx.client.bulkUpdateTasks>[1] = { task_ids: [...new Set(ids)] };
+      if (opts.status) input.status_id = await resolveStatusId(ctx.client, opts.workspace, opts.status);
+      if (opts.assignee) input.assignee_id = await resolveUserId(ctx.client, opts.assignee);
+      if (opts.unassign) input.assignee_id = null;
+      if (opts.archive || opts.unarchive) input.archived = !!opts.archive;
+      if (opts.addTag.length) input.add_tag_ids = await resolveTagIds(ctx.client, opts.workspace, opts.addTag);
+      if (opts.removeTag.length) input.remove_tag_ids = await resolveTagIds(ctx.client, opts.workspace, opts.removeTag);
+      if (opts.field.length) input.field_values = await resolveFieldValues(ctx.client, opts.workspace, opts.field);
+      const result = await ctx.client.bulkUpdateTasks(opts.workspace, input);
+      emit(ctx.mode, { json: result, human: () => table(TASK_COLUMNS, result.items.map(taskRow)), quiet: () => result.items.map((t) => t.key).join("\n") });
+    });
+
+  task
+    .command("reorder")
+    .description("Save a task's position before another task, or at the end")
+    .argument("<idOrKey>", "task to move")
+    .addOption(new Option("--before <idOrKey>", "place before this task").conflicts("end"))
+    .option("--end", "place at the end")
+    .option("--status <idOrName>", "also change status in the same transaction")
+    .action(async (ref: string, opts: { before?: string; end?: boolean; status?: string }, cmd: Command) => {
+      if (!opts.before && !opts.end) throw new CliError("supply --before or --end", EXIT_CODES.usage);
+      const ctx = getCtx(cmd);
+      const { task } = await ctx.client.getTask(ref);
+      const before_id = opts.before ? (isUlid(opts.before) ? opts.before : (await ctx.client.getTask(opts.before)).task.id) : null;
+      const status_id = opts.status ? await resolveStatusId(ctx.client, task.workspace_id, opts.status) : undefined;
+      const result = await ctx.client.reorderTask(task.workspace_id, { task_id: task.id, before_id, status_id });
+      emitTask(ctx, result.task, () => `saved order for ${result.task.key}`);
     });
 
   task

@@ -13,7 +13,7 @@ One Node process. One SQLite file. One uploads directory. One Docker image. One 
 - **DB**: SQLite via **better-sqlite3**, WAL mode, `busy_timeout=5000`,
   `foreign_keys=ON`, `synchronous=NORMAL`. **Drizzle ORM** with committed SQL migrations,
   auto-applied at boot. Before applying pending migrations to an existing DB, the server
-  snapshots it (`db.backup()` → `temujira.db.pre-<version>.bak`, keep last 3).
+  snapshots it (`VACUUM INTO` → `temujira.db.pre-<version>.bak`, keep last 3).
 - **Files**: `$DATA_DIR/uploads/<attachment-ulid>` on the same volume as the DB — backup is
   one directory. `storage.ts` is a tiny put/getStream/stat/delete module (S3 is a post-v1
   swap, not a v1 tax).
@@ -74,9 +74,9 @@ implementation agents report needed changes rather than editing `packages/shared
   Origin check. Cookie `Secure` flag: on when the request is https (direct or
   `X-Forwarded-Proto`), overridable via `COOKIE_SECURE`.
 - **Login rate limit**: in-memory, 10 attempts / 15 min per IP+email.
-- **Roles**: global `admin` | `member` (no per-workspace membership in v1 — every member
-  sees every workspace; stated in README as a design decision). Guards: cannot deactivate
-  or demote the last active admin.
+- **Roles**: global `admin` | `member`, with capability grants and optional workspace
+  allowlists for members. Admins have full access. Guards prevent deactivation or demotion
+  of the last active admin.
 - **Agent accounts**: ordinary users with `is_agent=1` and `password_hash NULL` (web login
   structurally refused — API keys only). `tmj user create --agent` + admin key-minting is
   the agent onboarding path.
@@ -103,7 +103,16 @@ TEXT ULID PKs, INTEGER unix-ms timestamps, INTEGER 0/1 booleans.
 - **tasks**: workspace_id FK, number (unique per workspace, from `next_task_number` in the
   same transaction), title, description (markdown), status_id FK, assignee_id FK NULL,
   archived_at, created_by, timestamps. Display key `TEM-42`; task endpoints accept ULID or
-  key. No manual position — list sorts by created_at/updated_at/number. Archive only.
+  key. Integer `position` stores shared workspace order. A transactional move supplies
+  `task_id`, `before_id` (null = end), and optional `status_id`; it preserves all other tasks.
+  Bulk updates validate up to 200 task IDs in one workspace, then commit all changes together.
+  Add/remove tag deltas preserve unrelated tags. Each affected task gets its own audit event.
+  Archive only.
+- **inbox_events**: an AUTOINCREMENT sequence and unique inbox-item FK. An insert trigger
+  records notifications. Deleting an inbox item cascades its event but does not reuse its
+  cursor. The watch endpoint pages forward after applying user/workspace permissions.
+  Omitted cursor starts now; zero replays retained items, including read notifications.
+- **queue_entries**: retired. Keep the table and existing rows; no supported routes use it.
 - **comments**: task_id FK, author_id, body (markdown), timestamps. Hard-delete allowed
   (author or admin); deletes its attachments' bytes too.
 - **attachments**: exactly-one-parent CHECK (task_id XOR comment_id), uploader_id,
@@ -114,7 +123,7 @@ sweep removes upload files with no DB row.
 
 ## API
 
-Plain REST under `/api/v1`, ~34 endpoints (meta/setup, auth, api-keys, users, workspaces,
+Plain REST under `/api/v1` (meta/setup, auth, api-keys, users, workspaces,
 statuses incl. reorder, tasks, comments, attachments — the registry is the authoritative
 list). `{items, total, limit, offset}` pagination (limit ≤ 200); errors
 `{error: {code, message, details?}}` with a fixed code set; ULIDs; `:idOrKey` accepts
@@ -135,6 +144,18 @@ comment, attach) plus conveniences that stay pure-API: `--assignee me|email`,
 `--status <name>`, `tmj user create --agent --with-key` (create agent + mint key in one
 go), `tmj attach download` verifies sha256, and **`tmj api <method> <path> [--body]`** — a
 gh-style raw escape hatch guaranteeing a parity floor forever.
+
+Optional directory credentials are bound explicitly with `auth use-key --directory` and
+stored outside the project, under private user configuration. The nearest real-path ancestor
+binding overrides the shared environment/config pair. Flags override the binding;
+`--global-auth` skips bindings. Invalid bindings fail closed. Imported keys are verified and
+stored without a revocation ID. `auth forget` only removes local credentials.
+
+`inbox watch` uses the typed client with cancellation and request timeouts. It drains pages
+before waiting, respects stdout backpressure, and saves a server/user-bound checkpoint only
+after output succeeds. NDJSON contains notification and checkpoint records. Temporary request
+failures retry with capped backoff; authentication failures exit. A crash may replay a page,
+so consumers deduplicate by inbox ID. No WebSocket service or worker process is required.
 
 ## Deployment
 

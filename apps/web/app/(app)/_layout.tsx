@@ -54,7 +54,6 @@ import {
   CircleUserIcon,
   FolderIcon,
   InboxIcon,
-  ListOrderedIcon,
   LogOutIcon,
   PlusIcon,
   SettingsIcon,
@@ -208,21 +207,6 @@ function AppSidebar() {
                     }
                   />
                   <Text className="flex-1 pr-6">My Tasks</Text>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname === '/queue'}
-                  onPress={() => navigate('/queue')}>
-                  <Icon
-                    as={ListOrderedIcon}
-                    className={
-                      pathname === '/queue'
-                        ? 'text-sidebar-accent-foreground size-4'
-                        : 'text-sidebar-foreground size-4'
-                    }
-                  />
-                  <Text className="flex-1 pr-6">My Queue</Text>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -425,7 +409,6 @@ function breadcrumbTrail(
 
   if (pathname === '/inbox') return [overview, { label: 'Inbox' }];
   if (pathname === '/my') return [overview, { label: 'My Tasks' }];
-  if (pathname === '/queue') return [overview, { label: 'My Queue' }];
   if (pathname === '/search') return [overview, { label: 'Search' }];
   if (pathname === '/activity') return [overview, { label: 'Activity' }];
 

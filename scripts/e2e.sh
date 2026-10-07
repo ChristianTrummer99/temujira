@@ -5,6 +5,7 @@
 #   scripts/e2e.sh              # docker mode: builds the image and runs it (full acceptance)
 #   E2E_MODE=local scripts/e2e.sh   # local mode: runs the built server directly (fast)
 set -euo pipefail
+unset TEMUJIRA_API_KEY TEMUJIRA_URL TEMUJIRA_ADMIN_EMAIL TEMUJIRA_ADMIN_PASSWORD TEMUJIRA_ADMIN_NAME
 
 cd "$(dirname "$0")/.."
 
@@ -13,6 +14,7 @@ MODE="${E2E_MODE:-docker}"
 IMG=temujira:e2e
 CTR=temujira-e2e
 export HOME_DIR="$(mktemp -d)" # isolated CLI config
+export XDG_CONFIG_HOME="$HOME_DIR/.config"
 DATA_TMP="$(mktemp -d)"
 SERVER_PID=""
 
@@ -21,7 +23,7 @@ die() { printf '\033[31mE2E FAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 
 cleanup() {
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
-  docker rm -f "$CTR" >/dev/null 2>&1 || true
+  if [ "$MODE" = "docker" ]; then docker rm -f "$CTR" >/dev/null 2>&1 || true; fi
   rm -rf "$HOME_DIR" "$DATA_TMP" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -54,7 +56,7 @@ done
 curl -fsS "http://localhost:$PORT/api/v1/health" | jq -e '.ok == true' >/dev/null || die "health payload"
 
 say "First-run setup via CLI"
-tmj --url "http://localhost:$PORT" setup --email admin@e2e.test --password e2e-password-1 --name "E2E Admin" || die "setup"
+tmj --url "http://localhost:$PORT" setup --email admin@e2e.test --password e2e-password-1 --name "E2E Admin" --quiet >/dev/null || die "setup"
 tmj auth whoami --json | jq -e '.user.role == "admin"' >/dev/null || die "whoami"
 
 say "Setup self-disables"
@@ -114,10 +116,10 @@ A2=$(tmj attach upload --comment "$C1" "$HOME_DIR/upload.txt" --json | jq -r '.a
 tmj attach delete "$A2" >/dev/null || die "attach delete"
 
 say "Agent onboarding: agent user + API key, works via env auth"
-AGENT_KEY=$(tmj user create --email bot@e2e.test --name "Build Bot" --agent --with-key --json | jq -r '.token // .apiKey_token // .key // empty')
+AGENT_KEY=$(tmj user create --name "Build Bot" --agent --with-key --json | jq -r '.token // .apiKey_token // .key // empty')
 if [ -z "$AGENT_KEY" ]; then
   # fall back: mint explicitly
-  AGENT_ID=$(tmj user list --json | jq -r '.items[] | select(.email == "bot@e2e.test") | .id')
+  AGENT_ID=$(tmj user list --json | jq -r '.items[] | select(.name == "Build Bot") | .id')
   AGENT_KEY=$(tmj apikey create --name provisioning --user "$AGENT_ID" --json | jq -r '.token')
 fi
 [ -n "$AGENT_KEY" ] || die "agent key"
@@ -129,13 +131,13 @@ TEMUJIRA_URL="http://localhost:$PORT" TEMUJIRA_API_KEY="$AGENT_KEY" HOME="$HOME_
 say "Agent cannot use admin routes"
 set +e
 TEMUJIRA_URL="http://localhost:$PORT" TEMUJIRA_API_KEY="$AGENT_KEY" HOME="$HOME_DIR" \
-  node apps/cli/dist/index.js user create --email x@x.co --name X --agent --json >/dev/null 2>&1
+  node apps/cli/dist/index.js user create --name X --agent --json >/dev/null 2>&1
 RC=$?
 set -e
 [ "$RC" = 3 ] || die "member agent creating users should exit 3, got $RC"
 
 say "Key revocation"
-AGENT_ID=$(tmj user list --json | jq -r '.items[] | select(.email == "bot@e2e.test") | .id')
+AGENT_ID=$(tmj user list --json | jq -r '.items[] | select(.name == "Build Bot") | .id')
 KEY_ID=$(tmj apikey list --user "$AGENT_ID" --json | jq -r '.items[0].id')
 tmj apikey revoke "$KEY_ID" >/dev/null || die "revoke"
 set +e
@@ -158,6 +160,13 @@ tmj task get "$T1" --json | jq -e '.task.tags | length == 1' >/dev/null || die "
 tmj tag update "$TAG_URGENT" --name Critical --json | jq -e '.tag.name == "Critical"' >/dev/null || die "tag rename"
 tmj tag delete "$TAG_URGENT" >/dev/null || die "tag delete"
 tmj tag list --workspace ENG --json | jq -e '.items | length == 1' >/dev/null || die "tag not removed"
+
+say "Bulk task edits and saved order"
+tmj task bulk "$T1" "$T2" --workspace ENG --status Backlog --add-tag Backend --json | jq -e '.items | length == 2' >/dev/null || die "bulk update"
+tmj task list --workspace ENG --tag Backend --status Backlog --json | jq -e '.total == 2' >/dev/null || die "bulk state"
+tmj task reorder "$T1" --before "$T2" >/dev/null || die "saved order"
+tmj task list --workspace ENG --sort position --order asc --json | jq -e --arg first "$T1" '.items[0].key == $first' >/dev/null || die "saved order did not persist"
+tmj task list --workspace ENG --unassigned --limit 1 --json | jq -e '.total == 2 and (.items | length == 1)' >/dev/null || die "unassigned pagination"
 
 say "Comment threading: replies collapse to one level"
 ROOT=$(tmj comment add --task "$T1" --body "Root comment" --json | jq -r '.comment.id')
@@ -193,6 +202,13 @@ as_member inbox list --json | jq -e '[.items[] | select(.kind == "reply")] | len
 as_member inbox read --json | jq -e '.ok == true and .updated >= 1' >/dev/null || die "mark read"
 as_member inbox list --json | jq -e '.unread == 0 and (.items | length == 0)' >/dev/null || die "inbox not cleared"
 as_member inbox list --all --json | jq -e '.items | length >= 1' >/dev/null || die "--all should show read items"
+
+say "Notification watcher: replay, paging, and resume"
+as_member inbox watch --after 0 --once --limit 1 --json | jq -se '[.[] | select(.type == "notification")] | length >= 2' >/dev/null || die "watch replay"
+as_member inbox watch --once --cursor-file "$HOME_DIR/inbox-cursor.json" --json | jq -se '[.[] | select(.type == "notification")] | length == 0' >/dev/null || die "watch should start now"
+tmj comment add --task "$T1" --body "New review request" --mention dev@e2e.test >/dev/null || die "new notification"
+as_member inbox watch --once --cursor-file "$HOME_DIR/inbox-cursor.json" --json | jq -se '[.[] | select(.type == "notification")] | length == 1' >/dev/null || die "watch resume"
+as_member inbox watch --once --cursor-file "$HOME_DIR/inbox-cursor.json" --json | jq -se '[.[] | select(.type == "notification")] | length == 0' >/dev/null || die "watch repeated a saved event"
 
 say "Self-mention does not notify"
 BEFORE=$(tmj inbox list --all --json | jq -r '.total')

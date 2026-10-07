@@ -129,6 +129,7 @@ export const tasks = sqliteTable(
       .notNull()
       .references(() => workspaces.id),
     number: integer("number").notNull(),
+    position: integer("position").notNull().default(0),
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
     statusId: text("status_id")
@@ -145,6 +146,7 @@ export const tasks = sqliteTable(
   (t) => [
     uniqueIndex("tasks_workspace_number_unique").on(t.workspaceId, t.number),
     index("tasks_workspace_archived_idx").on(t.workspaceId, t.archivedAt),
+    index("tasks_workspace_position_idx").on(t.workspaceId, t.position),
     index("tasks_status_id_idx").on(t.statusId),
     index("tasks_assignee_id_idx").on(t.assigneeId),
   ],
@@ -238,6 +240,12 @@ export const inboxItems = sqliteTable(
     index("inbox_items_workspace_id_idx").on(t.workspaceId),
   ],
 );
+
+/** Inserted by a trigger. AUTOINCREMENT never reuses a deleted event's cursor. */
+export const inboxEvents = sqliteTable("inbox_events", {
+  sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+  inboxId: text("inbox_id").notNull().references(() => inboxItems.id, { onDelete: "cascade" }),
+}, (t) => [uniqueIndex("inbox_events_inbox_id_unique").on(t.inboxId)]);
 
 export const attachments = sqliteTable(
   "attachments",
@@ -435,12 +443,7 @@ export const fieldValues = sqliteTable(
   ],
 );
 
-/**
- * A user's ordered plan: tickets in the order they intend to do them (FR-36..40).
- * state is pure signal ("running"/"ready"/"queued"); nothing auto-transitions and no
- * status/filter reads it. A task can sit in a queue in any state — status and queue are
- * deliberately orthogonal.
- */
+/** Retired personal queues. Keep the table and its rows for data preservation. */
 export const queueEntries = sqliteTable(
   "queue_entries",
   {

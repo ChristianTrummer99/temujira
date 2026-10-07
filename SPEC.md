@@ -59,31 +59,30 @@ email/password authentication, API key management, and every feature below marke
 - **FR-20 (v1)** Comments support file attachments too.
 - **FR-21 (v1)** Markdown renders anywhere prose appears (task descriptions, comments).
 
-### Per-user work queue
+### Work planning and notifications
 
-- **FR-36 (v2)** Every user (human or agent worker) has a **queue**: an ordered list of
-  tickets giving a live view of the work they are doing, **in the order it will be done**.
-  This is deliberately distinct from a task's status — status describes the ticket, the
-  queue describes one worker's plan.
-- **FR-37 (v2)** A queue entry has a state: **running now**, **ready to start**, or queued
-  (the ordered remainder). "Running now" is the live signal of what a worker is doing at
-  this moment.
-- **FR-38 (v2)** Queue entries are reorderable, and a ticket can be added to or removed from
-  a queue.
-- **FR-39 (v2)** A queue entry surfaces whether it is **blocked** by a dependency — derived
-  from the ticket's `blocks`/`blocked_by` links (FR-24), not a second dependency system.
-- **FR-40 (v2)** The queue is primarily for humans watching and agents coordinating, so it
-  must be first-class in the API and CLI: an agent asks what to work on next, marks it
-  running, and completes it.
+- **FR-36..40 (retired)** Personal queues are removed from the UI, API, and CLI. Existing
+  database rows and history stay intact. Use task tags, assignees, and statuses to plan work.
+- **FR-41** Select multiple tasks and apply status, assignee, tag, and archive changes.
+  The server validates the whole batch before any change. Each task gets an audit event.
+- **FR-42** Drag tasks to save their order. A move uses a task and an anchor, so filters and
+  pagination cannot remove other tasks from the order. Provide keyboard and touch controls.
+- **FR-43** Change status and search, add, or remove tags directly in task rows. Show active
+  filters with individual clear controls. Unassigned filtering runs before pagination.
+- **FR-44** Replies are clearly indented under the root comment. Keep chronological order
+  and the collapse control.
+- **FR-45** Agents can watch inbox notifications through CLI polling. Use a durable cursor,
+  permission-filtered pages, optional saved progress, and machine-readable output.
+- **FR-46** Agents normally reuse one shared identity/key. Optional directory bindings live
+  in private user configuration, with no credentials written into project directories.
 
 ### Task list presentation
 
 - **FR-29 (v2)** The task list renders as **collapsible list-groups** (JIRA-backlog style):
   each group is a card with a header showing a collapse chevron, the group name and a
   count, and the task rows sit inside it.
-- **FR-30 (v2)** There is **always a grouping** — "no grouping" is not an option. Default is
-  group by status; the user can switch the grouping key (status, tag, assignee, or a custom
-  select field).
+- **FR-30 (v2, revised)** Default to grouping by status. Also support no grouping, tags,
+  assignees, and custom select fields.
 
 ### Custom fields
 
