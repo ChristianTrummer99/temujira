@@ -1,11 +1,12 @@
 import { ApiError } from '@temujira/client';
 import * as React from 'react';
 import { useAuth } from './auth';
+import { useFocusEffect } from 'expo-router';
+import { useResourceRevision } from './invalidation';
 
 /**
- * A tiny data-fetching primitive. Deliberately NOT react-query: every existing screen
- * already uses the `useEffect` + cancelled-flag idiom, and at this scale (local SQLite,
- * <=200-row lists, "reload after mutation") a 60-line hook is the right size.
+ * Focus-aware data loading: refresh after returning from a tray or after an explicit
+ * invalidation, while keeping the screen's data and UI state during navigation.
  */
 export interface Resource<T> {
   /** null until the first success; kept (stale) during a reload so there's no skeleton flash. */
@@ -22,6 +23,7 @@ export function useResource<T>(
   deps: React.DependencyList
 ): Resource<T> {
   const { refresh } = useAuth();
+  const revision = useResourceRevision();
   const [data, setData] = React.useState<T | null>(null);
   const [inFlight, setInFlight] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -53,14 +55,14 @@ export function useResource<T>(
     }
   }, [refresh]);
 
-  React.useEffect(() => {
+  useFocusEffect(React.useCallback(() => {
     void run();
     return () => {
       // Invalidate any request still in flight for the previous deps.
       generation.current += 1;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run, ...deps]);
+  }, [run, revision, ...deps]));
 
   return { data, loading: inFlight && data === null, error, reload: run, setData };
 }

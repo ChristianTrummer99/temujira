@@ -94,9 +94,11 @@ An agent's loop is usually: `tmj inbox list --json` → work the task → `tmj c
 → `tmj task move`. Replies are one level deep (replying to a reply targets its root), so
 threads stay flat enough to reason about.
 
-The inbox shows **one item per conversation**, with a short preview capped at 100 pixels.
-**Show more** expands the original comment, all question options, and the full reply thread;
-**Show less** collapses it. **Open in ticket** jumps to the latest incoming comment.
+The inbox shows **one header row per conversation**. Select the header to expand the full
+message, question options, and replies. Select it again to collapse the conversation.
+Messages are clickable and open the ticket at that exact comment. **Open in ticket** is
+also available in the header. **Mark read** is in the header and at the end of an expanded
+unread conversation.
 Expanding or opening a conversation keeps it unread. Its **Mark read** button clears all
 its current notifications. When the recipient replies in a thread
 (including an answer to a question), their existing notifications in that thread become
@@ -114,7 +116,7 @@ Activity categories are `tasks`, `comments`, `replies`, `mentions`, `assignments
 ### Profile pictures
 
 Set or remove your picture in **Settings → Profile**. User managers can also change pictures
-in **Settings → Users**, including agent accounts. Without a picture, each user has initials
+in **Settings → Users & API keys → Users**, including agent accounts. Without a picture, each user has initials
 on a stable color derived from their user ID. Pictures support PNG, JPEG, GIF, and WebP,
 up to 2 MB. They are stored in the data directory and included in instance backups.
 
@@ -162,6 +164,10 @@ imported shared keys have no automatic revocation ID.
 
 ### Task selection and order
 
+Tickets open as trays over the current screen, including Inbox, Search, Activity, and a
+workspace list. Closing the tray restores that screen's scroll position and filters.
+The canonical `/w/KEY/t/NUMBER` links also work when opened directly.
+
 Use row checkboxes to select tasks. The toolbar applies a status, assignee, tag, or archive
 change to the selection. “Select visible tasks” covers expanded groups on the current page.
 Selection clears when filters or pages change. Tags have separate add/remove actions.
@@ -170,6 +176,18 @@ Choose **Manual order** and drag a row handle. Drag between status groups to cha
 and position together. Click the handle for Move up/Move down, or use Alt + ↑ / ↓.
 Status and tag controls also work directly in each row. The Filters button opens the filter
 controls; active filter chips can be cleared one at a time.
+
+Task rows have a fixed space for a hover action menu, so their contents do not move when
+the menu appears. Use it to rename, assign, archive/restore, copy a link, or delete a task.
+Statuses use the same color, dot, and text as tags, with a rounded rectangle and a chevron.
+Workspace hover menus offer rename, archive/restore, activity, and delete actions.
+
+Delete is permanent and separate from Archive. The UI asks for confirmation; the CLI uses
+`task delete <idOrKey> --yes` and `workspace delete <idOrKey> --yes`. Task deletion removes
+its comments, files, links, and inbox entries. Workspace deletion also removes all its tasks
+and settings. Task deletion needs `tasks:write`; workspace deletion needs
+`workspaces:manage`, plus access to the target workspace. Audit history is retained with
+deleted-resource labels; deleted workspace history is admin-only.
 
 ```sh
 tmj task bulk ENG-1 ENG-2 --workspace ENG --status "In Progress" --add-tag review --json
@@ -180,6 +198,13 @@ tmj task list --workspace ENG --sort position --order asc --unassigned --json
 Bulk changes accept up to 200 tasks from one workspace and apply all or none. Task order
 is shared by the workspace. Personal queues have been removed; old stored rows and audit
 history are retained.
+
+### Users and API keys
+
+**Settings → Users & API keys** combines both lists in tabs. Each list has search, filter
+pills, fixed-height rows, row action menus, and 50-row pages. Users can be filtered by type,
+state, and admin role. Keys can be filtered by state and owner. The user menu can open that
+user's keys or create a key directly. Searches and filters are kept when switching tabs.
 
 ### Watch notifications
 
@@ -246,8 +271,8 @@ storage for SQLite, and run only one app process per data directory.
   one file, WAL mode; `sqlite3` CLI debuggability. The storage layer is swappable later.
 - **Global roles with scopes and workspace access.** Roles are `admin` and `member`.
   Members can have a workspace allowlist and capability grants; admins have full access.
-- **Archive, don't delete.** Workspaces and tasks archive/unarchive; users deactivate.
-  Taxonomy, comments, attachments, and links can hard-delete, so inspect
+- **Archive or delete.** Archive/restore is reversible. Task and workspace deletion is
+  permanent and includes their related content. Users deactivate. Inspect
   targets before destructive CLI/API calls (deleting a root comment also takes its replies).
 - **Threads are one level deep.** Replying to a reply targets its root, so a discussion is
   always a root plus its replies — never a tree you have to walk.

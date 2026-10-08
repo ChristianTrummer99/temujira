@@ -12,6 +12,7 @@ export const COMMAND_ROUTES = {
   "workspace update": ["workspaces.update"],
   "workspace archive": ["workspaces.update"],
   "workspace unarchive": ["workspaces.update"],
+  "workspace delete": ["workspaces.delete"],
 } as const satisfies Record<string, readonly RouteId[]>;
 
 function workspaceKv(ws: Workspace): string {
@@ -27,6 +28,15 @@ function workspaceKv(ws: Workspace): string {
 
 export function registerWorkspace(program: Command): void {
   const workspace = program.command("workspace").description("Manage workspaces");
+
+  workspace.command("delete").description("Permanently delete a workspace and all its tasks, comments and files")
+    .argument("<idOrKey>", "workspace id or key")
+    .requiredOption("--yes", "confirm permanent deletion")
+    .action(async (idOrKey: string, _opts, cmd: Command) => {
+      const ctx = getCtx(cmd);
+      const result = await ctx.client.deleteWorkspace(idOrKey);
+      emit(ctx.mode, { json: result, human: () => `Deleted workspace ${idOrKey}`, quiet: () => idOrKey });
+    });
 
   workspace
     .command("list")

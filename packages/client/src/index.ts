@@ -301,6 +301,9 @@ export class TemujiraClient {
   updateWorkspace(idOrKey: string, body: { name?: string; archived?: boolean }) {
     return this.call("workspaces.update", { idOrKey }, { body }) as Promise<{ workspace: Workspace }>;
   }
+  deleteWorkspace(idOrKey: string) {
+    return this.call("workspaces.delete", { idOrKey }) as Promise<{ ok: true }>;
+  }
 
   // ---- statuses ----
   listStatuses(workspace: string) {
@@ -403,6 +406,9 @@ export class TemujiraClient {
 
   bulkUpdateTasks(workspace: string, body: BulkUpdateTasksInput) {
     return this.call("tasks.bulkUpdate", { idOrKey: workspace }, { body }) as Promise<{ items: Task[] }>;
+  }
+  deleteTask(idOrKey: string) {
+    return this.call("tasks.delete", { idOrKey }) as Promise<{ ok: true }>;
   }
   reorderTask(workspace: string, body: ReorderTaskInput) {
     return this.call("tasks.reorder", { idOrKey: workspace }, { body }) as Promise<{ task: Task }>;
@@ -573,6 +579,7 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "workspaces.create": "createWorkspace",
   "workspaces.get": "getWorkspace",
   "workspaces.update": "updateWorkspace",
+  "workspaces.delete": "deleteWorkspace",
   "statuses.list": "listStatuses",
   "statuses.create": "createStatus",
   "statuses.update": "updateStatus",
@@ -587,6 +594,7 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "tasks.create": "createTask",
   "tasks.get": "getTask",
   "tasks.update": "updateTask",
+  "tasks.delete": "deleteTask",
   "tasks.bulkUpdate": "bulkUpdateTasks",
   "tasks.reorder": "reorderTask",
   "links.create": "createTaskLink",

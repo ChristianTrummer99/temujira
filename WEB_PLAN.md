@@ -89,9 +89,10 @@ propagation if the row also navigates on web). The create dialog gains tag toggl
   **not** notify (the contract has no `mention_ids` on task update — do not expand it).
 
 **Inbox** (`inbox.tsx`): Unread/All tabs over server-grouped conversations, one item per
-recipient/thread. The badge, totals, and pages count conversations. Previews are capped at
-100 px. Show more/Show less controls expand the full original comment, choices, and replies,
-loaded through `comments.list`. Expansion is read-only. Open in ticket links to
+recipient/thread. The badge, totals, and pages count conversations. Only the accordion header
+is shown while collapsed. Expansion shows the full original comment, choices, and replies,
+loaded through `comments.list`. Expansion is read-only. Mark read is in the header and at
+the bottom of the expanded thread. Each message is clickable; Open in ticket links to
 `/w/{workspace.key}/t/{number}?comment={source_comment.id}`. Mark read resolves the item's
 ID to the whole conversation. New replies update the existing item and make it unread again.
 
@@ -104,11 +105,12 @@ Full change values remain available through the row's detail popover. Multi-sele
 pills use the shared category definitions and server-side filters. Clear filters with All;
 reset pagination when a filter changes. Workspace/task permissions apply before counts.
 
-**Settings**: `users.tsx` hides create/promote/demote/deactivate for non-admins (the list
-itself stays visible) and gains a per-row "mint API key" action reusing the token-shown-once
-dialog. `workspaces.tsx` gains a Tags block per workspace: read-only pills for members;
-admins get add/rename/recolor/delete with an AlertDialog warning that deleting removes the
-tag from all tasks.
+**Identity settings**: `settings/access.tsx` hosts Users and API keys tabs. Both panels stay
+mounted to preserve searches and filters. Tables use fixed-height rows, 50-row pages,
+horizontal scrolling on narrow screens, and action menus. User actions include details,
+rename, picture, access, keys, role, and activation as permitted by the caller's scopes.
+API keys have owner/state/text filters and details/revoke menus; full tokens appear only
+at creation. The old settings/users and settings/api-keys URLs redirect to the matching tab.
 
 **Admin gating rule**: hide or disable only controls whose registry route is `auth: "admin"`
 (`tags.create/update/delete`, `users.create/update/deactivate`, `apiKeys.create` with
@@ -187,7 +189,8 @@ user-initiated action.
 3. Typed routes are on — after adding `/inbox`, `/my`, `/w/[key]/activity`, regenerate types
    (run the export once) or `tsc --noEmit` will reject the new `router.push` paths.
 4. `<PortalHost />` is already mounted at root; don't add a second. The task tray is a
-   `transparentModal` and overlays already work inside it.
+   `transparentModal` in the app-level `(ticket)` group. Keep it out of the workspace stack
+   so Inbox, Search, Activity, and other screens can remain underneath it.
 5. RNR `Select` options are `{ value, label }` — reuse the established empty-string trick for
    "Unassigned"; never pass `undefined` as a value.
 6. Anything leaving the client without the Bearer header (raw `<a href>`, `<img src>` to the

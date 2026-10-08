@@ -41,10 +41,12 @@ function SelectTrigger({
   className,
   children,
   size = 'default',
+  iconClassName,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
     children?: React.ReactNode;
     size?: 'default' | 'sm';
+    iconClassName?: string;
   }) {
   return (
     <SelectPrimitive.Trigger
@@ -60,7 +62,7 @@ function SelectTrigger({
       )}
       {...props}>
       <>{children}</>
-      <Icon as={ChevronDown} aria-hidden={true} className="text-muted-foreground size-4" />
+       <Icon as={ChevronDown} aria-hidden={true} className={cn('text-muted-foreground size-4', iconClassName)} />
     </SelectPrimitive.Trigger>
   );
 }

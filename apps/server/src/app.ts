@@ -14,6 +14,7 @@ import { attachmentsHandlers } from "./routes/attachmentsRoutes";
 import { avatarsHandlers } from "./routes/avatarsRoutes";
 import { authHandlers } from "./routes/authRoutes";
 import { commentsHandlers } from "./routes/commentsRoutes";
+import { deleteHandlers } from "./routes/deleteRoutes";
 import { fieldsHandlers } from "./routes/fieldsRoutes";
 import { inboxHandlers } from "./routes/inboxRoutes";
 import { identitySessionHandlers } from "./routes/identitySessionsRoutes";
@@ -162,6 +163,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
     ...linksHandlers(ctx),
     ...fieldsHandlers(ctx),
     ...commentsHandlers(ctx),
+    ...deleteHandlers(ctx),
     ...attachmentsHandlers(ctx),
     ...avatarsHandlers(ctx),
     ...activityHandlers(ctx),

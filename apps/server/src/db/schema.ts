@@ -364,7 +364,8 @@ export const taskAssociations = sqliteTable(
   ],
 );
 
-/** Append-only action stream. Null workspace events are private or administration-only. */
+/** Retained action stream. Resource deletion detaches FKs and records identifier snapshots.
+ * Null workspace events are private or administration-only. */
 export const activityEvents = sqliteTable(
   "activity_events",
   {

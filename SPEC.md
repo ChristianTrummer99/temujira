@@ -83,11 +83,21 @@ email/password authentication, API key management, and every feature below marke
   other permitted accounts, including agents. Use stable per-user colors and initials when
   no picture is set. Apply pictures and fallback colors wherever avatars appear.
 - **FR-50** The inbox has one item per conversation, including after an answer and new
-  replies. Counts and pagination use conversations. Show a short bounded preview with
-  Show more/Show less controls for the complete thread. Mark read clears that conversation.
+  replies. Counts and pagination use conversations. Start with a header-only accordion row;
+  expand it to show the complete thread. Messages link to their exact comment in the tray.
+  Put Open in ticket and Mark read in the header, and also Mark read at the expanded footer.
 - **FR-51** Activity uses compact single-line rows, small avatars, and narrow side gutters.
   Keep full details accessible. Action filter pills can be combined; API/CLI filters and
   counts must match the UI and respect permissions.
+- **FR-52** Ticket trays can open over any route. Closing restores the background screen,
+  including its filters, expanded items, and scroll position. Direct ticket links still work.
+- **FR-53** Workspace and task rows have action menus. Hover reveals the ellipsis in reserved
+  space; keyboard focus and touch also expose it. Support rename, archive/restore, and
+  confirmed permanent deletion with API/CLI parity. Task rows are compact; status controls
+  match tag typography and colors, using a rounded rectangle and a chevron.
+- **FR-54** Users and API keys share a settings section with two tabs. Use compact,
+  uniform-height rows, search, filter pills, pagination, and action menus. Keep filters when
+  switching tabs. Selected filters must have a clear, high-contrast state.
 
 ### Task list presentation
 

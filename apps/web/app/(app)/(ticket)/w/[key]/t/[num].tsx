@@ -8,6 +8,7 @@ import { Markdown } from '@/components/markdown';
 import { MarkdownField } from '@/components/markdown-field';
 import { ActivityFeed } from '@/components/activity-feed';
 import { TaskStatusControl, TaskTagsControl } from '@/components/task-properties';
+import { TaskActions } from '@/components/task-actions';
 import { MentionInput } from '@/components/mention-input';
 import { RichEditor } from '@/components/rich-editor';
 import { TagPill } from '@/components/tag-pill';
@@ -57,7 +58,7 @@ import type {
 } from '@temujira/client';
 import { LINK_RELATIONS, TaskKeyPattern, linkRelationLabel } from '@temujira/shared';
 import type { LinkRelation } from '@temujira/shared';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ArchiveIcon,
   CheckIcon,
@@ -100,6 +101,11 @@ export default function TaskDetailScreen() {
 
   const [expanded, setExpanded] = React.useState(false);
   const [open, setOpen] = React.useState(true);
+  const [visible, setVisible] = React.useState(false);
+  useFocusEffect(React.useCallback(() => {
+    setVisible(true);
+    return () => setVisible(false);
+  }, []));
   const [mentionedUser, setMentionedUser] = React.useState<User | null>(null);
   const [previewAtt, setPreviewAtt] = React.useState<Attachment | null>(null);
   const [discussionTab, setDiscussionTab] = React.useState<'comments' | 'activity'>('comments');
@@ -222,21 +228,25 @@ export default function TaskDetailScreen() {
     }
   }
 
+  if (!visible) return null;
+
   if (resource.loading || (resource.data && !taskReady && !resource.error)) {
     return (
-      <View className="bg-background absolute inset-0">
+      <><Sheet open={open} onOpenChange={(next) => { if (!next) close(); }}><SheetContent className="w-full max-w-[560px]">
         <View className="gap-4 p-6">
           <Skeleton className="h-8 w-2/3" />
           <Skeleton className="h-6 w-40" />
           <Skeleton className="h-32 w-full" />
         </View>
-      </View>
+        <Button variant="ghost" className="m-4 self-end" onPress={close}><Text>Close</Text></Button>
+      </SheetContent></Sheet></>
     );
   }
 
   if (resource.error || !resource.data) {
     return (
-      <View className="bg-background absolute inset-0 items-center justify-center gap-3 p-12">
+      <><Sheet open={open} onOpenChange={(next) => { if (!next) close(); }}><SheetContent className="w-full max-w-[560px]">
+      <View className="flex-1 items-center justify-center gap-3 p-12">
         <Text className="text-destructive text-sm">{resource.error ?? 'Task not found'}</Text>
         <View className="flex-row gap-2">
           <Button variant="outline" size="sm" onPress={() => resource.reload()}>
@@ -247,6 +257,7 @@ export default function TaskDetailScreen() {
           </Button>
         </View>
       </View>
+      </SheetContent></Sheet></>
     );
   }
 
@@ -269,6 +280,7 @@ export default function TaskDetailScreen() {
             </View>
           </View>
           <View className="flex-row items-center gap-1">
+            <TaskActions task={task} users={users} onChanged={setTask} onDeleted={close} hover={false} />
             {expanded ? (
               <Button
                 variant="ghost"

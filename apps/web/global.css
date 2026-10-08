@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Reserve the action slot on every row. Keyboard and touch keep menus reachable. */
+@media (hover: hover) and (pointer: fine) {
+  .row-action { opacity: 0; }
+  .action-row:hover .row-action,
+  .action-row:focus-within .row-action { opacity: 1; }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

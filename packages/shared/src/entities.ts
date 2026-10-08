@@ -616,14 +616,14 @@ export const ListTagsQuerySchema = z.object({});
 
 /** Shared by the API, CLI and filter pills; multiple groups are combined with OR. */
 export const ACTIVITY_CATEGORIES = [
-  { id: "tasks", label: "Tasks", actions: ["task.created", "task.updated", "task.reordered"] },
+  { id: "tasks", label: "Tasks", actions: ["task.created", "task.updated", "task.reordered", "task.deleted"] },
   { id: "comments", label: "Comments", actions: ["comment.created", "comment.updated", "comment.deleted"] },
   { id: "replies", label: "Replies", actions: ["comment.replied"] },
   { id: "mentions", label: "Mentions", actions: ["comment.mentioned"] },
   { id: "assignments", label: "Assignments", actions: ["task.assigned", "task.unassigned"] },
   { id: "files", label: "Files", actions: ["attachment.uploaded", "attachment.deleted"] },
   { id: "links", label: "Links", actions: ["task.linked", "task.unlinked"] },
-  { id: "settings", label: "Settings", actions: ["workspace.created", "workspace.updated", "status.created", "status.updated", "status.deleted", "statuses.reordered", "tag.created", "tag.updated", "tag.deleted", "field.created", "field.updated", "field.deleted", "fields.reordered"] },
+  { id: "settings", label: "Settings", actions: ["workspace.created", "workspace.updated", "workspace.deleted", "status.created", "status.updated", "status.deleted", "statuses.reordered", "tag.created", "tag.updated", "tag.deleted", "field.created", "field.updated", "field.deleted", "fields.reordered"] },
   { id: "accounts", label: "Accounts", actions: ["instance.initialized", "auth.signed_in", "auth.signed_out", "profile.updated", "user.created", "user.updated", "user.deactivated", "api_key.created", "api_key.revoked", "identity.acquired", "identity.released", "avatar.updated", "avatar.removed", "inbox.read", "queue.added", "queue.state_changed", "queue.removed", "queue.reordered"] },
 ] as const;
 export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number]["id"];

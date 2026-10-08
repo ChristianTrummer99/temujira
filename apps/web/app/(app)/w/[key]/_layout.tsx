@@ -5,10 +5,6 @@ export default function WorkspaceLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="activity" />
-      <Stack.Screen
-        name="t/[num]"
-        options={{ presentation: 'transparentModal', animation: 'fade' }}
-      />
     </Stack>
   );
 }

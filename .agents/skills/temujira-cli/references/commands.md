@@ -78,6 +78,7 @@ tmj workspace get <workspaceIdOrKey>
 tmj workspace update <workspaceIdOrKey> --name <name>
 tmj workspace archive <workspaceIdOrKey>
 tmj workspace unarchive <workspaceIdOrKey>
+tmj workspace delete <workspaceIdOrKey> --yes
 ```
 
 `--archived` includes archived workspaces. New workspaces receive Backlog, In Progress,
@@ -159,6 +160,7 @@ tmj task assign <taskIdOrKey> --user <userIdOrEmailOrMe>
 tmj task unassign <taskIdOrKey>
 tmj task archive <taskIdOrKey>
 tmj task unarchive <taskIdOrKey>
+tmj task delete <taskIdOrKey> --yes
 
 tmj task bulk <idsOrKeys...> --workspace <idOrKey>
               [--status <idOrName>] [--assignee <idOrEmailOrMe> | --unassign]
@@ -180,6 +182,13 @@ Bulk edits are atomic and limited to 200 unique tasks in one workspace. Add/remo
 deltas preserve other tags. No changes apply if any target or value is invalid.
 Reorder moves one task relative to another in the saved workspace order (null anchor via
 `--end`). Use `--sort position --order asc` to read that order. All other tasks are retained.
+
+Delete is permanent; archive is reversible. `task delete` removes comments/replies, files,
+links, custom values, associations, and inbox entries. `workspace delete` also removes all
+its tasks, statuses, tags, field definitions, and access grants. Both require `--yes`.
+Task deletion uses `tasks:write`; workspace deletion uses `workspaces:manage`. Both check
+workspace access. Files are removed after the database transaction commits. Audit history
+is retained with key/title snapshots; deleted workspace history is admin-only.
 
 ## Task links
 

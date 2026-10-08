@@ -19,6 +19,7 @@ const LABELS: Record<string, string> = {
   'task.created': 'created the task', 'task.updated': 'updated the task',
   'task.assigned': 'assigned the task', 'task.unassigned': 'unassigned the task',
   'task.reordered': 'changed task order',
+  'task.deleted': 'deleted the task', 'workspace.deleted': 'deleted the workspace',
   'task.linked': 'linked tasks', 'task.unlinked': 'removed a task link',
   'comment.created': 'added a comment', 'comment.replied': 'replied to a comment',
   'comment.updated': 'edited a comment', 'comment.deleted': 'deleted a comment',
@@ -54,11 +55,11 @@ export function ActivityFeed({ workspace, task, mine = false }: { workspace?: st
   return (
     <View className="min-w-0 gap-2" testID="activity-feed">
       <View className="flex-row flex-wrap items-center gap-1.5">
-        <Button variant={selected.length ? 'outline' : 'secondary'} size="sm" className="h-7 rounded-full px-2.5"
+        <Button variant={selected.length ? 'outline' : 'default'} size="sm" className="h-7 rounded-full px-2.5"
           accessibilityLabel="Filter activity: All" aria-pressed={!selected.length} accessibilityState={{ selected: !selected.length }}
           onPress={() => { setSelected([]); setOffset(0); }}><Text className="text-xs">All</Text></Button>
         {ACTIVITY_CATEGORIES.map((category) => <Button key={category.id}
-          variant={selected.includes(category.id) ? 'secondary' : 'outline'} size="sm" className="h-7 rounded-full px-2.5"
+          variant={selected.includes(category.id) ? 'default' : 'outline'} size="sm" className="h-7 rounded-full px-2.5"
           accessibilityLabel={`Filter activity: ${category.label}`} aria-pressed={selected.includes(category.id)} accessibilityState={{ selected: selected.includes(category.id) }}
           onPress={() => toggle(category.id)}><Text className="text-xs">{category.label}</Text></Button>)}
       </View>
@@ -97,7 +98,7 @@ function ActivityRow({ event, showTask }: { event: ActivityEvent; showTask: bool
   const action = LABELS[event.action] ?? event.action.replace(/[._]/g, ' ');
   const summary = `${event.actor.name} ${action}${typeof metadata.target_name === 'string' ? ` · ${metadata.target_name}` : ''}${details.length ? ` · ${details.join(' · ')}` : ''}`;
   function openTask() {
-    const target = event.task_key ? splitTaskKey(event.task_key) : null;
+    const target = event.task_id && event.task_key ? splitTaskKey(event.task_key) : null;
     if (target) router.push(`/w/${target.workspaceKey}/t/${target.number}`);
   }
   return (
@@ -113,10 +114,10 @@ function ActivityRow({ event, showTask }: { event: ActivityEvent; showTask: bool
             <Text selectable className="text-sm">{summary}</Text>
             {event.task_title ? <Text selectable className="text-muted-foreground mt-2 text-xs">Task: {event.task_title}</Text> : null}
           </ScrollView>
-          {event.task_key ? <Button variant="outline" size="sm" onPress={openTask}><Text>Open task · {event.task_key}</Text></Button> : null}
+          {event.task_id && event.task_key ? <Button variant="outline" size="sm" onPress={openTask}><Text>Open task · {event.task_key}</Text></Button> : null}
         </PopoverContent>
       </Popover>
-      {showTask && event.task_key ? <Pressable accessibilityRole="link" onPress={openTask}><Text className="font-mono text-[10px] leading-4 underline">{event.task_key}</Text></Pressable> : null}
+      {showTask && event.task_key ? event.task_id ? <Pressable accessibilityRole="link" onPress={openTask}><Text className="font-mono text-[10px] leading-4 underline">{event.task_key}</Text></Pressable> : <Text className="text-muted-foreground font-mono text-[10px]">{event.task_key} · Deleted</Text> : null}
       <Text numberOfLines={1} className="text-muted-foreground w-28 text-right text-[10px] leading-4 sm:w-36">{formatAbsolute(event.created_at)}</Text>
     </View>
   );

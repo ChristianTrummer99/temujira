@@ -22,6 +22,10 @@ One Node process. One SQLite file. One uploads directory. One Docker image. One 
   template — we inherit the template's version pins verbatim). RNR has **no sidebar**, so
   we port shadcn/ui's sidebar (Provider/Trigger/Menu anatomy, offcanvas collapse) to RN.
   `<PortalHost />` at root (required by RNR overlays).
+  The app stack presents the `(ticket)` route group as a transparent modal. Canonical
+  `/w/:key/t/:num` URLs belong to that group, not the workspace stack, so any screen can
+  stay underneath the tray. The shell keeps the background route's breadcrumbs and sidebar
+  selection. Focus-aware resources refresh on return without resetting local UI state.
 - **CLI**: `tmj` (commander), built exclusively on `@temujira/client`.
 - **Monorepo**: pnpm workspaces, `node-linker=hoisted` (the known-good setting for
   Expo/Metro in pnpm monorepos). No turborepo. Layout:
@@ -98,7 +102,7 @@ TEXT ULID PKs, INTEGER unix-ms timestamps, INTEGER 0/1 booleans.
 - **api_keys**: user_id FK, name, token_hash (unique), token_prefix, last_used_at,
   revoked_at, created_at.
 - **workspaces**: name, key (unique, `[A-Z]{2,6}`), next_task_number, archived_at,
-  timestamps. No hard delete — archive only. Ordered by created_at (no manual reorder in v1).
+  timestamps. Supports archive/restore and explicit permanent deletion. Ordered by created_at.
 - **statuses**: workspace_id FK, name (unique per workspace), color (hex), **position
   INTEGER** — reorder is a full-array `PUT` of ordered ids (no fractional floats, no
   drift). New workspace seeds Backlog / In Progress / Done. Deleting a status with tasks
@@ -110,7 +114,7 @@ TEXT ULID PKs, INTEGER unix-ms timestamps, INTEGER 0/1 booleans.
   `task_id`, `before_id` (null = end), and optional `status_id`; it preserves all other tasks.
   Bulk updates validate up to 200 task IDs in one workspace, then commit all changes together.
   Add/remove tag deltas preserve unrelated tags. Each affected task gets its own audit event.
-  Archive only.
+  Supports archive/restore and permanent deletion.
 - **inbox_events**: an AUTOINCREMENT sequence and unique inbox-item FK. An insert trigger
   records notifications. Deleting an inbox item cascades its event but does not reuse its
   cursor. The watch endpoint pages forward after applying user/workspace permissions.
@@ -130,7 +134,7 @@ the caller's thread-scoped read changes share a transaction. Read-state audit ev
 private to the recipient/admin. Opening a deep link does not mutate inbox state.
 Read actions resolve any owned notification ID to its conversation and acknowledge all its
 current notifications. `updated` counts conversations. New replies make that item unread
-again. The web loads full comment threads on expansion, keeping the collapsed preview small.
+again. The web loads full comment threads when a header-only accordion is expanded.
 - **comments**: task_id FK, author_id, body (markdown), timestamps. Hard-delete allowed
   (author or admin); deletes its attachments' bytes too.
 - **attachments**: exactly-one-parent CHECK (task_id XOR comment_id), uploader_id,
@@ -138,6 +142,14 @@ again. The web loads full comment threads on expansion, keeping the collapsed pr
 
 Deletion is crash-consistent: DB row first (transaction), unlink after commit; a startup
 sweep removes upload files with no DB row.
+
+Task/workspace deletion removes the dependency graph in one transaction, including replies,
+inbox rows/events, mentions, links, field values, associations, and retired queue rows.
+Workspace deletion also removes definitions and access grants. File bytes are unlinked only
+after commit. A failed deletion preserves rows and files. Existing activity rows keep their
+actor/action/time; deleted task references become null with key/title snapshots. Deleted
+workspace and related cross-workspace history becomes admin-only because its membership
+can no longer be checked. Deleted task keys are displayed as text, never links to a reused key.
 
 ## API
 

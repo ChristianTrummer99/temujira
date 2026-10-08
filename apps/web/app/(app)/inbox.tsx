@@ -141,7 +141,7 @@ function InboxRow({ item, marking, onMarkRead }: { item: InboxConversation; mark
   const unread = item.read_at == null;
   const original = item.parent_comment ?? item.source_comment;
   const contentId = `inbox-thread-${item.thread_id}`;
-  const excerpt = (body: string) => body.replace(/\s+/g, ' ').trim();
+  const subject = original.body.split(/\r?\n/).find((line) => line.trim())?.replace(/^#+\s*/, '') ?? item.task_title;
 
   function open() {
     if (!parsed) return;
@@ -150,46 +150,36 @@ function InboxRow({ item, marking, onMarkRead }: { item: InboxConversation; mark
 
   return (
     <View testID={`inbox-item-${item.id}`} className="border-border bg-card overflow-hidden rounded-lg border">
+      <View className="flex-row items-center gap-1 px-2 py-1">
       <Pressable onPress={() => setExpanded((v) => !v)} accessibilityRole="button"
         accessibilityLabel={`Conversation on ${item.task_key}: ${item.task_title}`}
         accessibilityState={{ expanded }} aria-expanded={expanded} aria-controls={contentId}
-        className={`flex-row items-center gap-2 px-3 py-2 ${Platform.OS === 'web' ? 'hover:bg-accent/40' : ''}`}>
-        <View className="w-2">{unread ? <View className="bg-primary size-1.5 rounded-full" /> : null}</View>
-        <UserAvatar user={item.actor} className="size-6" textClassName="text-[10px]" />
-        <Icon as={item.kind === 'mention' ? AtSignIcon : ReplyIcon} className="text-muted-foreground size-3" />
-        <Text numberOfLines={1} className="min-w-0 flex-1 text-xs"><Text className="text-xs font-medium">{item.actor.name}</Text> · {item.task_title}</Text>
-        <Text className="text-muted-foreground font-mono text-[10px]">{item.task_key}</Text>
-        <Text className="text-muted-foreground text-[10px]">{formatRelative(item.created_at)}</Text>
+        className={`min-w-0 flex-1 flex-row items-center gap-2 rounded px-1 py-2 ${Platform.OS === 'web' ? 'hover:bg-accent/40' : ''}`}>
         <Icon as={expanded ? ChevronUpIcon : ChevronDownIcon} className="text-muted-foreground size-3.5" />
+        <View className="w-2">{unread ? <View className="bg-primary size-1.5 rounded-full" /> : null}</View>
+        <UserAvatar user={item.actor} className="size-5" textClassName="text-[9px]" />
+        <Icon as={item.kind === 'mention' ? AtSignIcon : ReplyIcon} className="text-muted-foreground size-3" />
+        <Text numberOfLines={1} className="min-w-0 flex-1 text-xs"><Text className="text-xs font-medium">{item.actor.name}</Text> · {subject}</Text>
+        <Text className="text-muted-foreground font-mono text-[10px]">{item.task_key}</Text>
+        <Text className="text-muted-foreground hidden text-[10px] sm:flex">{formatRelative(item.created_at)}</Text>
       </Pressable>
-
-      <View nativeID={contentId} className="px-3">
-        {expanded ? <InboxThread item={item} /> : (
-          <View testID={`inbox-preview-${item.thread_id}`} style={{ maxHeight: 100, overflow: 'hidden' }} className="gap-1 py-1">
-            <Text numberOfLines={item.parent_comment ? 2 : 3} className="text-sm leading-5">{excerpt(original.body)}</Text>
-            {original.question ? <Text numberOfLines={1} className="text-muted-foreground text-xs">
-              {original.question.options.length} options{original.question.answer_option_index !== null ? ` · Selected: ${original.question.options[original.question.answer_option_index]}` : ''}
-            </Text> : null}
-            {item.parent_comment ? <Text numberOfLines={2} className="text-muted-foreground text-xs leading-4"><Text className="text-xs font-medium leading-4">Latest reply: </Text>{excerpt(item.source_comment.body)}</Text> : null}
-          </View>
-        )}
-      </View>
-
-      <View className="flex-row flex-wrap items-center gap-1 px-2 py-1.5">
-        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2" onPress={() => setExpanded((v) => !v)}
-          accessibilityState={{ expanded }} aria-expanded={expanded} aria-controls={contentId}>
-          <Text className="text-xs">{expanded ? 'Show less' : 'Show more'}</Text>
-          <Icon as={expanded ? ChevronUpIcon : ChevronDownIcon} className="size-3" />
-        </Button>
-        <View className="flex-1" />
         <Button variant="ghost" size="sm" className="h-7 gap-1 px-2" accessibilityLabel={`Open comment on ${item.task_key}`} onPress={open}>
-          <Icon as={ExternalLinkIcon} className="size-3" /><Text className="text-xs">Open in ticket</Text>
+          <Icon as={ExternalLinkIcon} className="size-3" /><Text className="hidden text-xs sm:flex">Open in ticket</Text>
         </Button>
         {unread ? <Button variant="outline" size="sm" className="h-7 gap-1 px-2" disabled={!!marking}
           accessibilityLabel={`Mark conversation on ${item.task_key} as read`} onPress={onMarkRead}>
-          <Icon as={CheckCheckIcon} className="size-3" /><Text className="text-xs">{marking === item.id ? 'Marking...' : 'Mark read'}</Text>
+          <Icon as={CheckCheckIcon} className="size-3" /><Text className="hidden text-xs sm:flex">{marking === item.id ? 'Marking...' : 'Mark read'}</Text>
         </Button> : <Text className="text-muted-foreground px-2 text-xs">Read</Text>}
       </View>
+      {expanded ? <View nativeID={contentId} className="border-border border-t px-3 py-2">
+        <InboxThread item={item} />
+        {unread ? <View className="flex-row justify-end pt-2">
+          <Button variant="outline" size="sm" disabled={!!marking} onPress={onMarkRead}
+            accessibilityLabel={`Mark conversation on ${item.task_key} as read at end`}>
+            <Icon as={CheckCheckIcon} className="size-3" /><Text className="text-xs">{marking === item.id ? 'Marking...' : 'Mark read'}</Text>
+          </Button>
+        </View> : null}
+      </View> : null}
     </View>
   );
 }
@@ -198,6 +188,11 @@ function InboxRow({ item, marking, onMarkRead }: { item: InboxConversation; mark
  * responses. Notification summaries alone would hide intermediate replies. */
 function InboxThread({ item }: { item: InboxConversation }) {
   const { client } = useAuth();
+  const router = useRouter();
+  function open(commentId: string) {
+    const task = splitTaskKey(item.task_key);
+    if (task) router.push(`/w/${task.workspaceKey}/t/${task.number}?comment=${commentId}`);
+  }
   const resource = useResource(async () => {
     const { items } = await client.listComments(item.task_id);
     const root = items.find((comment) => comment.id === item.thread_id);
@@ -208,15 +203,22 @@ function InboxThread({ item }: { item: InboxConversation }) {
   if (resource.error) return <View className="gap-2 py-3"><Text className="text-destructive text-xs">{resource.error}</Text><Button variant="outline" size="sm" onPress={resource.reload}><Text>Retry</Text></Button></View>;
   if (!resource.data) return null;
   return <View className="gap-2 pb-2" testID={`inbox-conversation-${item.thread_id}`}>
-    <InboxComment comment={resource.data} label={`${resource.data.author.name} · Original message`} />
-    {resource.data.replies.map((reply) => <InboxComment key={reply.id} comment={reply} label={`${reply.author.name} · ${formatRelative(reply.created_at)}`} />)}
+    <InboxComment comment={resource.data} label={`${resource.data.author.name} · Original message`} onOpen={() => open(resource.data!.id)} />
+    {resource.data.replies.map((reply) => <InboxComment key={reply.id} comment={reply} label={`${reply.author.name} · ${formatRelative(reply.created_at)}`} onOpen={() => open(reply.id)} />)}
   </View>;
 }
 
 /** Full text and every option are readable here; no clipping or ticket navigation is needed. */
-function InboxComment({ comment, label }: { comment: Comment; label?: string }) {
+function InboxComment({ comment, label, onOpen }: { comment: Comment; label?: string; onOpen: () => void }) {
   return (
-    <View testID={`inbox-comment-${comment.id}`} className="border-border bg-card mt-1 min-w-0 gap-2 rounded-md border p-3">
+    <Pressable testID={`inbox-comment-${comment.id}`} accessibilityRole="link" accessibilityLabel={`Open message from ${comment.author.name}`}
+      onPress={(event) => {
+        if (Platform.OS === 'web') {
+          const anchor = (event.target as unknown as HTMLElement).closest?.('a');
+          if (anchor && anchor !== (event.currentTarget as unknown as HTMLElement)) return;
+        }
+        onOpen();
+      }} className="border-border bg-card hover:bg-accent/30 mt-1 min-w-0 gap-2 rounded-md border p-3">
       {label ? <Text className="text-muted-foreground text-xs font-medium">{label}</Text> : null}
       <Markdown mentionUsers={[]}>{comment.body}</Markdown>
       {comment.question ? (
@@ -234,6 +236,6 @@ function InboxComment({ comment, label }: { comment: Comment; label?: string }) 
           })}
         </View>
       ) : null}
-    </View>
+    </Pressable>
   );
 }

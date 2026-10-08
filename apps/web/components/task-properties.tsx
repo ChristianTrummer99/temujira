@@ -1,9 +1,9 @@
-import { TagPills } from '@/components/tag-pill';
+import { StatusPill, TagPills } from '@/components/tag-pill';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
 import { hasScope } from '@/lib/scopes';
@@ -27,9 +27,9 @@ export function TaskStatusControl({ task, statuses, onChanged, disabled = false 
       catch (e) { setError(e instanceof Error ? e.message : 'Could not change status'); }
       finally { setBusy(false); }
     }}>
-      <SelectTrigger disabled={disabled || busy || !hasScope(user, 'tasks:write')} accessibilityLabel={`Status for ${task.key}`} className="h-8 min-w-28 gap-2 border-transparent bg-transparent px-2 shadow-none">
-        <View style={{ backgroundColor: task.status.color }} className="size-2 shrink-0 rounded-full" />
-        <SelectValue placeholder="Status" className="text-xs" />
+      <SelectTrigger disabled={disabled || busy || !hasScope(user, 'tasks:write')} accessibilityLabel={`Status for ${task.key}`} iconClassName="size-3"
+        className="hover:bg-accent dark:hover:bg-accent h-7 max-w-52 gap-1 border-0 bg-transparent px-1 py-0 shadow-none sm:h-7 sm:py-0 dark:bg-transparent">
+        <StatusPill status={task.status} />
       </SelectTrigger>
       <SelectContent>{statuses.map((s) => <SelectItem key={s.id} value={s.id} label={s.name} />)}</SelectContent>
     </Select>
@@ -63,7 +63,7 @@ export function TaskTagsControl({ task, tags, onChanged, onTagsChanged, disabled
   }
   return <Popover>
     <PopoverTrigger asChild>
-      <Button variant="ghost" size="sm" disabled={disabled || !canWrite} accessibilityLabel={`Tags for ${task.key}`} className="h-8 max-w-64 gap-1 px-2">
+      <Button variant="ghost" size="sm" disabled={disabled || !canWrite} accessibilityLabel={`Tags for ${task.key}`} className="h-7 max-w-64 gap-1 px-1 sm:h-7">
         {showTags && task.tags.length ? <TagPills tags={task.tags.slice(0, 2)} /> : <Icon as={TagIcon} className="text-muted-foreground size-3.5" />}
         {!showTags ? <Text className="text-sm">Edit tags</Text> : null}
         {showTags && task.tags.length > 2 ? <Text className="text-muted-foreground text-xs">+{task.tags.length - 2}</Text> : null}

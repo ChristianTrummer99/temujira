@@ -358,6 +358,14 @@ export const ROUTES = {
     body: UpdateWorkspaceInputSchema,
     response: z.object({ workspace: WorkspaceSchema }),
   },
+  "workspaces.delete": {
+    method: "DELETE",
+    path: "/workspaces/:idOrKey",
+    auth: "user",
+    scope: "workspaces:manage",
+    summary: "Permanently delete a workspace and its tasks, comments, files and configuration",
+    response: okResponse,
+  },
 
   // ---- statuses ----
   "statuses.list": {
@@ -553,6 +561,14 @@ export const ROUTES = {
     summary: "Edit title/description, move status, (un)assign, archive/unarchive",
     body: UpdateTaskInputSchema,
     response: z.object({ task: TaskSchema }),
+  },
+  "tasks.delete": {
+    method: "DELETE",
+    path: "/tasks/:idOrKey",
+    auth: "user",
+    scope: "tasks:write",
+    summary: "Permanently delete a task, its comments, files, links and inbox notifications",
+    response: okResponse,
   },
 
   // ---- links ----

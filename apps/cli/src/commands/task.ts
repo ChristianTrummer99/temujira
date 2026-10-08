@@ -25,6 +25,7 @@ export const COMMAND_ROUTES = {
   "task assign": ["tasks.update", "users.list", "auth.me"],
   "task unassign": ["tasks.update"],
   "task archive": ["tasks.update"],
+  "task delete": ["tasks.delete"],
   "task unarchive": ["tasks.update"],
   // tasks.update claims the second, explicit call behind `task link --archive`.
   "task link": ["links.create", "tasks.update"],
@@ -240,6 +241,15 @@ async function resolveFieldValues(
 
 export function registerTask(program: Command): void {
   const task = program.command("task").description("Manage tasks");
+
+  task.command("delete").description("Permanently delete a task, its comments, files and links")
+    .argument("<idOrKey>", "task id or key")
+    .requiredOption("--yes", "confirm permanent deletion")
+    .action(async (idOrKey: string, _opts, cmd: Command) => {
+      const ctx = getCtx(cmd);
+      const result = await ctx.client.deleteTask(idOrKey);
+      emit(ctx.mode, { json: result, human: () => `Deleted task ${idOrKey}`, quiet: () => idOrKey });
+    });
 
   task
     .command("list")

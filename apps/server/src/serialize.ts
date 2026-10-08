@@ -245,17 +245,18 @@ export function asStringArray(json: string): string[] {
 }
 
 export function activityEventToApi(e: ActivityEventRow, actor: UserRow, task?: { key?: string; title?: string } | null): ActivityEvent {
+  const metadata = parseJsonRecord(e.metadata);
   return {
     id: e.id,
     workspace_id: e.workspaceId,
     visibility: e.visibility as ActivityEvent["visibility"],
     task_id: e.taskId,
-    task_key: e.taskId ? (task?.key ?? null) : null,
-    task_title: e.taskId ? (task?.title ?? null) : null,
+    task_key: e.taskId ? (task?.key ?? null) : typeof metadata.deleted_task_key === "string" ? metadata.deleted_task_key : null,
+    task_title: e.taskId ? (task?.title ?? null) : typeof metadata.deleted_task_title === "string" ? metadata.deleted_task_title : null,
     actor_id: e.actorId,
     actor: userToApi(actor),
     action: e.action,
-    metadata: parseJsonRecord(e.metadata),
+    metadata,
     created_at: e.createdAt,
   };
 }

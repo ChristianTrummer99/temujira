@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { UserAvatar } from '@/components/user-avatar';
+import { WorkspaceActions } from '@/components/workspace-actions';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -43,7 +44,8 @@ import { useAuth } from '@/lib/auth';
 import { hasScope } from '@/lib/scopes';
 import { InboxProvider, useInbox } from '@/lib/inbox';
 import { WorkspaceListProvider, useWorkspaceList } from '@/lib/workspaces';
-import { Slot, useGlobalSearchParams, usePathname, useRouter, type Href } from 'expo-router';
+import { Stack, useRouter, type Href } from 'expo-router';
+import { BackgroundRouteProvider, useBackgroundRoute } from '@/lib/background-route';
 import {
   ArchiveIcon,
   ActivityIcon,
@@ -72,6 +74,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+export const unstable_settings = { initialRouteName: 'index' };
 
 export default function AppLayout() {
   const { loading, user } = useAuth();
@@ -103,13 +107,17 @@ export default function AppLayout() {
   return (
     <WorkspaceListProvider>
       <InboxProvider>
+        <BackgroundRouteProvider>
         <SidebarProvider>
           <AppSidebar />
           <SidebarInset>
             <TopBar />
-            <Slot />
+            <Stack screenOptions={{ headerShown: false, animation: 'none' }}>
+              <Stack.Screen name="(ticket)" options={{ presentation: 'transparentModal', animation: 'none', contentStyle: { backgroundColor: 'transparent' } }} />
+            </Stack>
           </SidebarInset>
         </SidebarProvider>
+        </BackgroundRouteProvider>
       </InboxProvider>
     </WorkspaceListProvider>
   );
@@ -117,7 +125,7 @@ export default function AppLayout() {
 
 function AppSidebar() {
   const router = useRouter();
-  const pathname = usePathname();
+  const { pathname } = useBackgroundRoute();
   const { isMobile, setOpenMobile } = useSidebar();
   const { user, logout } = useAuth();
   const { workspaces, archived, reload } = useWorkspaceList();
@@ -220,9 +228,9 @@ function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {workspaces.filter(matchesWorkspace).map((workspace) => {
-                const isActive = pathname.startsWith(`/w/${workspace.key}`);
+                const isActive = pathname === `/w/${workspace.key}` || pathname.startsWith(`/w/${workspace.key}/`);
                 return (
-                  <SidebarMenuItem key={workspace.id}>
+                  <SidebarMenuItem key={workspace.id} testID={`workspace-row-${workspace.id}`} className="action-row">
                     <SidebarMenuButton
                       isActive={isActive}
                       onPress={() => navigate(`/w/${workspace.key}`)}>
@@ -234,10 +242,11 @@ function AppSidebar() {
                             : 'text-sidebar-foreground size-4'
                         }
                       />
-                      <Text numberOfLines={1} className="flex-1 pr-6">
+                      <Text numberOfLines={1} className="flex-1 pr-8">
                         {workspace.name}
                       </Text>
                     </SidebarMenuButton>
+                    <WorkspaceActions workspace={workspace} onChanged={reload} className="absolute right-1 top-0.5" />
                   </SidebarMenuItem>
                 );
               })}
@@ -271,15 +280,16 @@ function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {archived.filter(matchesWorkspace).map((workspace) => (
-                  <SidebarMenuItem key={workspace.id}>
+                  <SidebarMenuItem key={workspace.id} testID={`workspace-row-${workspace.id}`} className="action-row">
                     <SidebarMenuButton
-                      isActive={pathname.startsWith(`/w/${workspace.key}`)}
+                      isActive={pathname === `/w/${workspace.key}` || pathname.startsWith(`/w/${workspace.key}/`)}
                       onPress={() => navigate(`/w/${workspace.key}`)}>
                       <Icon as={ArchiveIcon} className="text-sidebar-foreground/70 size-4" />
-                      <Text numberOfLines={1} className="text-sidebar-foreground/70 flex-1 pr-6">
+                      <Text numberOfLines={1} className="text-sidebar-foreground/70 flex-1 pr-8">
                         {workspace.name}
                       </Text>
                     </SidebarMenuButton>
+                    <WorkspaceActions workspace={workspace} onChanged={reload} className="absolute right-1 top-0.5" />
                   </SidebarMenuItem>
                 ))}
                 {archived.filter(matchesWorkspace).length === 0 ? (
@@ -371,6 +381,7 @@ const SETTINGS_SECTION_TITLES: Record<string, string> = {
   profile: 'Profile',
   'api-keys': 'API Keys',
   users: 'Users',
+  access: 'Users & API keys',
   workspaces: 'Workspaces',
 };
 
@@ -419,8 +430,7 @@ function breadcrumbTrail(
 }
 
 function TopBar() {
-  const pathname = usePathname();
-  const params = useGlobalSearchParams<{ key?: string; num?: string }>();
+  const { pathname, params } = useBackgroundRoute();
   const router = useRouter();
   const { all } = useWorkspaceList();
 

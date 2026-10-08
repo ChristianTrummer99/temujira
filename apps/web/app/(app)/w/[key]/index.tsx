@@ -1,5 +1,6 @@
 import { EmptyState } from '@/components/empty-state';
 import { TaskStatusControl, TaskTagsControl } from '@/components/task-properties';
+import { TaskActions } from '@/components/task-actions';
 import { TaskDragHandle, TaskDropZone } from '@/components/task-drag';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TagPill } from '@/components/tag-pill';
@@ -446,6 +447,7 @@ export default function WorkspaceTasksScreen() {
               showOrder={canWrite && sort === 'position' && Platform.OS === 'web'}
               busy={busy}
               statuses={statuses}
+              users={users}
               tags={tags}
               selected={selected}
               onSelect={toggleSelection}
@@ -493,6 +495,7 @@ interface TaskGroupControls {
   showOrder: boolean;
   busy: boolean;
   statuses: Status[];
+  users: User[];
   tags: Tag[];
   selected: Set<string>;
   onSelect: (id: string) => void;
@@ -595,7 +598,7 @@ function TaskRow({
     <TaskDropZone enabled={controls.dragEnabled} onDrop={() => controls.onDrop(task.id)}><View
       testID={`task-row-${task.key}`}
       className={
-        'border-border flex-row items-center gap-2 px-3 py-2' +
+        'action-row border-border flex-row items-center gap-2 px-3 py-1' +
         (last ? '' : ' border-b') +
         (Platform.OS === 'web' ? ' hover:bg-accent/50 transition-colors' : '') +
         (controls.selected.has(task.id) ? ' bg-primary/5' : '') +
@@ -614,7 +617,7 @@ function TaskRow({
           <Text className="text-muted-foreground p-2 text-xs">Keyboard: Alt + ↑ / ↓</Text>
         </PopoverContent></Popover>
       </> : null}
-      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)} className="min-w-0 flex-1 flex-row flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
+      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)} className="min-w-0 flex-1 flex-row flex-wrap items-center gap-x-3 gap-y-1 py-1">
         <Text className="text-muted-foreground w-16 shrink-0 font-mono text-xs">{task.key}</Text>
         <Text numberOfLines={1} className="min-w-24 flex-1 text-sm">{task.title}</Text>
       </Pressable>
@@ -637,6 +640,7 @@ function TaskRow({
           <Text className="text-muted-foreground text-[10px]">-</Text>
         </View>
       )}</View>
+      <TaskActions task={task} users={controls.users} onChanged={controls.onChanged} />
     </View></TaskDropZone>
   );
 }

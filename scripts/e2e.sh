@@ -238,6 +238,12 @@ set -e
 [ "$RC1" = 3 ] || die "wrong password exit code: $RC1"
 [ "$RC2" = 4 ] || die "missing task exit code: $RC2"
 
+say "Permanent deletion through the CLI"
+tmj task delete "$T1" --yes --json | jq -e '.ok == true' >/dev/null || die "task delete"
+tmj task list --workspace ENG --json | jq -e '.total == 1' >/dev/null || die "deleted task still listed"
+tmj workspace delete ENG --yes --json | jq -e '.ok == true' >/dev/null || die "workspace delete"
+tmj workspace list --archived --json | jq -e '[.items[].key] | index("ENG") == null' >/dev/null || die "deleted workspace still listed"
+
 say "Web app is served"
 curl -fsS "http://localhost:$PORT/" | grep -qi "<html" || die "web root did not return HTML"
 curl -fsS "http://localhost:$PORT/api/v1/openapi.json" | jq -e '.openapi' >/dev/null || die "openapi"

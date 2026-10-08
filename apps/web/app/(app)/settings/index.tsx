@@ -11,7 +11,7 @@ import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
 import { hasScope } from '@/lib/scopes';
 import { useRouter } from 'expo-router';
-import { KeyRoundIcon, FolderCogIcon, UserIcon, UsersIcon } from 'lucide-react-native';
+import { FolderCogIcon, UserIcon, UsersIcon } from 'lucide-react-native';
 import { ScrollView, View, Pressable } from 'react-native';
 
 export default function SettingsIndexScreen() {
@@ -27,18 +27,11 @@ export default function SettingsIndexScreen() {
       visible: true,
     },
     {
-      to: '/settings/api-keys',
-      title: 'API Keys',
-      desc: 'Create and revoke keys for the CLI and agents',
-      icon: KeyRoundIcon,
-      visible: true,
-    },
-    {
-      to: '/settings/users',
-      title: 'Users',
-      desc: 'Manage teammates, agent accounts, and their access',
+      to: '/settings/access',
+      title: 'Users & API keys',
+      desc: 'Find accounts, manage access, and create or revoke keys',
       icon: UsersIcon,
-      visible: hasScope(user, 'users:manage'),
+      visible: true,
     },
     {
       to: '/settings/workspaces',

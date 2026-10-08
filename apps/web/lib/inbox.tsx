@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useAuth } from './auth';
+import { useResourceRevision } from './invalidation';
 
 export interface InboxState {
   /** Unread conversations across all workspaces (drives the sidebar badge). */
@@ -20,6 +21,7 @@ const POLL_MS = 15_000;
  */
 export function InboxProvider({ children }: { children: React.ReactNode }) {
   const { client, user } = useAuth();
+  const revision = useResourceRevision();
   const [unread, setUnread] = React.useState(0);
   const [version, setVersion] = React.useState('');
   const activeUser = React.useRef(user?.id);
@@ -47,6 +49,8 @@ export function InboxProvider({ children }: { children: React.ReactNode }) {
     }, POLL_MS);
     return () => clearInterval(id);
   }, [refresh]);
+
+  React.useEffect(() => { void refresh(); }, [revision, refresh]);
 
   const value = React.useMemo<InboxState>(() => ({ unread, version, refresh }), [unread, version, refresh]);
 

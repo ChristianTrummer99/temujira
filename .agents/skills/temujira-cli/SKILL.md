@@ -340,6 +340,10 @@ Pay particular attention to:
 - `comment delete`: hard-deletes the comment; deleting a root also deletes replies and
   related attachments/notifications.
 - `attach delete`: permanently deletes metadata and stored bytes.
+- `task delete <idOrKey> --yes`: permanently removes a task, comments/replies, files,
+  links, and notifications. Requires `tasks:write` and workspace access.
+- `workspace delete <idOrKey> --yes`: permanently removes the workspace, all its tasks
+  and related content, settings, and grants. Requires `workspaces:manage` and access.
 - `inbox read` without an ID marks all accessible conversations read. An explicit inbox ID
   resolves that whole conversation, including its earlier unread notifications.
 - Status and field reorders: require a fresh, complete list of all relevant IDs.
@@ -351,8 +355,9 @@ an empty value, and migrate those tasks explicitly. A temporary union of old and
 options can keep a multi-step migration resumable; narrow to the final options only after
 all values have been verified.
 
-Tasks and workspaces use reversible archive/unarchive operations; prefer those over trying
-to invent deletion through the raw API.
+Use archive/unarchive for reversible removal. Permanent task/workspace deletion requires an
+explicit `--yes` and has no undo. Read the target first and verify its identity. Audit history
+is retained with deleted-resource labels; deleted workspace history is admin-only.
 
 ## Use raw API only as an escape hatch
 
