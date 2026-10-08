@@ -112,6 +112,11 @@ email/password authentication, API key management, and every feature below marke
 - **FR-59** The inbox Decisions filter shows unanswered multiple-choice conversations.
   Filtering precedes counts and pagination. Mark all read uses the same filter across all
   pages and respects current access. The API and CLI expose the same filter.
+- **FR-60** Browser attachment-enabled text editors accept images from a paste event:
+  task descriptions, new-task descriptions, comments, replies, and comment edits. Add images
+  without replacing text or earlier files. Keep normal text/link paste. Use existing upload
+  permissions and limits; show progress and retry failures. Multiple pending files survive
+  draft restore as file names, and successful uploads are excluded from retries.
 
 ### Task list presentation
 

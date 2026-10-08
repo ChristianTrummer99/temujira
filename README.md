@@ -132,6 +132,18 @@ select the file again after a refresh or app restart. If text was posted but the
 failed, **Retry attachment** uploads to that existing message. It does not post the text
 again. **Cancel attachment** leaves the posted message in place.
 
+In the browser, paste an image with **Cmd+V** (Mac) or **Ctrl+V** (Windows/Linux) into a task
+description, new-task description, comment, reply, or comment edit. The image is added as
+an attachment. Each paste adds files to the list and keeps the existing text and files.
+Text and link paste still work as before. No general clipboard permission is required.
+
+New comments, replies, and tasks upload their pending files when submitted. An image-only
+comment or reply uses its file names as the message text. Pasting into an existing task
+description or comment edit uploads immediately to that task or comment. Failed uploads
+have a retry control. A batch retry sends only the files that have not yet uploaded.
+Native apps keep the file picker; clipboard image paste requires a browser that supplies
+image files in paste events.
+
 ```sh
 tmj activity list --category replies --category files --workspace ENG --json
 ```

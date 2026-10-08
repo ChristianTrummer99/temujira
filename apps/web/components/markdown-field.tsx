@@ -1,7 +1,8 @@
 import { Markdown } from '@/components/markdown';
+import { AttachmentPaste } from '@/components/attachment-paste';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import type { User } from '@temujira/client';
+import type { UploadInput, User } from '@temujira/client';
 import * as React from 'react';
 import { View } from 'react-native';
 
@@ -11,11 +12,15 @@ export function MarkdownField({
   mentionUsers,
   children,
   label = 'Markdown',
+  onPasteFiles,
+  pasteDisabled,
 }: {
   value: string;
   mentionUsers?: User[];
   children: React.ReactNode;
   label?: string;
+  onPasteFiles?: (files: UploadInput[]) => void;
+  pasteDisabled?: boolean;
 }) {
   const [preview, setPreview] = React.useState(false);
   return (
@@ -40,7 +45,7 @@ export function MarkdownField({
           <Text className="text-xs">Preview</Text>
         </Button>
       </View>
-      <View style={preview ? { display: 'none' } : undefined}>{children}</View>
+      <View style={preview ? { display: 'none' } : undefined}><AttachmentPaste onFiles={onPasteFiles} disabled={pasteDisabled}>{children}</AttachmentPaste></View>
       {preview ? (
         <View className="border-border min-h-20 min-w-0 rounded-md border p-3">
           {value.trim() ? (

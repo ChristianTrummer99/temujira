@@ -24,6 +24,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { Textarea } from '@/components/ui/textarea';
 import { MarkdownField } from '@/components/markdown-field';
+import { ComposerAttachments } from '@/components/composer-attachments';
+import { usePendingAttachments, type AttachmentDraft } from '@/lib/pending-attachments';
 import { useAuth } from '@/lib/auth';
 import { hasScope } from '@/lib/scopes';
 import { DEFAULT_GROUP_BY, groupTasks, type GroupBy, type TaskGroup } from '@/lib/group-tasks';
@@ -314,7 +316,7 @@ export default function WorkspaceTasksScreen() {
           <SelectTrigger size="sm" accessibilityLabel="Group tasks"><SelectValue placeholder="Group by status" /></SelectTrigger>
           <SelectContent>{groupOptions.map((o) => <SelectItem key={o.value} value={o.value} label={o.label} />)}</SelectContent>
         </Select>
-        <NewTaskDialog workspaceKey={workspaceKey} statuses={statuses} users={users} tags={tags} fields={fields} onCreated={() => resource.reload()} />
+        <NewTaskDialog key={`${me?.id}:${workspaceKey}`} workspaceKey={workspaceKey} statuses={statuses} users={users} tags={tags} fields={fields} onCreated={() => resource.reload()} />
         </View>
         {showFilters ? <View className="bg-muted/30 flex-row flex-wrap items-center gap-2 rounded-lg p-3">
         <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -664,6 +666,9 @@ function NewTaskDialog({
   const [open, setOpen] = React.useState(false);
   const [title, setTitle] = React.useState('');
   const [description, setDescription] = React.useState('');
+  const [attachments, setAttachments] = React.useState<AttachmentDraft[]>([]);
+  const queue = usePendingAttachments(attachments, setAttachments);
+  const [createdId, setCreatedId] = React.useState<string | null>(null);
   const [statusOption, setStatusOption] = React.useState<Option>(undefined);
   const [assigneeOption, setAssigneeOption] = React.useState<Option>(undefined);
   const [tagIds, setTagIds] = React.useState<string[]>([]);
@@ -672,6 +677,7 @@ function NewTaskDialog({
   const [error, setError] = React.useState<string | null>(null);
 
   function close() {
+    if (submitting) return;
     setOpen(false);
     setFieldValues({});
     setError(null);
@@ -682,18 +688,24 @@ function NewTaskDialog({
   }
 
   async function onCreate() {
-    if (submitting || !title.trim()) return;
+    if (submitting || (!createdId && !title.trim()) || queue.missingFiles) return;
     setSubmitting(true);
     setError(null);
+    let taskId = createdId;
     try {
-      await client.createTask(workspaceKey, {
-        title: title.trim(),
-        description: description.trim(),
-        status_id: statusOption?.value,
-        assignee_id: assigneeOption?.value ?? undefined,
-        tag_ids: tagIds.length > 0 ? tagIds : undefined,
-        field_values: Object.keys(fieldValues).length > 0 ? fieldValues : undefined,
-      });
+      if (!taskId) {
+        const { task } = await client.createTask(workspaceKey, {
+          title: title.trim(),
+          description: description.trim(),
+          status_id: statusOption?.value,
+          assignee_id: assigneeOption?.value ?? undefined,
+          tag_ids: tagIds.length > 0 ? tagIds : undefined,
+          field_values: Object.keys(fieldValues).length > 0 ? fieldValues : undefined,
+        });
+        taskId = task.id; setCreatedId(taskId);
+      }
+      await queue.uploadAll((file) => client.uploadTaskAttachment(taskId!, file));
+      queue.clear(); setCreatedId(null);
       setTitle('');
       setDescription('');
       setStatusOption(undefined);
@@ -703,7 +715,8 @@ function NewTaskDialog({
       setOpen(false);
       onCreated();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create task');
+      setError(taskId ? `Task created, but the file upload failed: ${e instanceof Error ? e.message : 'Upload failed'}` : e instanceof Error ? e.message : 'Failed to create task');
+      if (taskId) onCreated();
     } finally {
       setSubmitting(false);
     }
@@ -714,7 +727,7 @@ function NewTaskDialog({
       {hasScope(me, 'tasks:write') ? (
         <Button onPress={() => setOpen(true)}>
           <Icon as={PlusIcon} className="text-primary-foreground size-4" />
-          <Text>New task</Text>
+          <Text>{createdId ? 'Finish task attachments' : 'New task'}</Text>
         </Button>
       ) : null}
 
@@ -749,26 +762,30 @@ function NewTaskDialog({
                 </Text>
               </View>
 
+              {!createdId ? <>
               <View className="gap-1.5">
                 <Label nativeID="task-title-label">Title</Label>
                 <Input
                   aria-labelledby="task-title-label"
                   placeholder="Short summary of the task"
                   value={title}
+                  editable={!submitting && !createdId}
                   onChangeText={setTitle}
                 />
               </View>
 
               <View className="gap-1.5">
                 <Label nativeID="task-description-label">Description</Label>
-                <MarkdownField value={description} mentionUsers={users} label="new task description">
+                <MarkdownField value={description} mentionUsers={users} label="new task description" onPasteFiles={queue.add} pasteDisabled={submitting || !!createdId || !hasScope(me, 'tasks:write')}>
                   <Textarea
                     aria-labelledby="task-description-label"
                     placeholder="Add more context (supports markdown)..."
                     value={description}
+                    editable={!submitting && !createdId}
                     onChangeText={setDescription}
                   />
                 </MarkdownField>
+                <ComposerAttachments queue={queue} label="new task" disabled={submitting} />
               </View>
 
               <View className="flex-row gap-3">
@@ -842,14 +859,19 @@ function NewTaskDialog({
                 </View>
               ) : null}
 
-              {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
+              </> : <View className="gap-3">
+                <Text role="status" className="text-sm">Task created. Finish the remaining attachments here.</Text>
+                <ComposerAttachments queue={queue} label="new task" disabled={submitting} />
+              </View>}
+
+              {error ? <Text role="alert" className="text-destructive text-sm">{error}</Text> : null}
 
               <View className="flex-row justify-end gap-2 pt-2">
                 <Button variant="outline" onPress={close}>
                   <Text>Cancel</Text>
                 </Button>
-                <Button onPress={onCreate} disabled={submitting || !title.trim()}>
-                  <Text>{submitting ? 'Creating...' : 'Create task'}</Text>
+                <Button onPress={onCreate} disabled={submitting || (!createdId && !title.trim()) || queue.missingFiles}>
+                  <Text>{submitting ? 'Saving...' : createdId ? queue.items.length ? 'Retry attachments' : 'Done' : 'Create task'}</Text>
                 </Button>
               </View>
             </ScrollView>

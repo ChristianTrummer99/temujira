@@ -1,14 +1,16 @@
+import type { AttachmentDraft } from './pending-attachments';
+
 export interface MessageDraft {
   body: string;
   mentionIds: string[];
   asQuestion: boolean;
   options: string[];
-  attachmentName: string;
+  attachments: AttachmentDraft[];
   replyTo: string | null;
   postedCommentId: string | null;
   open: boolean;
 }
-export const emptyMessageDraft = (): MessageDraft => ({ body: '', mentionIds: [], asQuestion: false, options: ['', ''], attachmentName: '', replyTo: null, postedCommentId: null, open: false });
+export const emptyMessageDraft = (): MessageDraft => ({ body: '', mentionIds: [], asQuestion: false, options: ['', ''], attachments: [], replyTo: null, postedCommentId: null, open: false });
 
 type MaybePromise<T> = T | Promise<T>;
 export interface DraftStorage {
@@ -36,10 +38,13 @@ function decode(raw: string | null): MessageDraft | null {
     if (envelope?.version !== 1 || !data || typeof data.body !== 'string' || data.body.length > 1_000_000 ||
       !Array.isArray(data.mentionIds) || data.mentionIds.length > 1000 || !data.mentionIds.every((id: unknown) => typeof id === 'string') ||
       !Array.isArray(data.options) || data.options.length > 50 || !data.options.every((s: unknown) => typeof s === 'string') ||
-      typeof data.asQuestion !== 'boolean' || typeof data.open !== 'boolean' || typeof data.attachmentName !== 'string' ||
+      typeof data.asQuestion !== 'boolean' || typeof data.open !== 'boolean' ||
       !(data.replyTo === null || typeof data.replyTo === 'string') ||
       !(data.postedCommentId == null || typeof data.postedCommentId === 'string')) return null;
-    return { body: data.body, mentionIds: data.mentionIds, asQuestion: data.asQuestion, options: data.options, attachmentName: data.attachmentName, replyTo: data.replyTo, postedCommentId: data.postedCommentId ?? null, open: data.open };
+    // Keep drafts from the original one-file composer readable.
+    const attachments = data.attachments ?? (typeof data.attachmentName === 'string' && data.attachmentName ? [{ id: 'legacy-attachment', filename: data.attachmentName }] : []);
+    if (!Array.isArray(attachments) || attachments.length > 1000 || !attachments.every((item: AttachmentDraft) => item && typeof item.id === 'string' && typeof item.filename === 'string') || new Set(attachments.map((item: AttachmentDraft) => item.id)).size !== attachments.length) return null;
+    return { body: data.body, mentionIds: data.mentionIds, asQuestion: data.asQuestion, options: data.options, attachments: attachments.map(({ id, filename }: AttachmentDraft) => ({ id, filename })), replyTo: data.replyTo, postedCommentId: data.postedCommentId ?? null, open: data.open };
   } catch { return null; }
 }
 
@@ -49,7 +54,7 @@ export function ownsDraft(raw: string | null, writer: string, original: string |
   try { return !!raw && JSON.parse(raw)?.writer === writer; } catch { return false; }
 }
 
-const hasContent = (d: MessageDraft) => !!(d.body.length || d.mentionIds.length || d.asQuestion || d.options.some(Boolean) || d.attachmentName || d.open || d.postedCommentId);
+const hasContent = (d: MessageDraft) => !!(d.body.length || d.mentionIds.length || d.asQuestion || d.options.some(Boolean) || d.attachments.length || d.open || d.postedCommentId);
 
 /** Writes happen on edits, not in a render/unmount effect. Web writes are synchronous,
  * so even an immediate reload retains the last keystroke. Native I/O is queued by key. */

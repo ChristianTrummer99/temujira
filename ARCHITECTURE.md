@@ -219,6 +219,14 @@ comment ID in the draft. Upload retries use that ID; refresh requires file selec
 Composers are keyed by draft identity so selected in-memory files cannot cross accounts or
 tasks. Draft-store and async-adapter tests cover restore, failure, and clear ordering.
 
+Attachment-enabled `MarkdownField` editors capture image files from browser paste events
+before CodeMirror/contenteditable sees them. Read event items, with a files-list fallback,
+without clipboard polling, HTML image URL fetching, or inline data URLs. Native renderers
+skip the DOM wrapper. New comments/replies/tasks keep a multi-file pending list and remove
+each completed upload before attempting the next. Draft decoding accepts the older single
+file name format. Existing tasks/comment edits upload immediately with per-file retries.
+Functional task attachment updates keep concurrent paste and picker uploads visible.
+
 ## Deployment
 
 - **Dev**: `pnpm dev` → server :3000 (tsx watch) + Expo dev server :8081 with

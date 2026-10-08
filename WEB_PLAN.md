@@ -87,7 +87,7 @@ propagation if the row also navigates on web). The create dialog gains tag toggl
   refetches. Answered → chosen option filled with a check, all disabled, "Answered" caption.
 - Web descriptions use Atomic/CodeMirror; native descriptions use a text input. Description
   mentions do **not** notify (task updates have no `mention_ids`).
-- Root/reply composers share `MessageComposer` and `ComposerAttachment`. Comment, reply,
+- Root/reply composers share `MessageComposer` and `ComposerAttachments`. Comment, reply,
   and edit drafts save on each change, under server/account/immutable-ID keys. Web storage
   is synchronous; native AsyncStorage operations are ordered per key. Restore text,
   mentions, question options, reply target, and file name. Require file selection again after
@@ -157,6 +157,13 @@ users list (Inbox) pass `mentionUsers={[]}` — chips render inert, task links s
 Web upload uses a hidden `<input type="file">`; the `File` is a `Blob` passed to the typed
 upload client. Comment/reply composers use `expo-document-picker` on native, passing a
 cached file URI to React Native FormData. Draft storage retains only the file name.
+
+`MarkdownField` accepts an attachment-paste handler. Its web capture wrapper intercepts image
+files before the editor handles paste; non-image paste follows the normal editor path.
+Comments, replies, and new-task descriptions keep multiple pending files. Uploads remove each
+success from the queue before proceeding, retaining the parent ID for retry. Existing task
+descriptions and comment-edit fields upload immediately and show progress/errors in the field.
+Paste does not replace the selected text, fetch HTML images, or request clipboard permissions.
 
 **Download is currently broken** — `attachmentUrl`/`downloadAttachment` in `t/[num].tsx`
 point a bare `<a href>` at the API with no Authorization header, so it 401s in dev and

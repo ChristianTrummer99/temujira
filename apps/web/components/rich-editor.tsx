@@ -1011,6 +1011,7 @@ function WebRichEditor({
           if (!editable) return;
           const el = rootRef.current;
           const text = e.clipboardData.getData('text/plain');
+          if (!text) return; // image-only paste outside an attachment-enabled field must not delete a selection
           if (el) {
             const sel = getSelOffsets(el);
             const url = text.trim();

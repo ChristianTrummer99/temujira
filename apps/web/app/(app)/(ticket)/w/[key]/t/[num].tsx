@@ -10,8 +10,10 @@ import { ActivityFeed } from '@/components/activity-feed';
 import { TaskStatusControl, TaskTagsControl } from '@/components/task-properties';
 import { TaskActions } from '@/components/task-actions';
 import { MessageComposer } from '@/components/message-composer';
+import { AttachmentUploads, useAttachmentUploads } from '@/components/attachment-uploads';
 import { DraftStatus } from '@/components/draft-status';
 import { useMessageDraft } from '@/lib/use-message-draft';
+import { hasScope } from '@/lib/scopes';
 import { RichEditor } from '@/components/rich-editor';
 import { TagPill } from '@/components/tag-pill';
 import { UserInfoDialog } from '@/components/user-info-dialog';
@@ -199,6 +201,13 @@ export default function TaskDetailScreen() {
     [resource]
   );
 
+  // Uploaded files use a functional update so simultaneous pastes cannot lose a file.
+  function appendTaskAttachment(attachment: Attachment) {
+    resource.setData((previous) => previous?.task.id === attachment.task_id ? {
+      ...previous, task: { ...previous.task, attachments: [...(previous.task.attachments ?? []), attachment] },
+    } : previous);
+  }
+
   // Structural comment changes (create/reply/answer/delete) run server side effects —
   // mentions, inbox rows, activity — so we always reload the thread instead of patching.
   const reloadComments = React.useCallback(async () => {
@@ -331,7 +340,7 @@ export default function TaskDetailScreen() {
 
           <TagEditor task={task} tags={tags} onChanged={setTask} />
 
-          <InlineDescriptionEditor task={task} users={users} onChanged={setTask} />
+          <InlineDescriptionEditor key={task.id} task={task} users={users} onChanged={setTask} onAttachment={appendTaskAttachment} />
 
           <FieldsSection task={task} fields={fields} onChanged={setTask} />
 
@@ -339,6 +348,7 @@ export default function TaskDetailScreen() {
 
           <TaskAttachments
             task={task}
+            onUploaded={appendTaskAttachment}
             currentUserId={currentUser?.id ?? ''}
             onChanged={setTask}
             onPreview={setPreviewAtt}
@@ -754,12 +764,15 @@ function InlineDescriptionEditor({
   task,
   users,
   onChanged,
+  onAttachment,
 }: {
   task: Task;
   users: User[];
   onChanged: (t: TaskUpdate) => void;
+  onAttachment: (attachment: Attachment) => void;
 }) {
-  const { client } = useAuth();
+  const { client, user } = useAuth();
+  const uploads = useAttachmentUploads((file) => client.uploadTaskAttachment(task.id, file), onAttachment);
   const { status, schedule, flush } = useAutosave(task.description ?? '', async (text, isCurrent) => {
     const { task: updated } = await client.updateTask(task.id, { description: text });
     if (isCurrent()) onChanged({ id: task.id, description: updated.description, updated_at: updated.updated_at });
@@ -772,7 +785,7 @@ function InlineDescriptionEditor({
         <AutoSaveStatus status={status} />
       </View>
       <View className="border-border bg-card gap-2 rounded-md border p-1.5">
-        <MarkdownField value={task.description ?? ''} mentionUsers={users} label="description">
+        <MarkdownField value={task.description ?? ''} mentionUsers={users} label="description" onPasteFiles={uploads.add} pasteDisabled={!hasScope(user, 'tasks:write')}>
           <DescriptionEditor
             documentId={task.id}
             value={task.description ?? ''}
@@ -786,8 +799,9 @@ function InlineDescriptionEditor({
             className="min-h-32"
           />
         </MarkdownField>
+        <AttachmentUploads uploads={uploads} />
         <Text className="text-muted-foreground px-2 pb-1 text-[11px]">
-          Markdown supported · @ to mention · auto-saves
+          Markdown supported · @ to mention · auto-saves{Platform.OS === 'web' ? ' · paste images to attach' : ''}
         </Text>
       </View>
     </View>
@@ -1064,11 +1078,13 @@ function TaskAttachments({
   currentUserId,
   onChanged,
   onPreview,
+  onUploaded,
 }: {
   task: Task;
   currentUserId: string;
   onChanged: (t: Task) => void;
   onPreview: (a: Attachment) => void;
+  onUploaded: (attachment: Attachment) => void;
 }) {
   const { client } = useAuth();
   const [uploading, setUploading] = React.useState(false);
@@ -1091,7 +1107,7 @@ function TaskAttachments({
         filename: f.name,
         contentType: f.type,
       });
-      onChanged({ ...task, attachments: [...attachments, attachment] });
+      onUploaded(attachment);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -1485,13 +1501,16 @@ function CommentCard({
   focused?: boolean;
   focusRef?: React.RefObject<View | null>;
 }) {
-  const { client } = useAuth();
+  const { client, user } = useAuth();
   const canModify = currentUserId === comment.author_id || currentUserIsAdmin;
   const editDraft = useMessageDraft(`edit:${comment.task_id}:${comment.id}`);
   const editing = canModify && editDraft.data.open;
   const editBody = editDraft.data.body;
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const uploads = useAttachmentUploads((file) => client.uploadCommentAttachment(comment.id, file), () => {
+    void onReload().catch(() => setError('File uploaded. Refresh the ticket to load it.'));
+  });
 
   async function onSaveEdit() {
     if (saving || !editBody.trim()) return;
@@ -1568,9 +1587,10 @@ function CommentCard({
         </View>
         {editing ? (
           <View className="gap-2">
-            <MarkdownField value={editBody} mentionUsers={users} label="edited comment">
+            <MarkdownField value={editBody} mentionUsers={users} label="edited comment" onPasteFiles={uploads.add} pasteDisabled={saving || !hasScope(user, 'tasks:write')}>
               <Textarea value={editBody} onChangeText={(body) => editDraft.update({ body })} editable={!saving} className="min-h-20" />
             </MarkdownField>
+            {Platform.OS === 'web' ? <Text className="text-muted-foreground text-xs">Pasted images are attached to this comment immediately.</Text> : null}
             <View className="flex-row justify-end">
               <Button size="sm" disabled={saving || !editBody.trim()} onPress={onSaveEdit}>
                 <Text>Save</Text>
@@ -1584,6 +1604,7 @@ function CommentCard({
           </Markdown>
         )}
         {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
+        <AttachmentUploads uploads={uploads} />
         {comment.attachments.length > 0 ? (
           <View className="mt-1 flex-row flex-wrap gap-1.5">
             {comment.attachments.map((a) => (

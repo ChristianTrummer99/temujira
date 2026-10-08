@@ -16,7 +16,7 @@ describe('message drafts', () => {
     const { storage, values } = memory();
     const draft = new MessageDraftStore('comment', storage);
     expect(values.size).toBe(0); // loading an empty field must not write a blank draft
-    draft.update({ body: 'Review @Ada\n\nDetails', mentionIds: ['person-id'], asQuestion: true, options: ['Yes', 'No'], attachmentName: 'review.txt' });
+    draft.update({ body: 'Review @Ada\n\nDetails', mentionIds: ['person-id'], asQuestion: true, options: ['Yes', 'No'], attachments: [{ id: 'a', filename: 'review.txt' }] });
     expect(values.has('comment')).toBe(true);
     const restored = new MessageDraftStore('comment', storage).getSnapshot();
     expect(restored).toMatchObject({ ready: true, restored: true, hasDraft: true, status: 'saved' });
@@ -66,7 +66,18 @@ describe('message drafts', () => {
   it('restores a pending attachment upload without restoring already-posted text', () => {
     const { storage } = memory();
     const draft = new MessageDraftStore('reply', storage);
-    draft.update({ body: '', attachmentName: 'proof.txt', postedCommentId: 'posted-comment', replyTo: 'parent', open: true });
-    expect(new MessageDraftStore('reply', storage).getSnapshot().data).toMatchObject({ body: '', postedCommentId: 'posted-comment', attachmentName: 'proof.txt', open: true });
+    draft.update({ body: '', attachments: [{ id: 'a', filename: 'proof.txt' }], postedCommentId: 'posted-comment', replyTo: 'parent', open: true });
+    expect(new MessageDraftStore('reply', storage).getSnapshot().data).toMatchObject({ body: '', postedCommentId: 'posted-comment', attachments: [{ id: 'a', filename: 'proof.txt' }], open: true });
+  });
+  it('migrates one-file drafts and restores multiple remaining uploads', () => {
+    const { storage, values } = memory();
+    new MessageDraftStore('reply', storage).update({ body: 'Existing draft' });
+    const old = JSON.parse(values.get('reply')!);
+    delete old.data.attachments; old.data.attachmentName = 'legacy.png';
+    values.set('reply', JSON.stringify(old));
+    const restored = new MessageDraftStore('reply', storage);
+    expect(restored.getSnapshot().data.attachments).toEqual([{ id: 'legacy-attachment', filename: 'legacy.png' }]);
+    restored.update({ attachments: [{ id: 'b', filename: 'second.png' }, { id: 'c', filename: 'third.png' }], postedCommentId: 'already-posted' });
+    expect(new MessageDraftStore('reply', storage).getSnapshot().data).toMatchObject({ postedCommentId: 'already-posted', attachments: [{ id: 'b', filename: 'second.png' }, { id: 'c', filename: 'third.png' }] });
   });
 });
