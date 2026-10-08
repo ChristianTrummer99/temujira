@@ -17,6 +17,8 @@ mutations, with global/workspace feeds and a ticket-level Activity tab. Markdown
 support CommonMark and GitHub-flavored tables, nested lists, checklists, strikethrough,
 autolinks and footnotes, with Write/Preview controls in composers.
 File previews open almost full screen, with space around the edges to click and close.
+Activity uses compact single-line rows and action filter pills. Select a row to read its
+full details. Multiple pills combine their action groups.
 
 > **The contract:** every action available in the web UI is also available via the API and
 > the CLI. Agents authenticate with API keys and work tickets exactly like humans do.
@@ -79,7 +81,7 @@ tmj comment add --task ENG-42 --body "Ship it today or tomorrow?" \
 tmj comment add --task ENG-42 --body "Tomorrow" --reply-to <question-id> --answer 1
 
 tmj inbox list          # mentions and replies aimed at you, across every workspace
-tmj inbox read <itemId> # intentionally clear one notification (ID from inbox list)
+tmj inbox read <itemId> # clear one conversation (inbox ID from inbox list)
 tmj inbox read          # mark them all read
 tmj task mine           # active tasks you created, were assigned, commented on or were mentioned in
 tmj activity list --workspace ENG --mine
@@ -92,12 +94,22 @@ An agent's loop is usually: `tmj inbox list --json` → work the task → `tmj c
 → `tmj task move`. Replies are one level deep (replying to a reply targets its root), so
 threads stay flat enough to reason about.
 
-Opening an inbox item keeps it unread and opens the exact source comment in the ticket.
-The inbox shows the full comment and all question options. Replies also show the original
-comment or question, including the selected answer when available.
-Use the item's **Mark read** button to clear it. When the recipient replies in a thread
+The inbox shows **one item per conversation**, with a short preview capped at 100 pixels.
+**Show more** expands the original comment, all question options, and the full reply thread;
+**Show less** collapses it. **Open in ticket** jumps to the latest incoming comment.
+Expanding or opening a conversation keeps it unread. Its **Mark read** button clears all
+its current notifications. When the recipient replies in a thread
 (including an answer to a question), their existing notifications in that thread become
-read. Other threads and other recipients are not cleared. New responses arrive unread.
+read. Other threads and other recipients are not cleared. New responses update the same
+inbox item and make it unread again. The unread badge counts conversations, not replies.
+Inbox totals and pagination also count conversations, before applying the page limit.
+
+```sh
+tmj activity list --category replies --category files --workspace ENG --json
+```
+
+Activity categories are `tasks`, `comments`, `replies`, `mentions`, `assignments`, `files`,
+`links`, `settings`, and `accounts`. Categories combine with other filters and permissions.
 
 ### Profile pictures
 

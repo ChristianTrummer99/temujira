@@ -65,7 +65,7 @@ export function registerInbox(program: Command): void {
 
   inbox
     .command("list")
-    .description("List inbox items, newest first (unread only unless --all)")
+    .description("List inbox conversations, newest first (unread only unless --all)")
     .option("--all", "include items you have already read")
     .option("--limit <n>", "page size (max 200)", nonNegativeInt("--limit"))
     .option("--offset <n>", "page offset", nonNegativeInt("--offset"))
@@ -94,7 +94,7 @@ export function registerInbox(program: Command): void {
                 excerpt(i.source_comment.body),
               ]),
             );
-            const notes = [`${res.unread} unread`];
+            const notes = [`${res.unread} unread conversations`];
             if (res.total > res.items.length) {
               notes.push(
                 `showing ${res.offset + 1}-${res.offset + res.items.length} of ${res.total}`,
@@ -109,7 +109,7 @@ export function registerInbox(program: Command): void {
 
   inbox
     .command("read")
-    .description("Mark one inbox item read; omit the id to mark all accessible items read")
+    .description("Mark a conversation read; omit the id to mark all accessible conversations read")
     .argument("[itemId]", "inbox item id from `inbox list`, not a comment id")
     .action(async (itemId: string | undefined, _opts: Record<string, never>, cmd: Command) => {
       if (itemId !== undefined && !isUlid(itemId)) {
@@ -119,7 +119,7 @@ export function registerInbox(program: Command): void {
       const res = itemId !== undefined ? await ctx.client.markInboxItemRead(itemId) : await ctx.client.markInboxRead({ mark_read: true });
       emit(ctx.mode, {
         json: res,
-        human: () => `marked ${res.updated} inbox item${res.updated === 1 ? "" : "s"} read`,
+        human: () => `marked ${res.updated} conversation${res.updated === 1 ? "" : "s"} read`,
         quiet: () => undefined,
       });
     });

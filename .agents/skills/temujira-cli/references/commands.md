@@ -303,6 +303,7 @@ matching descriptions, comments and attachments.
 ```text
 tmj activity list [--workspace <workspaceIdOrKey>] [--task <taskIdOrKey>]
                   [--actor <userId>] [--action <action>] [--mine]
+                  [--category <group>]...
                   [--limit <n>] [--offset <n>]
 
 tmj inbox list [--all] [--limit <n>] [--offset <n>]
@@ -319,6 +320,11 @@ Read requests and failed mutations do not add success events. Existing history i
 previously unlogged actions cannot be reconstructed retroactively. Passwords, key tokens and
 session secrets are never written to activity metadata.
 
+Repeat `--category` to combine action groups: `tasks`, `comments`, `replies`, `mentions`,
+`assignments`, `files`, `links`, `settings`, `accounts`. Groups combine with OR. Other filters
+combine with AND. The API uses comma-separated `categories` and supports these filters on
+global, workspace, and ticket feeds. Filtering occurs before pagination and counts.
+
 Workspace activity requires current workspace access. Private account/key/inbox
 events are visible to their owner and admins; user-administration events are admin-only.
 Cross-workspace link events require access to both ends. Permissions are applied before
@@ -327,16 +333,26 @@ pagination/counting, including ticket feeds. Global/ticket responses include
 
 `activity list --mine` means events on tasks associated with the
 current user, not only actions performed by that user. Inbox defaults to unread;
-`--all` includes read items. `inbox read <itemId>` marks one item read (the inbox ID, not
-the source comment ID). Without an ID, it marks all items in accessible workspaces read.
+`--all` includes read conversations. `inbox read <itemId>` marks a whole conversation read
+(use an inbox ID, not the source/root comment ID). Without an ID, it marks all accessible
+conversations read. The response's `updated` count is the number of conversations changed.
 Reading or opening items never marks them read. A successful reply or question answer
 marks only the replying user's existing notifications in that thread read. Notifications
 for other threads and other users stay unchanged. New responses start unread.
+
+Inbox `items`, `total`, `unread`, `limit`, and `offset` now describe conversations, grouped
+before pagination. `thread_id` identifies the root comment. `id` comes from the oldest
+retained notification in that conversation; `source_comment`, `actor`, `kind`, and
+`created_at` describe the latest notification. `read_at` is null if any notification in the
+conversation is unread. New replies update that same item. Any retained notification ID can
+acknowledge the conversation. Use `comment list --task <taskId>` for its complete replies.
 
 `inbox watch` starts now by default. `--after 0` replays retained events, including read
 items; `--once` drains all pages and exits. Poll interval is 1–300 seconds (default 5), page
 size 1–200 (default 100). Each poll applies current permissions. Output does not mark read.
 NDJSON uses `notification` records with `cursor,item` and `checkpoint` records with `cursor`.
+The watcher is a per-notification stream, not the grouped inbox list. A new reply still
+gets its own event. Replies that also mention the same recipient send one notification.
 Cursor files are server/user-bound and mode 0600. Advance happens after output succeeds;
 deduplicate by inbox item ID after restart. Deleted items cannot be replayed. Temporary
 failures retry with capped backoff; authentication errors exit. Ctrl+C stops cleanly.

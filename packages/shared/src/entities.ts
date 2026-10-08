@@ -328,6 +328,13 @@ export const InboxItemSchema = z.object({
 });
 export type InboxItem = z.infer<typeof InboxItemSchema>;
 
+/** One visible inbox item per recipient/conversation. The latest notification supplies
+ * source_comment, actor and created_at; id is the oldest retained notification's id. */
+export const InboxConversationSchema = InboxItemSchema.extend({
+  thread_id: UlidSchema,
+});
+export type InboxConversation = z.infer<typeof InboxConversationSchema>;
+
 // ---------- custom field definitions ----------
 
 /**
@@ -552,7 +559,7 @@ export const InboxEventSchema = z.object({ cursor: z.number().int(), item: Inbox
 export type InboxEvent = z.infer<typeof InboxEventSchema>;
 
 export const UpdateInboxQuerySchema = z.object({
-  /** Mark all of the current user's inbox items as read. */
+  /** Mark all accessible conversations for the current user as read. */
   mark_read: QueryBoolSchema,
 });
 
@@ -607,7 +614,28 @@ export const ListTasksQuerySchema = z.object({
 
 export const ListTagsQuerySchema = z.object({});
 
+/** Shared by the API, CLI and filter pills; multiple groups are combined with OR. */
+export const ACTIVITY_CATEGORIES = [
+  { id: "tasks", label: "Tasks", actions: ["task.created", "task.updated", "task.reordered"] },
+  { id: "comments", label: "Comments", actions: ["comment.created", "comment.updated", "comment.deleted"] },
+  { id: "replies", label: "Replies", actions: ["comment.replied"] },
+  { id: "mentions", label: "Mentions", actions: ["comment.mentioned"] },
+  { id: "assignments", label: "Assignments", actions: ["task.assigned", "task.unassigned"] },
+  { id: "files", label: "Files", actions: ["attachment.uploaded", "attachment.deleted"] },
+  { id: "links", label: "Links", actions: ["task.linked", "task.unlinked"] },
+  { id: "settings", label: "Settings", actions: ["workspace.created", "workspace.updated", "status.created", "status.updated", "status.deleted", "statuses.reordered", "tag.created", "tag.updated", "tag.deleted", "field.created", "field.updated", "field.deleted", "fields.reordered"] },
+  { id: "accounts", label: "Accounts", actions: ["instance.initialized", "auth.signed_in", "auth.signed_out", "profile.updated", "user.created", "user.updated", "user.deactivated", "api_key.created", "api_key.revoked", "identity.acquired", "identity.released", "avatar.updated", "avatar.removed", "inbox.read", "queue.added", "queue.state_changed", "queue.removed", "queue.reordered"] },
+] as const;
+export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number]["id"];
+export const ACTIVITY_CATEGORY_IDS = ACTIVITY_CATEGORIES.map((category) => category.id);
+
 export const ListActivityQuerySchema = z.object({
+  action: z.string().trim().min(1).max(100).optional(),
+  /** Comma-separated action groups. Counts/pagination use the same filter. */
+  categories: z.string().min(1).max(200).refine(
+    (value) => value.split(",").every((id) => ACTIVITY_CATEGORY_IDS.includes(id as ActivityCategory)),
+    "unknown activity category",
+  ).optional(),
   /** Filter to the current user's associated tasks when true (my activity). */
   mine: QueryBoolSchema,
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -618,7 +646,6 @@ export const ListGlobalActivityQuerySchema = ListActivityQuerySchema.extend({
   workspace: z.string().trim().min(1).optional(),
   task: z.string().trim().min(1).optional(),
   actor_id: UlidSchema.optional(),
-  action: z.string().trim().min(1).max(100).optional(),
 });
 
 export const ListMyTasksQuerySchema = z.object({

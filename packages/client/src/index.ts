@@ -12,6 +12,7 @@ import {
   type FieldDef,
   type FieldType,
   type InboxItem,
+  type InboxConversation,
   type InboxEvent,
   type BulkUpdateTasksInput,
   type ReorderTaskInput,
@@ -504,13 +505,13 @@ export class TemujiraClient {
   search(query: { q: string; workspace?: string; type?: "all" | "task" | "comment" | "attachment"; include_archived?: boolean; limit?: number; offset?: number }) {
     return this.call("search.query", {}, { query }) as Promise<{ items: SearchResult[]; total: number; limit: number; offset: number }>;
   }
-  listGlobalActivity(query: { workspace?: string; task?: string; actor_id?: string; action?: string; mine?: boolean; limit?: number; offset?: number } = {}) {
+  listGlobalActivity(query: { workspace?: string; task?: string; actor_id?: string; action?: string; categories?: string; mine?: boolean; limit?: number; offset?: number } = {}) {
     return this.call("activity.global", {}, { query }) as Promise<{ items: ActivityEvent[]; total: number; limit: number; offset: number }>;
   }
-  listTaskActivity(task: string, query: { mine?: boolean; limit?: number; offset?: number } = {}) {
+  listTaskActivity(task: string, query: { action?: string; categories?: string; mine?: boolean; limit?: number; offset?: number } = {}) {
     return this.call("activity.task", { idOrKey: task }, { query }) as Promise<{ items: ActivityEvent[]; total: number; limit: number; offset: number }>;
   }
-  listActivity(workspace: string, query: { mine?: boolean; limit?: number; offset?: number } = {}) {
+  listActivity(workspace: string, query: { action?: string; categories?: string; mine?: boolean; limit?: number; offset?: number } = {}) {
     return this.call("activity.list", { idOrKey: workspace }, { query }) as Promise<{ items: ActivityEvent[] }>;
   }
 
@@ -520,7 +521,7 @@ export class TemujiraClient {
   }
   listInbox(query: { include_read?: boolean; limit?: number; offset?: number } = {}) {
     return this.call("inbox.list", {}, { query }) as Promise<{
-      items: InboxItem[];
+      items: InboxConversation[];
       unread: number;
       total: number;
       limit: number;
@@ -614,4 +615,5 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
 export type { ActivityEvent, SearchResult, ApiKey, Attachment, Comment, FieldDef, FieldType, InboxItem, LinkRelation, Status, Tag, Task, TaskLink, User, Workspace, RouteId };
 export { ROUTES, buildPath };
 export type { BulkUpdateTasksInput, ReorderTaskInput, InboxEvent };
+export type { InboxConversation };
 export { z };

@@ -203,11 +203,24 @@ It emits read and unread notifications without marking them read. Current user/w
 permissions apply on every poll. Send messages with comments and `--mention`, or replies.
 
 Reading the inbox or opening a ticket does not mark notifications read. Use
-`tmj inbox read <itemId> --json` to clear one item, using its inbox ID from `inbox list`.
-Omitting the ID marks all accessible items read. A successful reply, including a question
+`tmj inbox read <itemId> --json` to clear one conversation, using its inbox ID from `inbox list`.
+Omitting the ID marks all accessible conversations read. A successful reply, including a question
 answer, marks the replying user's existing notifications in that thread read. Other threads
 and recipients stay unchanged; later incoming responses start unread. Reply to the actual
 source comment ID to notify that comment's author, even when it is a nested reply.
+
+`inbox list` returns one item per conversation. `items`, `total`, and `unread` use conversation
+counts. The item keeps a stable `id` from its oldest retained notification; `thread_id` is
+the root comment ID, and `source_comment` is the latest incoming message. Read all replies
+with `comment list --task <taskId>` and select the root matching `thread_id`. Any retained
+notification ID, including an ID from the watcher, can mark its conversation read.
+The watcher still emits individual notifications, so grouping does not hide new messages
+from monitors. Stored notification history is retained.
+
+Activity supports action groups via repeated `--category` flags, for example
+`tmj activity list --category replies --category files --json`. Groups combine with OR;
+workspace, task, actor, exact action, and permission filters still apply. See the reference
+for category names. The web uses the same categories for its filter pills.
 
 `--json` emits NDJSON: `{type:"notification",cursor,item}` and `{type:"checkpoint",cursor}`.
 Use `--after` or `--cursor-file`, not both. Cursor files are bound to the server and user,
@@ -327,8 +340,8 @@ Pay particular attention to:
 - `comment delete`: hard-deletes the comment; deleting a root also deletes replies and
   related attachments/notifications.
 - `attach delete`: permanently deletes metadata and stored bytes.
-- `inbox read` without an ID marks all accessible inbox items read. Prefer an explicit ID
-  when resolving only one notification.
+- `inbox read` without an ID marks all accessible conversations read. An explicit inbox ID
+  resolves that whole conversation, including its earlier unread notifications.
 - Status and field reorders: require a fresh, complete list of all relevant IDs.
 - `apikey revoke` and `user deactivate`: immediately stop affected credentials.
 

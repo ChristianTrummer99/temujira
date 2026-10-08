@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useAuth } from './auth';
 
 export interface InboxState {
-  /** Unread inbox items across all workspaces (drives the sidebar badge). */
+  /** Unread conversations across all workspaces (drives the sidebar badge). */
   unread: number;
   /** Changes when a new item arrives or unread/total counts change. */
   version: string;
@@ -31,7 +31,8 @@ export function InboxProvider({ children }: { children: React.ReactNode }) {
       const res = await client.listInbox({ limit: 1, include_read: true });
       if (activeUser.current !== user.id) return;
       setUnread(res.unread ?? 0);
-      setVersion(`${user.id}:${res.items[0]?.id ?? ''}:${res.unread}:${res.total}`);
+      const latest = res.items[0];
+      setVersion(`${user.id}:${latest?.id ?? ''}:${latest?.source_comment.id ?? ''}:${latest?.source_comment.updated_at ?? ''}:${latest?.parent_comment?.updated_at ?? ''}:${res.unread}:${res.total}`);
     } catch {
       // keep the previous count
     }

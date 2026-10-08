@@ -88,22 +88,21 @@ propagation if the row also navigates on web). The create dialog gains tag toggl
 - Description editing stays a plain textarea: description mentions render as links but do
   **not** notify (the contract has no `mention_ids` on task update — do not expand it).
 
-**Inbox** (`inbox.tsx`): Unread/All tabs (`include_read`), "Mark all read" →
-`markInboxRead()` then refetch + badge refresh. Rows show an unread dot, kind icon/badge
-(mention vs reply), workspace badge, task key + title, actor and relative time, and a
-markdown preview of the source comment. Pressing a row opens
-`/w/{workspace.key}/t/{number}?comment={source_comment.id}`, reveals its thread, and scrolls
-to that comment without marking it read. Each unread row has a Mark read button backed by
-`inbox.markRead`. A recipient's successful reply clears their existing notifications in that
-thread. Empty: "You're all caught up."
+**Inbox** (`inbox.tsx`): Unread/All tabs over server-grouped conversations, one item per
+recipient/thread. The badge, totals, and pages count conversations. Previews are capped at
+100 px. Show more/Show less controls expand the full original comment, choices, and replies,
+loaded through `comments.list`. Expansion is read-only. Open in ticket links to
+`/w/{workspace.key}/t/{number}?comment={source_comment.id}`. Mark read resolves the item's
+ID to the whole conversation. New replies update the existing item and make it unread again.
 
 **My Tasks** (`my.tsx`): `listMyTasks`, rows like task rows plus a workspace badge derived
 from `task.key`, navigating cross-workspace.
 
-**Activity** (`w/[key]/activity.tsx`): `listActivity` with an All/Mine tab driving `mine`.
-Rows read "**{actor}** {label(action)} {TASK-KEY}" with a relative timestamp and a link to
-the task. Build `label()` by grepping the landed `recordActivity(` call sites for the exact
-action strings, with a fallback prettifier (`action.replace(/[._]/g, " ")`).
+**Activity** (global, workspace, ticket): full-width content with small side gutters.
+Use 28 px rows, 11 px summary text, 16 px avatars, inline timestamps and task links.
+Full change values remain available through the row's detail popover. Multi-select action
+pills use the shared category definitions and server-side filters. Clear filters with All;
+reset pagination when a filter changes. Workspace/task permissions apply before counts.
 
 **Settings**: `users.tsx` hides create/promote/demote/deactivate for non-admins (the list
 itself stays visible) and gains a per-row "mint API key" action reusing the token-shown-once

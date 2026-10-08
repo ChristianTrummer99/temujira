@@ -199,7 +199,7 @@ describe("replies", () => {
     expect(forBob?.parent_comment?.id).toBe(root.id);
   });
 
-  it("a reply that also mentions the root author yields two items (one per kind)", async () => {
+  it("a reply that also mentions the root author sends one notification", async () => {
     const root = await post(alice.token, task.id, { body: "root for double" });
     const reply = await post(bob.token, task.id, {
       body: "@Alice Eng replying and mentioning",
@@ -207,12 +207,14 @@ describe("replies", () => {
       mention_ids: [alice.userId],
     });
     const items = (await inbox(alice.token)).items.filter((i) => i.source_comment.id === reply.id);
-    expect(items.map((i) => i.kind).sort()).toEqual(["mention", "reply"]);
+    expect(items.map((i) => i.kind)).toEqual(["reply"]);
+    expect(t.ctx.sqlite.prepare("SELECT count(*) AS c FROM inbox_items WHERE user_id=? AND source_comment_id=?")
+      .get(alice.userId, reply.id)).toEqual({ c: 1 });
   });
 });
 
 describe("pushInbox dedupe (called directly)", () => {
-  it("is idempotent per (user, kind, source comment)", async () => {
+  it("is idempotent per user and source comment, including different kinds", async () => {
     const root = await post(alice.token, task.id, { body: "dedupe source" });
     const count = () =>
       (
@@ -236,12 +238,12 @@ describe("pushInbox dedupe (called directly)", () => {
     pushInbox(t.ctx.db, opts);
     expect(count()).toBe(1);
 
-    // A different kind for the same source is a separate item.
+    // A different kind for the same source must not send a second notification.
     pushInbox(t.ctx.db, { ...opts, kind: "reply" });
     const replies = t.ctx.sqlite
       .prepare("SELECT count(*) AS c FROM inbox_items WHERE user_id = ? AND source_comment_id = ? AND kind = 'reply'")
       .get(bob.userId, root.id) as { c: number };
-    expect(replies.c).toBe(1);
+    expect(replies.c).toBe(0);
   });
 
   it("never self-notifies the actor", async () => {

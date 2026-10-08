@@ -1,6 +1,7 @@
-import { and, count, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { z } from "zod";
 import type { ListActivityQuerySchema, ListGlobalActivityQuerySchema } from "@temujira/shared";
+import { ACTIVITY_CATEGORIES } from "@temujira/shared";
 import { accessibleWorkspaceIds, workspaceScopeWhere } from "../access";
 import { activityEvents, taskAssociations, tasks, users, workspaces } from "../db/schema";
 import { activityEventToApi, type UserRow } from "../serialize";
@@ -37,6 +38,11 @@ export function activityHandlers(ctx: AppContext): Pick<Handlers, "activity.list
     if (taskRef) conds.push(eq(activityEvents.taskId, requireTask(ctx.db, taskRef, user).task.id));
     if (q.actor_id) conds.push(eq(activityEvents.actorId, q.actor_id));
     if (q.action) conds.push(eq(activityEvents.action, q.action));
+    if (q.categories) {
+      const selected = new Set(q.categories.split(","));
+      const actions = [...new Set(ACTIVITY_CATEGORIES.filter((category) => selected.has(category.id)).flatMap((category) => [...category.actions]))];
+      conds.push(inArray(activityEvents.action, actions));
+    }
     if (q.mine) conds.push(sql`EXISTS (SELECT 1 FROM ${taskAssociations}
       WHERE ${taskAssociations.taskId}=${activityEvents.taskId} AND ${taskAssociations.userId}=${user.id})`);
     const where = and(...conds);

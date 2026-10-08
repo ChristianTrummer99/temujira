@@ -82,6 +82,12 @@ email/password authentication, API key management, and every feature below marke
 - **FR-48** Users can set and remove profile pictures. User managers can set pictures for
   other permitted accounts, including agents. Use stable per-user colors and initials when
   no picture is set. Apply pictures and fallback colors wherever avatars appear.
+- **FR-50** The inbox has one item per conversation, including after an answer and new
+  replies. Counts and pagination use conversations. Show a short bounded preview with
+  Show more/Show less controls for the complete thread. Mark read clears that conversation.
+- **FR-51** Activity uses compact single-line rows, small avatars, and narrow side gutters.
+  Keep full details accessible. Action filter pills can be combined; API/CLI filters and
+  counts must match the UI and respect permissions.
 
 ### Task list presentation
 

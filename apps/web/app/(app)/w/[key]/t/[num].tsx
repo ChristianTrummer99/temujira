@@ -303,7 +303,7 @@ export default function TaskDetailScreen() {
           ref={scrollRef}
           testID="task-content-scroll"
           className="flex-1">
-          <View ref={contentRef} collapsable={false} className={`${expanded ? 'mx-auto w-full max-w-3xl' : ''} gap-6 p-5`}>
+          <View ref={contentRef} collapsable={false} className={`${expanded && discussionTab === 'comments' ? 'mx-auto w-full max-w-3xl' : 'w-full'} gap-6 p-5`}>
           <InlineTitleEditor task={task} onChanged={setTask} mentions={users} />
 
           <View className="flex-row flex-wrap gap-6">

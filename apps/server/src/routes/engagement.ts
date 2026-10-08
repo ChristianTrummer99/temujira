@@ -89,14 +89,13 @@ export function pushInbox(
     for (const userId of opts.userIds) {
       // Don't self-notify the actor.
       if (userId === opts.actorId) continue;
-      // Dedupe: one inbox row per (user, kind, source comment).
+      // A reply that also mentions its recipient is one notification, not two.
       const existing = tx
         .select()
         .from(inboxItems)
         .where(
           and(
             eq(inboxItems.userId, userId),
-            eq(inboxItems.kind, opts.kind),
             eq(inboxItems.sourceCommentId, opts.sourceCommentId),
           ),
         )
@@ -119,4 +118,3 @@ export function pushInbox(
     }
   });
 }
-

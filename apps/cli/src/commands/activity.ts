@@ -1,8 +1,10 @@
 import type { Command } from "commander";
 import type { RouteId } from "@temujira/shared";
+import { ACTIVITY_CATEGORY_IDS, type ActivityCategory } from "@temujira/shared";
 import { getCtx } from "../context";
 import { emit, table, truncate, ts } from "../output";
-import { nonNegativeInt } from "../util";
+import { collect, nonNegativeInt } from "../util";
+import { CliError, EXIT_CODES } from "../exit";
 
 export const COMMAND_ROUTES = {
   "activity list": ["activity.list", "activity.global", "activity.task"],
@@ -13,6 +15,7 @@ interface ActivityListOpts {
   task?: string;
   actor?: string;
   action?: string;
+  category: string[];
   mine?: boolean;
   limit?: number;
   offset?: number;
@@ -28,13 +31,18 @@ export function registerActivity(program: Command): void {
     .option("--task <idOrKey>", "ticket id or key")
     .option("--actor <userId>", "filter by actor")
     .option("--action <action>", "filter by exact action (e.g. comment.updated)")
+    .option("--category <group>", `action group (${ACTIVITY_CATEGORY_IDS.join(", ")}; repeatable)`, collect, [] as string[])
     .option("--mine", "only events on tasks you are associated with")
     .option("--limit <n>", "page size (max 200)", nonNegativeInt("--limit"))
     .option("--offset <n>", "page offset", nonNegativeInt("--offset"))
     .action(async (opts: ActivityListOpts, cmd: Command) => {
+      if (opts.category.some((id) => !ACTIVITY_CATEGORY_IDS.includes(id as ActivityCategory))) {
+        throw new CliError(`unknown activity category; use ${ACTIVITY_CATEGORY_IDS.join(", ")}`, EXIT_CODES.usage);
+      }
       const ctx = getCtx(cmd);
       const query: NonNullable<Parameters<typeof ctx.client.listActivity>[1]> = {};
       if (opts.mine) query.mine = true;
+      if (opts.category.length) query.categories = [...new Set(opts.category)].join(",");
       if (opts.limit !== undefined) query.limit = opts.limit;
       if (opts.offset !== undefined) query.offset = opts.offset;
       const res = opts.task && !opts.workspace && !opts.actor && !opts.action

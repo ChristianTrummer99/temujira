@@ -117,10 +117,20 @@ TEXT ULID PKs, INTEGER unix-ms timestamps, INTEGER 0/1 booleans.
   Omitted cursor starts now; zero replays retained items, including read notifications.
 - **queue_entries**: retired. Keep the table and existing rows; no supported routes use it.
 
-Inbox read state changes only through explicit per-item/all-item read actions or a
+Inbox reads use a permission-filtered window-query projection: one item per user/thread,
+where the thread is `coalesce(parent_comment_id, source_comment_id)`. The oldest retained
+notification supplies the stable item ID; the latest supplies the displayed message.
+Grouping happens before unread filtering, totals, and pagination. Raw notification rows
+remain intact for cursor polling. New writes deduplicate by user/source comment, so a reply
+that also mentions its recipient does not send two notifications.
+
+Inbox read state changes only through explicit conversation/all-conversation read actions or a
 successful reply by the notification recipient. Reply insertion, question answers, and
 the caller's thread-scoped read changes share a transaction. Read-state audit events are
 private to the recipient/admin. Opening a deep link does not mutate inbox state.
+Read actions resolve any owned notification ID to its conversation and acknowledge all its
+current notifications. `updated` counts conversations. New replies make that item unread
+again. The web loads full comment threads on expansion, keeping the collapsed preview small.
 - **comments**: task_id FK, author_id, body (markdown), timestamps. Hard-delete allowed
   (author or admin); deletes its attachments' bytes too.
 - **attachments**: exactly-one-parent CHECK (task_id XOR comment_id), uploader_id,
@@ -140,6 +150,11 @@ list). `{items, total, limit, offset}` pagination (limit ≤ 200); errors
 **Downloads**: authenticated stream, `X-Content-Type-Options: nosniff` always,
 `Content-Disposition: attachment` for everything except an inline safelist (`image/*`
 minus SVG, `application/pdf`) — closes stored-XSS-via-uploaded-HTML on the cookie origin.
+
+Activity action categories are declared in the shared contract and used by API filtering,
+CLI `--category`, and web pills. Category selections use OR; other filters and visibility
+rules use AND before counts/pagination. Dense rows show one-line summaries; a popover keeps
+full change values accessible when a summary is too long for the viewport.
 
 ## CLI
 

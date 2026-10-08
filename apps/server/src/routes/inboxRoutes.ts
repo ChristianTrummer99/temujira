@@ -1,6 +1,6 @@
-import { and, asc, count, desc, eq, gt, isNull, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
-import type { InboxItem, ListInboxQuerySchema, UpdateInboxQuerySchema, WatchInboxQuerySchema } from "@temujira/shared";
+import type { InboxConversation, ListInboxQuerySchema, UpdateInboxQuerySchema, WatchInboxQuerySchema } from "@temujira/shared";
 import { accessibleWorkspaceIds, workspaceScopeWhere } from "../access";
 import { inboxEvents, inboxItems, tasks, users, workspaces } from "../db/schema";
 import { notFound, validationError } from "../errors";
@@ -8,6 +8,8 @@ import { inboxItemToApi } from "../serialize";
 import { now } from "../util";
 import { loadCommentsById } from "./commentSerialize";
 import { currentUser, query, type AppContext, type Handlers } from "./types";
+
+const threadId = sql<string>`coalesce(${inboxItems.parentCommentId}, ${inboxItems.sourceCommentId})`;
 
 export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "inbox.update" | "inbox.watch" | "inbox.markRead"> {
   return {
@@ -18,10 +20,12 @@ export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "i
         eq(inboxItems.userId, user.id),
         workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user)),
       );
-      if (!ctx.db.select({ id: inboxItems.id }).from(inboxItems).where(where).get()) throw notFound("inbox item");
+      const item = ctx.db.select({ threadId }).from(inboxItems).where(where).get();
+      if (!item) throw notFound("inbox item");
       const result = ctx.db.update(inboxItems).set({ readAt: now() })
-        .where(and(where, isNull(inboxItems.readAt))).run();
-      return c.json({ ok: true as const, updated: result.changes });
+        .where(and(eq(inboxItems.userId, user.id), eq(threadId, item.threadId), isNull(inboxItems.readAt),
+          workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user)))).run();
+      return c.json({ ok: true as const, updated: result.changes ? 1 : 0 });
     },
     "inbox.watch": (c) => {
       const user = currentUser(c);
@@ -51,32 +55,36 @@ export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "i
       return c.json({ items, cursor: has_more ? page[page.length - 1]!.sequence : high, has_more });
     },
     /**
-     * The current user's unified, cross-workspace inbox: newest first, unread only unless
-     * `include_read=1`. `unread` counts ALL of the user's unread rows, not just this page.
+     * Group before filtering/paging so neither duplicates nor split pages inflate the
+     * inbox. Retain raw notification rows for the cursor-based event stream and history.
      */
     "inbox.list": (c) => {
       const user = currentUser(c);
       const q = query<z.infer<typeof ListInboxQuerySchema>>(c);
-      // Scoped users never see inbox rows for workspaces they can't access (badge included).
       const wsScope = workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user));
-      const conds: (SQL | undefined)[] = [eq(inboxItems.userId, user.id), wsScope];
-      if (!q.include_read) conds.push(isNull(inboxItems.readAt));
-      const where = and(...conds);
-      const total = ctx.db.select({ c: count() }).from(inboxItems).where(where).get()?.c ?? 0;
-      const unread =
-        ctx.db
-          .select({ c: count() })
-          .from(inboxItems)
-          .where(and(eq(inboxItems.userId, user.id), isNull(inboxItems.readAt), wsScope))
-          .get()?.c ?? 0;
-      const rows = ctx.db
-        .select({ item: inboxItems, actor: users, workspace: workspaces, task: tasks })
-        .from(inboxItems)
+      const conversations = ctx.db.$with("inbox_conversations").as(ctx.db.select({
+        latestId: inboxItems.id,
+        threadId: threadId.as("thread_id"),
+        // Stable while retained: a new reply updates this row instead of making a second card.
+        id: sql<string>`first_value(${inboxItems.id}) OVER (PARTITION BY ${threadId} ORDER BY ${inboxItems}.rowid)`.as("conversation_id"),
+        rank: sql<number>`row_number() OVER (PARTITION BY ${threadId} ORDER BY ${inboxItems.createdAt} DESC, ${inboxItems}.rowid DESC)`.as("latest_rank"),
+        unread: sql<number>`sum(CASE WHEN ${inboxItems.readAt} IS NULL THEN 1 ELSE 0 END) OVER (PARTITION BY ${threadId})`.as("thread_unread"),
+        readAt: sql<number | null>`max(${inboxItems.readAt}) OVER (PARTITION BY ${threadId})`.as("thread_read_at"),
+      }).from(inboxItems).where(and(eq(inboxItems.userId, user.id), wsScope)));
+      const where = and(eq(conversations.rank, 1), q.include_read ? undefined : gt(conversations.unread, 0));
+      const total = ctx.db.with(conversations).select({ n: count() }).from(conversations).where(where).get()!.n;
+      const unread = ctx.db.with(conversations).select({ n: count() }).from(conversations)
+        .where(and(eq(conversations.rank, 1), gt(conversations.unread, 0))).get()!.n;
+      const rows = ctx.db.with(conversations)
+        .select({ item: inboxItems, actor: users, workspace: workspaces, task: tasks,
+          id: conversations.id, threadId: conversations.threadId, unread: conversations.unread, readAt: conversations.readAt })
+        .from(conversations)
+        .innerJoin(inboxItems, eq(conversations.latestId, inboxItems.id))
         .innerJoin(users, eq(inboxItems.actorId, users.id))
         .innerJoin(workspaces, eq(inboxItems.workspaceId, workspaces.id))
         .innerJoin(tasks, eq(inboxItems.taskId, tasks.id))
         .where(where)
-        .orderBy(desc(inboxItems.createdAt), desc(inboxItems.id))
+        .orderBy(desc(inboxItems.createdAt), sql`${inboxItems}.rowid DESC`)
         .limit(q.limit)
         .offset(q.offset)
         .all();
@@ -87,14 +95,15 @@ export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "i
       );
       const byId = loadCommentsById(ctx.db, commentIds);
 
-      const items: InboxItem[] = [];
+      const items: InboxConversation[] = [];
       for (const r of rows) {
         const source = byId.get(r.item.sourceCommentId);
         if (!source) continue; // defensive: comment deletion cleans its inbox rows up
         const parent = r.item.parentCommentId ? (byId.get(r.item.parentCommentId) ?? null) : null;
-        items.push(
-          inboxItemToApi(r.item, r.actor, r.workspace, r.task, r.workspace.key, source, parent),
-        );
+        items.push({
+          ...inboxItemToApi(r.item, r.actor, r.workspace, r.task, r.workspace.key, source, parent),
+          id: r.id, thread_id: r.threadId, read_at: r.unread > 0 ? null : r.readAt,
+        });
       }
       return c.json({ items, unread, total, limit: q.limit, offset: q.offset });
     },
@@ -104,13 +113,15 @@ export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "i
       const user = currentUser(c);
       const q = query<z.infer<typeof UpdateInboxQuerySchema>>(c);
       if (!q.mark_read) return c.json({ ok: true as const, updated: 0 });
-      const res = ctx.db
+      const where = and(eq(inboxItems.userId, user.id), isNull(inboxItems.readAt),
+        workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user)));
+      const updated = ctx.db.select({ n: sql<number>`count(DISTINCT ${threadId})` }).from(inboxItems).where(where).get()!.n;
+      ctx.db
         .update(inboxItems)
         .set({ readAt: now() })
-        .where(and(eq(inboxItems.userId, user.id), isNull(inboxItems.readAt),
-          workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user))))
+        .where(where)
         .run();
-      return c.json({ ok: true as const, updated: res.changes });
+      return c.json({ ok: true as const, updated });
     },
   };
 }
