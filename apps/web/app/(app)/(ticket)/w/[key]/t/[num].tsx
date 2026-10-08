@@ -9,7 +9,9 @@ import { MarkdownField } from '@/components/markdown-field';
 import { ActivityFeed } from '@/components/activity-feed';
 import { TaskStatusControl, TaskTagsControl } from '@/components/task-properties';
 import { TaskActions } from '@/components/task-actions';
-import { MentionInput } from '@/components/mention-input';
+import { MessageComposer } from '@/components/message-composer';
+import { DraftStatus } from '@/components/draft-status';
+import { useMessageDraft } from '@/lib/use-message-draft';
 import { RichEditor } from '@/components/rich-editor';
 import { TagPill } from '@/components/tag-pill';
 import { UserInfoDialog } from '@/components/user-info-dialog';
@@ -88,6 +90,8 @@ interface TaskPageData {
   fields: FieldDef[];
   comments: Comment[];
 }
+
+type TaskUpdate = Partial<Task> & Pick<Task, 'id'>;
 
 export default function TaskDetailScreen() {
   const { key, num, comment: focusComment, attachment: focusAttachment } = useLocalSearchParams<{ key: string; num: string; comment?: string; attachment?: string }>();
@@ -175,12 +179,13 @@ export default function TaskDetailScreen() {
   }, [focusComment, idOrKey, taskReady, commentExists, discussionTab]);
 
   const setTask = React.useCallback(
-    (updated: Task) => {
+    (updated: TaskUpdate) => {
       resource.setData((prev) =>
-        prev
+        prev && prev.task.id === updated.id
           ? {
               ...prev,
               task: {
+                ...prev.task,
                 ...updated,
                 // tasks.update embeds neither links nor attachments; keep what tasks.get
                 // gave us so a status/assignee change doesn't blank those sections.
@@ -348,6 +353,7 @@ export default function TaskDetailScreen() {
           {focusComment && !commentExists ? <Text role="status" className="text-muted-foreground mb-3 text-sm">This comment is no longer available.</Text> : null}
           <CommentsSection
             taskKey={idOrKey}
+            taskId={task.id}
             comments={comments}
             users={users}
             currentUserId={currentUser?.id ?? ''}
@@ -385,7 +391,7 @@ export default function TaskDetailScreen() {
  */
 function useAutosave(
   current: string,
-  save: (text: string) => Promise<void>
+  save: (text: string, isCurrent: () => boolean) => Promise<void>
 ): { status: 'idle' | 'saving' | 'saved' | 'error'; schedule: (text: string) => void; flush: () => Promise<void> } {
   const savedRef = React.useRef(current);
   const textRef = React.useRef(current);
@@ -393,25 +399,34 @@ function useAutosave(
   saveRef.current = save;
   const [status, setStatus] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pending = React.useRef<Promise<void> | null>(null);
 
-  const flush = React.useCallback(async (): Promise<void> => {
+  const flush = React.useCallback(async function flush(): Promise<void> {
     if (timer.current) {
       clearTimeout(timer.current);
       timer.current = null;
     }
+    // Serialize saves, including blur flushes. A slow older request must never be
+    // applied after the newer text, either in the database or in editor history.
+    if (pending.current) { await pending.current; return flush(); }
     const text = textRef.current;
     if (text === savedRef.current) {
       setStatus('idle');
       return;
     }
     setStatus('saving');
-    try {
-      await saveRef.current(text);
-      savedRef.current = text;
-      setStatus('saved');
-    } catch {
-      setStatus('error');
-    }
+    const operation = (async () => {
+      try {
+        await saveRef.current(text, () => textRef.current === text);
+        savedRef.current = text;
+        setStatus(textRef.current === text ? 'saved' : 'saving');
+      } catch {
+        if (textRef.current === text) setStatus('error');
+      }
+    })();
+    pending.current = operation;
+    try { await operation; }
+    finally { if (pending.current === operation) pending.current = null; }
   }, []);
 
   React.useEffect(() => () => {
@@ -444,13 +459,13 @@ function InlineTitleEditor({
   mentions,
 }: {
   task: Task;
-  onChanged: (t: Task) => void;
+  onChanged: (t: TaskUpdate) => void;
   mentions: User[];
 }) {
   const { client } = useAuth();
-  const { status, schedule, flush } = useAutosave(task.title, async (text) => {
+  const { status, schedule, flush } = useAutosave(task.title, async (text, isCurrent) => {
     const { task: updated } = await client.updateTask(task.id, { title: text.trim() });
-    onChanged(updated);
+    if (isCurrent()) onChanged({ id: task.id, title: updated.title, updated_at: updated.updated_at });
   });
 
   return (
@@ -462,7 +477,7 @@ function InlineTitleEditor({
       <RichEditor
         value={task.title}
         onChangeText={(t) => {
-          onChanged({ ...task, title: t });
+          onChanged({ id: task.id, title: t });
           schedule(t);
         }}
         singleLine
@@ -742,12 +757,12 @@ function InlineDescriptionEditor({
 }: {
   task: Task;
   users: User[];
-  onChanged: (t: Task) => void;
+  onChanged: (t: TaskUpdate) => void;
 }) {
   const { client } = useAuth();
-  const { status, schedule, flush } = useAutosave(task.description ?? '', async (text) => {
+  const { status, schedule, flush } = useAutosave(task.description ?? '', async (text, isCurrent) => {
     const { task: updated } = await client.updateTask(task.id, { description: text });
-    onChanged(updated);
+    if (isCurrent()) onChanged({ id: task.id, description: updated.description, updated_at: updated.updated_at });
   });
 
   return (
@@ -762,7 +777,7 @@ function InlineDescriptionEditor({
             documentId={task.id}
             value={task.description ?? ''}
             onChangeText={(t) => {
-              onChanged({ ...task, description: t });
+              onChanged({ id: task.id, description: t });
               schedule(t);
             }}
             onBlurCommit={() => void flush()}
@@ -1186,6 +1201,7 @@ function countComments(comments: Comment[]): number {
 
 function CommentsSection({
   taskKey,
+  taskId,
   comments,
   users,
   currentUserId,
@@ -1198,6 +1214,7 @@ function CommentsSection({
   focusRef,
 }: {
   taskKey: string;
+  taskId: string;
   comments: Comment[];
   users: User[];
   currentUserId: string;
@@ -1209,67 +1226,7 @@ function CommentsSection({
   focusComment?: string;
   focusRef: React.RefObject<View | null>;
 }) {
-  const { client } = useAuth();
-  const [body, setBody] = React.useState('');
-  const [mentionIds, setMentionIds] = React.useState<string[]>([]);
-  const [posting, setPosting] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [pendingFile, setPendingFile] = React.useState<{ file: File } | null>(null);
-  const [asQuestion, setAsQuestion] = React.useState(false);
-  const [options, setOptions] = React.useState<string[]>(['', '']);
-  const fileInput = React.useRef<HTMLInputElement | null>(null);
-
-  const trimmedOptions = options.map((o) => o.trim()).filter(Boolean);
-  const questionValid = !asQuestion || (trimmedOptions.length >= 2 && trimmedOptions.length <= 10);
-
-  async function onPost() {
-    if (!body.trim() || posting || !questionValid) return;
-    setPosting(true);
-    setError(null);
-    try {
-      const { comment } = await client.createComment(taskKey, {
-        body: body.trim(),
-        mention_ids: mentionIds.length > 0 ? mentionIds : undefined,
-        question_options: asQuestion ? trimmedOptions : undefined,
-      });
-      if (pendingFile) {
-        try {
-          await client.uploadCommentAttachment(comment.id, {
-            data: pendingFile.file,
-            filename: pendingFile.file.name,
-            contentType: pendingFile.file.type,
-          });
-        } catch (e) {
-          setError(
-            e instanceof Error
-              ? `Comment posted, but file "${pendingFile.file.name}" failed to upload: ${e.message}`
-              : `Comment posted, but file "${pendingFile.file.name}" failed to upload.`
-          );
-        }
-      }
-      await onReload();
-      setBody('');
-      setMentionIds([]);
-      setPendingFile(null);
-      setAsQuestion(false);
-      setOptions(['', '']);
-      if (fileInput.current) fileInput.current.value = '';
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to post comment');
-    } finally {
-      setPosting(false);
-    }
-  }
-
-  function onPickFile() {
-    const input = fileInput.current;
-    if (!input) return;
-    const f = input.files?.[0];
-    if (!f) return;
-    setPendingFile({ file: f });
-    setError(null);
-    if (input.value) input.value = '';
-  }
+  const draft = useMessageDraft(`comment:${taskId}`);
 
   return (
     <View className="gap-5">
@@ -1287,6 +1244,7 @@ function CommentsSection({
           key={comment.id}
           root={comment}
           taskKey={taskKey}
+          taskId={taskId}
           users={users}
           currentUserId={currentUserId}
           currentUserIsAdmin={currentUserIsAdmin}
@@ -1299,102 +1257,7 @@ function CommentsSection({
         />
       ))}
 
-      <View className="gap-2">
-        <View className="border-border bg-card gap-2 rounded-md border p-2.5">
-          <MarkdownField value={body} mentionUsers={users} label="comment">
-            <MentionInput
-              value={body}
-              onChangeText={setBody}
-              onMentionIdsChange={setMentionIds}
-              mentions={users}
-              placeholder="Write a comment — @ to mention, markdown supported..."
-              className="min-h-20"
-            />
-          </MarkdownField>
-          {asQuestion ? (
-            <View className="border-border gap-2 rounded-md border border-dashed p-2.5">
-              <Text className="text-xs font-medium">Multiple-choice options (2–10)</Text>
-              {options.map((option, i) => (
-                <View key={i} className="flex-row items-center gap-2">
-                  <Input
-                    value={option}
-                    onChangeText={(v) =>
-                      setOptions((prev) => prev.map((o, j) => (j === i ? v : o)))
-                    }
-                    placeholder={`Option ${i + 1}`}
-                    className="h-8 flex-1"
-                  />
-                  {options.length > 2 ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      onPress={() => setOptions((prev) => prev.filter((_, j) => j !== i))}>
-                      <Icon as={XIcon} className="text-muted-foreground size-3.5" />
-                    </Button>
-                  ) : null}
-                </View>
-              ))}
-              {options.length < 10 ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 self-start"
-                  onPress={() => setOptions((prev) => [...prev, ''])}>
-                  <Text className="text-xs">Add option</Text>
-                </Button>
-              ) : null}
-            </View>
-          ) : null}
-          {pendingFile ? (
-            <View className="border-border flex-row items-center gap-2 rounded-md border p-2">
-              <Icon as={FileIcon} className="text-muted-foreground size-4" />
-              <Text numberOfLines={1} className="flex-1 text-sm">
-                {pendingFile.file.name}
-              </Text>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0"
-                onPress={() => setPendingFile(null)}>
-                <Icon as={XIcon} className="text-muted-foreground size-3.5" />
-              </Button>
-            </View>
-          ) : null}
-          {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-          <View className="flex-row flex-wrap items-center justify-between gap-2">
-            <View className="max-w-full flex-row flex-wrap items-center gap-2">
-              <label htmlFor="comment-attach" className="cursor-pointer">
-                <View
-                  className="border-border bg-background text-foreground hover:bg-accent flex h-8 flex-row items-center gap-1.5 rounded-md border px-3 text-sm shadow-sm shadow-black/5"
-                  style={{ display: 'flex' }}>
-                  <Icon as={PaperclipIcon} className="text-muted-foreground size-4" />
-                  <Text className="text-sm">Attach file</Text>
-                </View>
-              </label>
-              <Button
-                variant={asQuestion ? 'secondary' : 'outline'}
-                size="sm"
-                className="h-8 gap-1.5"
-                onPress={() => setAsQuestion((v) => !v)}>
-                <Icon as={ListChecksIcon} className="text-muted-foreground size-4" />
-                <Text className="text-sm">{asQuestion ? 'Question on' : 'Ask a question'}</Text>
-              </Button>
-            </View>
-            <Button
-              disabled={posting || body.trim().length === 0 || !questionValid}
-              onPress={onPost}>
-              <Text>{posting ? 'Posting...' : 'Comment'}</Text>
-            </Button>
-          </View>
-          {asQuestion && !questionValid ? (
-            <Text className="text-muted-foreground text-xs">
-              A question needs at least two non-empty options.
-            </Text>
-          ) : null}
-        </View>
-        <input id="comment-attach" ref={fileInput} type="file" className="hidden" onChange={onPickFile} />
-      </View>
+      <MessageComposer key={draft.key} taskKey={taskKey} users={users} draft={draft} onPosted={onReload} />
     </View>
   );
 }
@@ -1402,6 +1265,7 @@ function CommentsSection({
 function CommentThread({
   root,
   taskKey,
+  taskId,
   users,
   currentUserId,
   currentUserIsAdmin,
@@ -1414,6 +1278,7 @@ function CommentThread({
 }: {
   root: Comment;
   taskKey: string;
+  taskId: string;
   users: User[];
   currentUserId: string;
   currentUserIsAdmin: boolean;
@@ -1424,7 +1289,9 @@ function CommentThread({
   focusComment?: string;
   focusRef: React.RefObject<View | null>;
 }) {
-  const [replyingTo, setReplyingTo] = React.useState<string | null>(null);
+  const replyDraft = useMessageDraft(`reply:${taskId}:${root.id}`);
+  const replyingTo = replyDraft.ready && replyDraft.data.open ? replyDraft.data.replyTo ?? root.id : null;
+  const setReplyingTo = (id: string | null) => replyDraft.update({ open: id !== null, ...(id ? { replyTo: id } : {}) });
   // Reply threads are collapsible; expanded by default so nothing is hidden.
   const [repliesCollapsed, setRepliesCollapsed] = React.useState(false);
   const hasFocusedReply = root.replies.some((reply) => reply.id === focusComment);
@@ -1441,6 +1308,7 @@ function CommentThread({
         users={users}
         currentUserId={currentUserId}
         currentUserIsAdmin={currentUserIsAdmin}
+        replyDisabled={!replyDraft.ready}
         onReload={onReload}
         onPatch={onPatch}
         onMentionPress={onMentionPress}
@@ -1491,6 +1359,7 @@ function CommentThread({
               compact
               currentUserId={currentUserId}
               currentUserIsAdmin={currentUserIsAdmin}
+              replyDisabled={!replyDraft.ready}
               onReload={onReload}
               onPatch={onPatch}
               onMentionPress={onMentionPress}
@@ -1506,16 +1375,16 @@ function CommentThread({
         </View>
       ) : null}
 
+      {!replyingTo && replyDraft.hasDraft ? <Button variant="ghost" size="sm" className="ml-11 self-start" onPress={() => replyDraft.update({ open: true })}><Text className="text-xs">Resume reply draft</Text></Button> : null}
       {replyingTo ? (
         <View className="border-border ml-11 border-l-2 pl-4">
-          <ReplyComposer
+          <MessageComposer
+            key={replyDraft.key}
             taskKey={taskKey}
             parentId={replyingTo}
             users={users}
-            onDone={async () => {
-              setReplyingTo(null);
-              await onReload();
-            }}
+            draft={replyDraft}
+            onPosted={onReload}
             onCancel={() => setReplyingTo(null)}
           />
         </View>
@@ -1587,71 +1456,6 @@ function QuestionOptions({
   );
 }
 
-function ReplyComposer({
-  taskKey,
-  parentId,
-  users,
-  onDone,
-  onCancel,
-}: {
-  taskKey: string;
-  parentId: string;
-  users: User[];
-  onDone: () => Promise<void>;
-  onCancel: () => void;
-}) {
-  const { client } = useAuth();
-  const [body, setBody] = React.useState('');
-  const [mentionIds, setMentionIds] = React.useState<string[]>([]);
-  const [posting, setPosting] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  async function post() {
-    if (posting || !body.trim()) return;
-    setPosting(true);
-    setError(null);
-    try {
-      await client.createComment(taskKey, {
-        body: body.trim(),
-        parent_id: parentId,
-        mention_ids: mentionIds.length > 0 ? mentionIds : undefined,
-      });
-      setBody('');
-      setMentionIds([]);
-      await onDone();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to reply');
-    } finally {
-      setPosting(false);
-    }
-  }
-
-  return (
-    <View className="border-border bg-card gap-2 rounded-md border p-2.5">
-      <MarkdownField value={body} mentionUsers={users} label="reply">
-        <MentionInput
-          value={body}
-          onChangeText={setBody}
-          onMentionIdsChange={setMentionIds}
-          mentions={users}
-          placeholder="Reply…"
-          className="min-h-16"
-          autoFocus
-        />
-      </MarkdownField>
-      {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-      <View className="flex-row justify-end gap-2">
-        <Button variant="ghost" size="sm" onPress={onCancel}>
-          <Text>Cancel</Text>
-        </Button>
-        <Button size="sm" accessibilityLabel="Post reply" onPress={post} disabled={posting || !body.trim()}>
-          <Text>{posting ? 'Replying...' : 'Reply'}</Text>
-        </Button>
-      </View>
-    </View>
-  );
-}
-
 function CommentCard({
   comment,
   users,
@@ -1663,6 +1467,7 @@ function CommentCard({
   onMentionPress,
   onPreview,
   onReply,
+  replyDisabled,
   focused,
   focusRef,
 }: {
@@ -1676,26 +1481,31 @@ function CommentCard({
   onMentionPress: (u: User) => void;
   onPreview: (a: Attachment) => void;
   onReply: () => void;
+  replyDisabled?: boolean;
   focused?: boolean;
   focusRef?: React.RefObject<View | null>;
 }) {
   const { client } = useAuth();
   const canModify = currentUserId === comment.author_id || currentUserIsAdmin;
-  const [editing, setEditing] = React.useState(false);
-  const [editBody, setEditBody] = React.useState(comment.body);
+  const editDraft = useMessageDraft(`edit:${comment.task_id}:${comment.id}`);
+  const editing = canModify && editDraft.data.open;
+  const editBody = editDraft.data.body;
+  const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   async function onSaveEdit() {
+    if (saving || !editBody.trim()) return;
+    setSaving(true);
     setError(null);
     try {
       const { comment: updated } = await client.updateComment(comment.id, {
         body: editBody.trim(),
       });
       onPatch(updated);
-      setEditing(false);
+      editDraft.clear();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save comment');
-    }
+    } finally { setSaving(false); }
   }
 
   async function onDelete() {
@@ -1731,7 +1541,7 @@ function CommentCard({
             <Text className="text-muted-foreground text-xs">(edited)</Text>
           ) : null}
           <View className="ml-auto flex-row gap-1">
-            <Button variant="ghost" size="sm" className="h-6 gap-1 px-2" onPress={onReply}>
+            <Button variant="ghost" size="sm" className="h-6 gap-1 px-2" onPress={onReply} disabled={replyDisabled}>
               <Icon as={ReplyIcon} className="text-muted-foreground size-3" />
               <Text className="text-xs">Reply</Text>
             </Button>
@@ -1741,8 +1551,13 @@ function CommentCard({
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2"
-                  onPress={() => setEditing((v) => !v)}>
-                  <Text className="text-xs">{editing ? 'Cancel' : 'Edit'}</Text>
+                  disabled={saving || !editDraft.ready}
+                  onPress={() => {
+                    if (editing) {
+                      if (editBody === comment.body) editDraft.clear(); else editDraft.update({ open: false });
+                    } else editDraft.update({ open: true, body: editDraft.hasDraft ? editBody : comment.body });
+                  }}>
+                  <Text className="text-xs">{editing ? 'Cancel' : editDraft.hasDraft ? 'Resume edit' : 'Edit'}</Text>
                 </Button>
                 <Button variant="ghost" size="sm" className="h-6 px-2" onPress={onDelete}>
                   <Icon as={TrashIcon} className="text-destructive size-3.5" />
@@ -1754,13 +1569,14 @@ function CommentCard({
         {editing ? (
           <View className="gap-2">
             <MarkdownField value={editBody} mentionUsers={users} label="edited comment">
-              <Textarea value={editBody} onChangeText={setEditBody} className="min-h-20" />
+              <Textarea value={editBody} onChangeText={(body) => editDraft.update({ body })} editable={!saving} className="min-h-20" />
             </MarkdownField>
             <View className="flex-row justify-end">
-              <Button size="sm" onPress={onSaveEdit}>
+              <Button size="sm" disabled={saving || !editBody.trim()} onPress={onSaveEdit}>
                 <Text>Save</Text>
               </Button>
             </View>
+            <DraftStatus draft={editDraft} disabled={saving} onDiscard={editDraft.clear} />
           </View>
         ) : (
           <Markdown mentionUsers={users} onMentionPress={onMentionPress}>

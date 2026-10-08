@@ -135,6 +135,10 @@ private to the recipient/admin. Opening a deep link does not mutate inbox state.
 Read actions resolve any owned notification ID to its conversation and acknowledge all its
 current notifications. `updated` counts conversations. New replies make that item unread
 again. The web loads full comment threads when a header-only accordion is expanded.
+`needs_decision` checks the root comment for at least two question options and no answer.
+The same SQL predicate applies before list counts/pagination and to bulk read updates.
+Read updates evaluate current question state, not a stale set of client IDs. The global
+badge and cursor event stream remain unfiltered.
 - **comments**: task_id FK, author_id, body (markdown), timestamps. Hard-delete allowed
   (author or admin); deletes its attachments' bytes too.
 - **attachments**: exactly-one-parent CHECK (task_id XOR comment_id), uploader_id,
@@ -191,6 +195,29 @@ before waiting, respects stdout backpressure, and saves a server/user-bound chec
 after output succeeds. NDJSON contains notification and checkpoint records. Temporary request
 failures retry with capped backoff; authentication failures exit. A crash may replay a page,
 so consumers deduplicate by inbox ID. No WebSocket service or worker process is required.
+
+## Client editing and drafts
+
+The web composer maintains source-text undo/redo snapshots with anchor/head selections.
+Decorating contenteditable text does not replace its history. Adjacent typing is grouped;
+paste, format, mention, and composition changes are separate steps. CodeMirror descriptions
+use their existing history. Link toolbar pointer/focus ownership spans both the link and
+the toolbar, with a padded bridge and delayed close.
+Title/description saves run in order. Responses patch only the saved field and are applied
+to the editor only if its text is still current, so delayed saves cannot erase newer input
+or its undo history.
+
+Message drafts use versioned device records keyed by API server, account ID, and immutable
+task/thread/comment IDs. Web edits write synchronously to localStorage; native edits use
+per-key AsyncStorage queues. Late hydration cannot overwrite new input. Compare-and-remove
+protects another composer's newer draft when a post clears the old one. These records are
+local, unencrypted UI state; they contain no credentials or file contents.
+
+Root and reply composers share the browser/native file picker and typed upload client.
+Native files use URI-backed FormData. A successful text post with a pending upload saves the
+comment ID in the draft. Upload retries use that ID; refresh requires file selection again.
+Composers are keyed by draft identity so selected in-memory files cannot cross accounts or
+tasks. Draft-store and async-adapter tests cover restore, failure, and clear ordering.
 
 ## Deployment
 

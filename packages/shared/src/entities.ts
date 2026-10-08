@@ -546,6 +546,8 @@ export const UpdateCommentInputSchema = z.object({
 
 export const ListInboxQuerySchema = z.object({
   include_read: QueryBoolSchema,
+  /** Only conversations whose root is an unanswered multiple-choice question. */
+  needs_decision: QueryBoolSchema,
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -561,6 +563,8 @@ export type InboxEvent = z.infer<typeof InboxEventSchema>;
 export const UpdateInboxQuerySchema = z.object({
   /** Mark all accessible conversations for the current user as read. */
   mark_read: QueryBoolSchema,
+  /** Use the same decision filter as inbox.list when acknowledging conversations. */
+  needs_decision: QueryBoolSchema,
 });
 
 // ---------- queries ----------

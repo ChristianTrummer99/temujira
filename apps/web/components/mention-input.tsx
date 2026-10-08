@@ -38,6 +38,8 @@ export interface MentionInputProps {
   onChangeText: (value: string) => void;
   /** Resolved user ids for the mentions still present in the text. */
   onMentionIdsChange?: (ids: string[]) => void;
+  /** Mention identities restored with a local draft. */
+  initialMentionIds?: string[];
   /** Users available to resolve `@Name` chips against (web inline highlight). */
   mentions?: User[];
   placeholder?: string;
@@ -72,7 +74,7 @@ export function MentionInput({
       />
     );
   }
-  return <NativeMentionInput {...props} />;
+  return <NativeMentionInput {...props} mentions={mentions} />;
 }
 
 /**
@@ -91,6 +93,8 @@ function NativeMentionInput({
   editable = true,
   autoFocus,
   suggestionsPlacement = 'above',
+  mentions = [],
+  initialMentionIds = [],
 }: MentionInputProps) {
   const { client } = useAuth();
   const inputRef = React.useRef<TextInput | null>(null);
@@ -98,10 +102,14 @@ function NativeMentionInput({
   const [picks, setPicks] = React.useState<Pick[]>([]);
   const [results, setResults] = React.useState<User[]>([]);
   const [dismissed, setDismissed] = React.useState(false);
+  const knownPicks = React.useMemo(() => [...new Map([
+    ...picks.map((p) => [p.id, p] as const),
+    ...mentions.filter((u) => initialMentionIds.includes(u.id)).map((u) => [u.id, { id: u.id, name: u.name }] as const),
+  ]).values()], [picks, mentions, initialMentionIds]);
 
   const active = React.useMemo(
-    () => activeMention(value.slice(0, Math.min(caret, value.length)), picks),
-    [value, caret, picks]
+    () => activeMention(value.slice(0, Math.min(caret, value.length)), knownPicks),
+    [value, caret, knownPicks]
   );
   const token = active?.token.trim() ?? '';
 
@@ -110,9 +118,9 @@ function NativeMentionInput({
   const idsCb = React.useRef(onMentionIdsChange);
   idsCb.current = onMentionIdsChange;
   React.useEffect(() => {
-    const ids = picks.filter((p) => value.includes(`@${p.name}`)).map((p) => p.id);
+    const ids = knownPicks.filter((p) => value.includes(`@${p.name}`)).map((p) => p.id);
     idsCb.current?.([...new Set(ids)]);
-  }, [value, picks]);
+  }, [value, knownPicks]);
 
   // Debounced people search for the active token.
   React.useEffect(() => {

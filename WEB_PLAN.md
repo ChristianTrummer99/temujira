@@ -85,8 +85,16 @@ propagation if the row also navigates on web). The create dialog gains tag toggl
 - Questions: render option buttons under a question comment. Unanswered → outline; pressing
   one posts a child reply `{ body: optionText, parent_id, answer_option_index: i }` then
   refetches. Answered → chosen option filled with a check, all disabled, "Answered" caption.
-- Description editing stays a plain textarea: description mentions render as links but do
-  **not** notify (the contract has no `mention_ids` on task update — do not expand it).
+- Web descriptions use Atomic/CodeMirror; native descriptions use a text input. Description
+  mentions do **not** notify (task updates have no `mention_ids`).
+- Root/reply composers share `MessageComposer` and `ComposerAttachment`. Comment, reply,
+  and edit drafts save on each change, under server/account/immutable-ID keys. Web storage
+  is synchronous; native AsyncStorage operations are ordered per key. Restore text,
+  mentions, question options, reply target, and file name. Require file selection again after
+  restart. Save a posted comment ID before upload, so retries cannot duplicate its text.
+- Web rich editors use source-level history with selection restore. Cmd/Ctrl+Z, Shift+Z,
+  and Ctrl+Y also work across DOM decoration. Descriptions use CodeMirror history. Link
+  actions share pointer/focus ownership with the link and have a padded crossing area.
 
 **Inbox** (`inbox.tsx`): Unread/All tabs over server-grouped conversations, one item per
 recipient/thread. The badge, totals, and pages count conversations. Only the accordion header
@@ -95,6 +103,9 @@ loaded through `comments.list`. Expansion is read-only. Mark read is in the head
 the bottom of the expanded thread. Each message is clickable; Open in ticket links to
 `/w/{workspace.key}/t/{number}?comment={source_comment.id}`. Mark read resolves the item's
 ID to the whole conversation. New replies update the existing item and make it unread again.
+Decisions adds `needs_decision` to list and bulk read calls. Only unanswered root questions
+with multiple choices match. Counts and pagination use the same server filter. Stale data
+from a previous filter cannot enable the bulk action; the sidebar count stays global.
 
 **My Tasks** (`my.tsx`): `listMyTasks`, rows like task rows plus a workspace badge derived
 from `task.key`, navigating cross-workspace.
@@ -111,6 +122,9 @@ horizontal scrolling on narrow screens, and action menus. User actions include d
 rename, picture, access, keys, role, and activation as permitted by the caller's scopes.
 API keys have owner/state/text filters and details/revoke menus; full tokens appear only
 at creation. The old settings/users and settings/api-keys URLs redirect to the matching tab.
+Measure the horizontal viewport to size each table, with a 640 px minimum on small screens.
+Name/login/owner columns have minimum and maximum widths; fixed metadata columns stay narrow.
+Full values are available on hover, keyboard focus, and tap through `TruncatedCell`.
 
 **Admin gating rule**: hide or disable only controls whose registry route is `auth: "admin"`
 (`tags.create/update/delete`, `users.create/update/deactivate`, `apiKeys.create` with
@@ -140,9 +154,9 @@ users list (Inbox) pass `mentionUsers={[]}` — chips render inert, task links s
 
 ## Uploads and downloads
 
-Upload keeps the working pattern: hidden `<input type="file">` + styled label; the `File` is
-a `Blob` passed straight to `uploadTaskAttachment`/`uploadCommentAttachment`. No
-`expo-document-picker`.
+Web upload uses a hidden `<input type="file">`; the `File` is a `Blob` passed to the typed
+upload client. Comment/reply composers use `expo-document-picker` on native, passing a
+cached file URI to React Native FormData. Draft storage retains only the file name.
 
 **Download is currently broken** — `attachmentUrl`/`downloadAttachment` in `t/[num].tsx`
 point a bare `<a href>` at the API with no Authorization header, so it 401s in dev and

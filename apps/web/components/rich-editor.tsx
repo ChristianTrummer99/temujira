@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useAuth } from '@/lib/auth';
 import { editableText } from '@/lib/editable-text';
+import { EditorHistory, type EditorSelection, type EditorSnapshot } from '@/lib/editor-history';
+import { readEditorSelection, restoreEditorSelection } from '@/lib/editor-selection';
 import { splitTaskKey, taskKeyBody } from '@/lib/format';
 import { UserAvatar } from '@/components/user-avatar';
 import { cn } from '@/lib/utils';
@@ -288,8 +290,8 @@ function readChildren(nodes: NodeListOf<ChildNode>): { segs: InlineSeg[]; ok: bo
           url: node.dataset.url ?? '',
           label: node.textContent ?? '',
           raw: node.hasAttribute('data-tmj-rawlink'),
-          start: 0,
-          end: 0,
+          start: Number(node.dataset.linkStart ?? 0),
+          end: Number(node.dataset.linkEnd ?? 0),
         });
         continue;
       }
@@ -325,7 +327,7 @@ function sameSegments(a: InlineSeg[], b: InlineSeg[]): boolean {
         if ((y.kind !== 'mention' && y.kind !== 'task') || x.idOrKey !== y.idOrKey || x.text !== y.text) return false;
         break;
       case 'link':
-        if (y.kind !== 'link' || x.url !== y.url || x.label !== y.label || !!x.raw !== !!y.raw) return false;
+        if (y.kind !== 'link' || x.url !== y.url || x.label !== y.label || !!x.raw !== !!y.raw || x.start !== y.start || x.end !== y.end) return false;
         break;
       default:
         if (y.kind !== 'bold' && y.kind !== 'italic' && y.kind !== 'underline') return false;
@@ -397,6 +399,8 @@ function appendSegment(parent: HTMLElement, s: InlineSeg) {
       a.textContent = s.label;
       a.dataset.linkStart = String(s.start);
       a.dataset.linkEnd = String(s.end);
+      a.tabIndex = 0;
+      a.setAttribute('aria-label', `Link: ${s.label}`);
       Object.assign(a.style, LINK_STYLE);
       parent.appendChild(a);
       if (s.raw) a.setAttribute('data-tmj-rawlink', '');
@@ -484,19 +488,8 @@ function enclosingPair(value: string, markers: { i: number; isOpen: boolean }[],
 
 /** Character offsets of the current selection in the editor's plain text. */
 function getSelOffsets(el: HTMLElement): { start: number; end: number } | null {
-  const sel = el.ownerDocument.getSelection();
-  if (!sel || sel.rangeCount === 0) return null;
-  const r = sel.getRangeAt(0);
-  if (!el.contains(r.startContainer)) return null;
-  const mk = (container: Node, offset: number) => {
-    const pre = r.cloneRange();
-    pre.selectNodeContents(el);
-    pre.setEnd(container, offset);
-    return pre.toString().length;
-  };
-  const start = mk(r.startContainer, r.startOffset);
-  const end = r.endContainer === r.startContainer ? start + (r.endOffset - r.startOffset) : mk(r.endContainer, r.endOffset);
-  return { start, end };
+  const selection = readEditorSelection(el);
+  return selection ? { start: Math.min(selection.anchor, selection.head), end: Math.max(selection.anchor, selection.head) } : null;
 }
 
 /**
@@ -536,46 +529,8 @@ function toggleInline(
   return { value: next, caret: end + openLen + closeLen };
 }
 
-/** Character offset of the selection caret into the editor's plain text. */
-function getCaretOffset(el: HTMLElement): number | null {
-  const sel = el.ownerDocument.getSelection();
-  if (!sel || sel.rangeCount === 0) return null;
-  const range = sel.getRangeAt(0);
-  if (!el.contains(range.startContainer)) return null;
-  const pre = range.cloneRange();
-  pre.selectNodeContents(el);
-  pre.setEnd(range.startContainer, range.startOffset);
-  return pre.toString().length;
-}
-
 function restoreCaret(el: HTMLElement, offset: number) {
-  const doc = el.ownerDocument;
-  const sel = doc.getSelection();
-  if (!sel) return;
-  const total = el.textContent?.length ?? 0;
-  let remaining = Math.max(0, Math.min(offset, total));
-  let node: Node = el;
-  let nodeOffset = 0;
-  // Offsets are characters, not child-element indices. Walk through decorated spans
-  // down to their text nodes so formatting does not move the cursor after a rebuild.
-  const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let textNode: Node | null;
-  while ((textNode = walker.nextNode())) {
-    const length = textNode.textContent?.length ?? 0;
-    node = textNode;
-    nodeOffset = Math.min(remaining, length);
-    if (remaining <= length) break;
-    remaining -= length;
-  }
-  const range = doc.createRange();
-  if (node.nodeType === Node.ELEMENT_NODE) {
-    range.setStart(node, Math.min(node.childNodes.length, nodeOffset));
-  } else {
-    range.setStart(node, nodeOffset);
-  }
-  range.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(range);
+  restoreEditorSelection(el, { anchor: offset, head: offset });
 }
 
 /** Mirrors the server's mention token, anchored to the caret. */
@@ -623,10 +578,15 @@ function WebRichEditor({
   const router = useRouter();
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const valueRef = React.useRef(value);
-  valueRef.current = value;
-  const pendingExternalRef = React.useRef<string | null>(null);
+  const previousProp = React.useRef(value);
+  const emittedValues = React.useRef<string[]>([]);
+  const [history] = React.useState(() => new EditorHistory(value));
+  const selectionRef = React.useRef<EditorSelection>({ anchor: value.length, head: value.length });
+  const beforeInput = React.useRef<{ snapshot: EditorSnapshot; kind: string } | null>(null);
+  const composing = React.useRef(false);
+  const compositionBefore = React.useRef<EditorSnapshot | null>(null);
+  const historyInputHandled = React.useRef(false);
   const readyRef = React.useRef(false);
-  const caretRef = React.useRef(value.length);
   const lastIdsRef = React.useRef<string[]>([]);
   const workspaceKeys = useWorkspaceKeys();
   const [caret, setCaret] = React.useState(value.length);
@@ -641,8 +601,27 @@ function WebRichEditor({
     start: number;
     end: number;
     raw: boolean;
+    above: boolean;
   } | null>(null);
   const hoverLinkRef = React.useRef<HTMLElement | null>(null);
+  const popoverRef = React.useRef<HTMLDivElement | null>(null);
+  const hideLinkTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const moveHistoryRef = React.useRef<(redo: boolean) => void>(() => {});
+
+  function cancelLinkHide() {
+    if (hideLinkTimer.current) clearTimeout(hideLinkTimer.current);
+    hideLinkTimer.current = null;
+  }
+  function closeLink() {
+    cancelLinkHide(); hoverLinkRef.current = null; setHoverLink(null);
+  }
+  function scheduleLinkHide() {
+    cancelLinkHide();
+    hideLinkTimer.current = setTimeout(() => {
+      if (popoverRef.current?.contains(document.activeElement)) return;
+      hoverLinkRef.current = null; setHoverLink(null);
+    }, 400);
+  }
 
   const taskRe = React.useMemo(() => taskAnchorRe(workspaceKeys), [workspaceKeys]);
 
@@ -658,30 +637,58 @@ function WebRichEditor({
     }
   }, [value, mentions, taskRe, onMentionIdsChange]);
 
-  // The DOM is solely authoritative: keystrokes (even in bursts faster than React's
-// round-trip through parent state) must never be reverted by a rebuild sourced from a
-// lagging `value` prop. We therefore always re-decorate from the live DOM text, except
-// for a deliberate programmatic write (mention insert), which is flagged explicitly and
-// sourced from `value`.
-React.useLayoutEffect(() => {
+  // Acknowledge controlled-value echoes without overwriting newer input. Only a genuine
+  // external value (draft restore, successful submit, document update) resets the source.
+  React.useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el) return;
-    const pending = pendingExternalRef.current;
-    const source = pending === 'insert' ? value : (el.textContent ?? '');
-    pendingExternalRef.current = null;
     if (!readyRef.current) {
-      const target = parseSegments(value, mentions, taskRe);
-      buildDOM(el, target.segs);
+      buildDOM(el, parseSegments(value, mentions, taskRe).segs);
       readyRef.current = true;
       return;
     }
-    const target = parseSegments(source, mentions, taskRe);
-    const read = readSegments(el);
-    if (!read.ok || !sameSegments(target.segs, read.segs)) {
-      buildDOM(el, target.segs);
-      restoreCaret(el, caretRef.current);
+    let external = false;
+    if (previousProp.current !== value) {
+      previousProp.current = value;
+      const echo = emittedValues.current.lastIndexOf(value);
+      if (echo >= 0) emittedValues.current.splice(0, echo + 1);
+      else if (value !== valueRef.current) {
+        // Title auto-save trims trailing spaces. Do not discard the typing history
+        // for that server acknowledgement while the person is still editing.
+        const normalizedEcho = el.contains(document.activeElement) && value === valueRef.current.trimEnd();
+        if (!normalizedEcho) {
+          valueRef.current = value; history.reset(value); emittedValues.current = [];
+          selectionRef.current = { anchor: value.length, head: value.length };
+          external = true;
+        }
+      }
     }
-  }, [value, mentions, taskRe]);
+    if (composing.current) return;
+    const target = parseSegments(valueRef.current, mentions, taskRe);
+    const read = readSegments(el);
+    if (external || !read.ok || !sameSegments(target.segs, read.segs)) {
+      const selection = external ? selectionRef.current : readEditorSelection(el) ?? selectionRef.current;
+      closeLink();
+      buildDOM(el, target.segs);
+      if (el.contains(document.activeElement)) restoreEditorSelection(el, selection);
+    }
+  }, [value, mentions, taskRe, history]);
+
+  React.useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const capture = (event: InputEvent) => {
+      if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+        event.preventDefault();
+        historyInputHandled.current = !event.cancelable;
+        moveHistoryRef.current(event.inputType === 'historyRedo');
+        return;
+      }
+      beforeInput.current = { snapshot: { text: valueRef.current, selection: readEditorSelection(el) ?? selectionRef.current }, kind: event.inputType };
+    };
+    el.addEventListener('beforeinput', capture);
+    return () => el.removeEventListener('beforeinput', capture);
+  }, []);
 
   React.useEffect(() => {
     const el = rootRef.current;
@@ -713,22 +720,30 @@ React.useLayoutEffect(() => {
     };
   }, [client, active, token]);
 
-  // Hover tracking for link chips — brings up the Edit / Remove popover.
+  // Link and toolbar share hover ownership. Padding bridges the small visual gap;
+  // delayed close also covers diagonal pointer movement and keyboard focus.
   React.useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
     const linkSel = 'span[data-tmj-link], span[data-tmj-rawlink]';
-    const onOver = (e: MouseEvent) => {
+    const onOver = (e: MouseEvent | FocusEvent) => {
       const t = e.target as HTMLElement | null;
       const link = t && t.closest ? t.closest<HTMLElement>(linkSel) : null;
       if (!link) return;
+      cancelLinkHide();
       if (hoverLinkRef.current === link) return;
       hoverLinkRef.current = link;
       const r = link.getBoundingClientRect();
       const wrap = el.parentElement?.getBoundingClientRect() ?? r;
+      let top = 0;
+      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+        if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(parent).overflowY)) top = Math.max(top, parent.getBoundingClientRect().top);
+      }
+      const above = r.top - top >= 42;
       setHoverLink({
-        left: Math.max(0, r.left - wrap.left),
-        top: r.bottom - wrap.top + 6,
+        left: Math.max(0, Math.min(r.left - wrap.left, wrap.width - 150)),
+        top: (above ? r.top : r.bottom) - wrap.top,
+        above,
         url: link.dataset.url ?? '',
         label: link.textContent ?? '',
         start: Number(link.dataset.linkStart ?? 0),
@@ -736,34 +751,98 @@ React.useLayoutEffect(() => {
         raw: link.hasAttribute('data-tmj-rawlink'),
       });
     };
-    const onOut = (e: MouseEvent) => {
+    const onOut = (e: MouseEvent | FocusEvent) => {
       const next = e.relatedTarget as Node | null;
-      if (!next || !el.contains(next)) {
-        hoverLinkRef.current = null;
-        setHoverLink(null);
+      if (next && (hoverLinkRef.current?.contains(next) || popoverRef.current?.contains(next))) return;
+      scheduleLinkHide();
+    };
+    const onOutside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!popoverRef.current?.contains(target) && !hoverLinkRef.current?.contains(target)) closeLink();
+    };
+    const onScroll = () => closeLink();
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && hoverLinkRef.current && (el.contains(event.target as Node) || popoverRef.current?.contains(event.target as Node))) {
+        event.preventDefault(); event.stopPropagation(); closeLink();
       }
     };
     el.addEventListener('mouseover', onOver);
     el.addEventListener('mouseout', onOut);
+    el.addEventListener('focusin', onOver);
+    el.addEventListener('focusout', onOut);
+    document.addEventListener('pointerdown', onOutside);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    window.addEventListener('keydown', onEscape, true);
     return () => {
+      cancelLinkHide();
       el.removeEventListener('mouseover', onOver);
       el.removeEventListener('mouseout', onOut);
+      el.removeEventListener('focusin', onOver);
+      el.removeEventListener('focusout', onOut);
+      document.removeEventListener('pointerdown', onOutside);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('keydown', onEscape, true);
     };
   }, []);
 
-  function writeExternal(next: string, caret: number) {
-    pendingExternalRef.current = 'insert';
-    caretRef.current = caret;
-    setCaret(caret);
+  function publish(next: string) {
+    valueRef.current = next;
+    emittedValues.current.push(next);
+    if (emittedValues.current.length > 100) emittedValues.current.shift();
     onChangeText(next);
+  }
+
+  function snapshot(): EditorSnapshot {
+    return { text: valueRef.current, selection: rootRef.current ? readEditorSelection(rootRef.current) ?? selectionRef.current : selectionRef.current };
+  }
+
+  function renderSource(text: string, selection: EditorSelection, focus = false) {
+    const el = rootRef.current;
+    if (!el) return;
+    closeLink();
+    buildDOM(el, parseSegments(text, mentions, taskRe).segs);
+    if (focus) el.focus({ preventScroll: true });
+    restoreEditorSelection(el, selection);
+    selectionRef.current = selection;
+    setCaret(selection.head);
+  }
+
+  function writeExternal(next: string, caret: number, kind = 'command') {
+    const selection = { anchor: caret, head: caret };
+    history.record(snapshot(), { text: next, selection }, kind);
+    renderSource(next, selection, true);
+    beforeInput.current = null;
+    publish(next);
+  }
+
+  function moveHistory(redo: boolean) {
+    if (!editable || composing.current) return;
+    const current = snapshot();
+    const next = redo ? history.redo(current.selection) : history.undo(current.selection);
+    if (!next) return;
+    renderSource(next.text, next.selection, true);
+    beforeInput.current = null;
+    setDismissed(true);
+    publish(next.text);
+  }
+  moveHistoryRef.current = moveHistory;
+
+  function replaceSelection(text: string, kind: string) {
+    const current = snapshot();
+    const start = Math.min(current.selection.anchor, current.selection.head);
+    const end = Math.max(current.selection.anchor, current.selection.head);
+    writeExternal(current.text.slice(0, start) + text + current.text.slice(end), start + text.length, kind);
   }
 
   function applyLinkEdit() {
     const lnk = hoverLink;
-    if (!lnk) return;
+    if (!editable || !lnk) return;
+    cancelLinkHide();
     const nextUrl = window.prompt('Link URL', lnk.url);
     if (nextUrl === null || nextUrl.trim() === '' || nextUrl.trim() === lnk.url) {
-      setHoverLink(null);
+      closeLink();
       return;
     }
     const text = valueRef.current;
@@ -771,49 +850,60 @@ React.useLayoutEffect(() => {
     const replacement = lnk.raw ? url : `[${lnk.label}](${url})`;
     const next = text.slice(0, lnk.start) + replacement + text.slice(lnk.end);
     writeExternal(next, lnk.start + replacement.length);
-    setHoverLink(null);
+    closeLink();
   }
 
   function removeLink() {
     const lnk = hoverLink;
-    if (!lnk) return;
+    if (!editable || !lnk) return;
     const text = valueRef.current;
     const next = lnk.raw
       ? text.slice(0, lnk.start) + text.slice(lnk.end)
       : text.slice(0, lnk.start) + lnk.label + text.slice(lnk.end);
     writeExternal(next, lnk.start + lnk.label.length);
-    setHoverLink(null);
+    closeLink();
   }
 
-  function handleInput() {
+  function handleInput(event?: React.FormEvent<HTMLDivElement>) {
     const el = rootRef.current;
     if (!el) return;
+    if (historyInputHandled.current) {
+      historyInputHandled.current = false;
+      renderSource(valueRef.current, selectionRef.current);
+      return;
+    }
     // Pasting or browser input can introduce <br>/<div> line boundaries. textContent
     // drops those boundaries and silently destroys tables/lists/fences. Read rendered
     // plain text once, then normalize back to our flat, decorated text-node structure.
     const text = editableText(el);
-    const offset = getCaretOffset(el);
-    caretRef.current = offset === el.textContent?.length ? text.length : (offset ?? caretRef.current);
-    setCaret(caretRef.current);
+    const selection = readEditorSelection(el) ?? { anchor: text.length, head: text.length };
+    const before = beforeInput.current?.snapshot ?? { text: valueRef.current, selection: selectionRef.current };
+    const kind = beforeInput.current?.kind ?? (event?.nativeEvent as InputEvent | undefined)?.inputType ?? 'input';
+    beforeInput.current = null;
+    selectionRef.current = selection;
+    setCaret(selection.head);
     readyRef.current = true;
-    const read = readSegments(el);
-    if (!read.ok) {
-      buildDOM(el, parseSegments(text, mentions, taskRe).segs);
-      restoreCaret(el, caretRef.current);
+    if (!composing.current) {
+      history.record(before, { text, selection }, kind);
+      const target = parseSegments(text, mentions, taskRe);
+      const read = readSegments(el);
+      closeLink();
+      if (!read.ok || !sameSegments(target.segs, read.segs)) {
+        buildDOM(el, target.segs);
+        restoreEditorSelection(el, selection);
+      }
     }
     setDismissed(false);
-    onChangeText(text);
+    publish(text);
   }
 
   function insert(user: User) {
     if (!active) return;
     const inserted = `@${user.name} `;
-    const next = value.slice(0, active.at) + inserted + value.slice(Math.min(caret, value.length));
+    const source = valueRef.current;
+    const next = source.slice(0, active.at) + inserted + source.slice(Math.min(caret, source.length));
     const nextCaret = active.at + inserted.length;
-    pendingExternalRef.current = 'insert';
-    caretRef.current = nextCaret;
-    setCaret(nextCaret);
-    onChangeText(next);
+    writeExternal(next, nextCaret, 'mention');
     setResults([]);
     setTimeout(() => {
       rootRef.current?.focus();
@@ -825,6 +915,8 @@ React.useLayoutEffect(() => {
       <div
         ref={rootRef}
         contentEditable={editable}
+        role="textbox"
+        aria-multiline={!singleLine}
         suppressContentEditableWarning
         data-placeholder={placeholder ?? ''}
         aria-label={placeholder}
@@ -835,6 +927,18 @@ React.useLayoutEffect(() => {
           className
         )}
         onInput={handleInput}
+        onPointerDown={() => history.breakGroup()}
+        onCompositionStart={() => {
+          composing.current = true;
+          compositionBefore.current = snapshot();
+          history.breakGroup(); closeLink();
+        }}
+        onCompositionEnd={() => {
+          composing.current = false;
+          if (compositionBefore.current) beforeInput.current = { snapshot: compositionBefore.current, kind: 'composition' };
+          compositionBefore.current = null;
+          handleInput();
+        }}
         onClick={(e) => {
           const target = e.target as HTMLElement | null;
           const chip = target?.closest?.('[data-tmj-task]');
@@ -847,13 +951,21 @@ React.useLayoutEffect(() => {
           if (parsed) router.push(`/w/${parsed.workspaceKey}/t/${parsed.number}`);
         }}
         onSelect={() => {
-          const offset = rootRef.current ? getCaretOffset(rootRef.current) : null;
-          if (offset !== null) {
-            caretRef.current = offset;
-            setCaret(offset);
+          const selection = rootRef.current ? readEditorSelection(rootRef.current) : null;
+          if (selection) {
+            selectionRef.current = selection;
+            setCaret(selection.head);
           }
         }}
         onKeyDown={(e) => {
+          if (composing.current || e.nativeEvent.isComposing) return;
+          const key = e.key.toLowerCase();
+          if ((e.ctrlKey || e.metaKey) && !e.altKey && (key === 'z' || (key === 'y' && e.ctrlKey))) {
+            e.preventDefault(); e.stopPropagation();
+            moveHistory(key === 'y' || e.shiftKey);
+            return;
+          }
+          if (/^(Arrow|Home|End|Page)/.test(e.key)) history.breakGroup();
           if (e.key === 'Escape') {
             setDismissed(true);
             return;
@@ -863,7 +975,7 @@ React.useLayoutEffect(() => {
             e.preventDefault();
             const el = rootRef.current;
             if (!el || !editable) return;
-            const text = el.textContent ?? '';
+            const text = valueRef.current;
             const sel = getSelOffsets(el);
             if (!sel) return;
             const wrap: Fmt =
@@ -884,36 +996,38 @@ React.useLayoutEffect(() => {
             e.preventDefault();
             const el = rootRef.current;
             el?.blur();
-            onSubmit?.(value);
+            onSubmit?.(valueRef.current);
             return;
           }
           if (e.key === 'Enter') {
             // Keep the editable flat (no browser <div> blocks) so decoration stays canonical.
             e.preventDefault();
-            document.execCommand('insertText', false, '\n');
+            if (editable) replaceSelection('\n', 'insertLineBreak');
             return;
           }
         }}
         onPaste={(e) => {
           e.preventDefault();
+          if (!editable) return;
           const el = rootRef.current;
           const text = e.clipboardData.getData('text/plain');
           if (el) {
             const sel = getSelOffsets(el);
             const url = text.trim();
-            const full = el.textContent ?? '';
+            const full = valueRef.current;
             if (sel && sel.end > sel.start && /^(https?:\/\/|www\.)/i.test(url)) {
               // Paste a URL onto a selection → apply as a link to the highlighted text.
               const label = full.slice(sel.start, sel.end);
               const next = full.slice(0, sel.start) + `[${label}](${url})` + full.slice(sel.end);
-              writeExternal(next, sel.start + label.length + url.length + 4);
+              writeExternal(next, sel.start + label.length + url.length + 4, 'paste');
               return;
             }
           }
-          document.execCommand('insertText', false, text);
+          replaceSelection(text, 'paste');
         }}
         onFocus={() => setFocused(true)}
         onBlur={() => {
+          history.breakGroup();
           setFocused(false);
           onBlurCommit?.(valueRef.current);
         }}
@@ -972,24 +1086,35 @@ React.useLayoutEffect(() => {
           )}
         </div>
       ) : null}
-      {hoverLink ? (
+      {hoverLink && editable ? (
         <div
-          className="border-border bg-popover absolute z-[60] flex items-center gap-1 rounded-md border px-1 py-1 shadow-md shadow-black/10"
-          style={{ left: hoverLink.left, top: hoverLink.top }}
+          ref={popoverRef}
+          role="toolbar"
+          aria-label="Link actions"
+          className="absolute z-[60]"
+          style={{ left: hoverLink.left, top: hoverLink.top, transform: hoverLink.above ? 'translateY(-100%)' : undefined,
+            paddingBottom: hoverLink.above ? 6 : 0, paddingTop: hoverLink.above ? 0 : 6 }}
           onMouseDown={(e) => e.preventDefault()}
-          onMouseLeave={() => setHoverLink(null)}>
+          onMouseEnter={cancelLinkHide}
+          onMouseLeave={scheduleLinkHide}
+          onFocus={cancelLinkHide}
+          onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) scheduleLinkHide(); }}>
+          <div className="border-border bg-popover flex items-center gap-1 rounded-md border px-1 py-1 shadow-md shadow-black/10">
           <button
             type="button"
+            aria-label="Edit link"
             className="text-foreground hover:bg-accent rounded px-2 py-1 text-xs"
             onClick={applyLinkEdit}>
             Edit
           </button>
           <button
             type="button"
+            aria-label="Remove link"
             className="text-foreground hover:bg-accent rounded px-2 py-1 text-xs"
             onClick={removeLink}>
             Remove
           </button>
+          </div>
         </div>
       ) : null}
     </View>

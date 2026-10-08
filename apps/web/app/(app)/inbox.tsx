@@ -24,15 +24,18 @@ export default function InboxScreen() {
   const [marking, setMarking] = React.useState<string | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [offset, setOffset] = React.useState(0);
+  const [decisions, setDecisions] = React.useState(false);
 
   const includeRead = tab === 'all';
+  const filterKey = JSON.stringify([includeRead, decisions, offset]);
   const resource = useResource(
-    () => client.listInbox({ include_read: includeRead, limit: 50, offset }),
-    [client, includeRead, version, offset]
+    async () => ({ ...await client.listInbox({ include_read: includeRead, needs_decision: decisions, limit: 50, offset }), filterKey }),
+    [client, includeRead, decisions, version, offset]
   );
 
-  const items = resource.data?.items ?? [];
-  const unread = resource.data?.unread ?? 0;
+  const ready = resource.data?.filterKey === filterKey;
+  const items = ready ? resource.data?.items ?? [] : [];
+  const unread = ready ? resource.data?.unread ?? 0 : 0;
   React.useEffect(() => {
     if (resource.data && offset > 0 && offset >= resource.data.total) setOffset(Math.max(0, offset - 50));
   }, [resource.data, offset]);
@@ -43,7 +46,7 @@ export default function InboxScreen() {
     setActionError(null);
     try {
       if (id !== undefined) await client.markInboxItemRead(id);
-      else await client.markInboxRead({ mark_read: true });
+      else await client.markInboxRead({ mark_read: true, needs_decision: decisions });
       await resource.reload();
       await refreshBadge();
     } catch (e) {
@@ -69,6 +72,8 @@ export default function InboxScreen() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
+        <Button variant={decisions ? 'default' : 'outline'} size="sm" accessibilityLabel="Filter inbox: Decisions" aria-pressed={decisions}
+          onPress={() => { setDecisions((v) => !v); setOffset(0); }}><Text>Decisions</Text></Button>
         {unread > 0 ? (
           <Badge variant="secondary">
             <Text>{unread} unread</Text>
@@ -78,15 +83,16 @@ export default function InboxScreen() {
         <Button
           variant="outline"
           className="gap-1.5"
-          disabled={!!marking || unread === 0}
+          disabled={!!marking || !ready || !!resource.error || unread === 0}
           onPress={() => markRead()}>
           <Icon as={CheckCheckIcon} className="text-muted-foreground size-4" />
-          <Text>{marking === 'all' ? 'Marking...' : 'Mark all read'}</Text>
+          <Text>{marking === 'all' ? 'Marking...' : decisions ? `Mark all decisions read (${unread})` : `Mark all read (${unread})`}</Text>
         </Button>
       </View>
 
       <Text className="text-muted-foreground px-4 py-2 text-xs">
         One item per conversation. Expanding it keeps it unread. Reply or select Mark read to clear it.
+        {decisions ? ' Showing unanswered questions. Mark all applies only to this filter.' : ''}
       </Text>
 
       {actionError ? (
@@ -95,7 +101,7 @@ export default function InboxScreen() {
         </View>
       ) : null}
 
-      {resource.loading ? (
+      {resource.loading || (!ready && !resource.error) ? (
         <View className="gap-2 p-4">
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-20 w-full" />
@@ -111,7 +117,7 @@ export default function InboxScreen() {
       ) : items.length === 0 ? (
         <EmptyState
           icon={InboxIcon}
-          title="You're all caught up."
+          title={decisions ? 'No decisions match this view.' : "You're all caught up."}
           description={
             tab === 'unread'
               ? 'Mentions and replies land here. Switch to All to see what you already read.'

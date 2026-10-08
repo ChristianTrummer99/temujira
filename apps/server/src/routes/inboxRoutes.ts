@@ -10,6 +10,9 @@ import { loadCommentsById } from "./commentSerialize";
 import { currentUser, query, type AppContext, type Handlers } from "./types";
 
 const threadId = sql<string>`coalesce(${inboxItems.parentCommentId}, ${inboxItems.sourceCommentId})`;
+const needsDecision = sql`EXISTS (SELECT 1 FROM comments decision WHERE decision.id = ${threadId}
+  AND decision.question_options IS NOT NULL AND decision.answer_option_index IS NULL
+  AND json_array_length(CASE WHEN json_valid(decision.question_options) THEN decision.question_options ELSE '[]' END) >= 2)`;
 
 export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "inbox.update" | "inbox.watch" | "inbox.markRead"> {
   return {
@@ -70,7 +73,7 @@ export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "i
         rank: sql<number>`row_number() OVER (PARTITION BY ${threadId} ORDER BY ${inboxItems.createdAt} DESC, ${inboxItems}.rowid DESC)`.as("latest_rank"),
         unread: sql<number>`sum(CASE WHEN ${inboxItems.readAt} IS NULL THEN 1 ELSE 0 END) OVER (PARTITION BY ${threadId})`.as("thread_unread"),
         readAt: sql<number | null>`max(${inboxItems.readAt}) OVER (PARTITION BY ${threadId})`.as("thread_read_at"),
-      }).from(inboxItems).where(and(eq(inboxItems.userId, user.id), wsScope)));
+      }).from(inboxItems).where(and(eq(inboxItems.userId, user.id), wsScope, q.needs_decision ? needsDecision : undefined)));
       const where = and(eq(conversations.rank, 1), q.include_read ? undefined : gt(conversations.unread, 0));
       const total = ctx.db.with(conversations).select({ n: count() }).from(conversations).where(where).get()!.n;
       const unread = ctx.db.with(conversations).select({ n: count() }).from(conversations)
@@ -108,13 +111,14 @@ export function inboxHandlers(ctx: AppContext): Pick<Handlers, "inbox.list" | "i
       return c.json({ items, unread, total, limit: q.limit, offset: q.offset });
     },
 
-    /** `?mark_read=1` marks every unread row of the current user read; idempotent. */
+    /** `?mark_read=1` acknowledges matching, accessible conversations; idempotent. */
     "inbox.update": (c) => {
       const user = currentUser(c);
       const q = query<z.infer<typeof UpdateInboxQuerySchema>>(c);
       if (!q.mark_read) return c.json({ ok: true as const, updated: 0 });
       const where = and(eq(inboxItems.userId, user.id), isNull(inboxItems.readAt),
-        workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user)));
+        workspaceScopeWhere(inboxItems.workspaceId, accessibleWorkspaceIds(ctx.db, user)),
+        q.needs_decision ? needsDecision : undefined);
       const updated = ctx.db.select({ n: sql<number>`count(DISTINCT ${threadId})` }).from(inboxItems).where(where).get()!.n;
       ctx.db
         .update(inboxItems)

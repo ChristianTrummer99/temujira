@@ -98,6 +98,20 @@ email/password authentication, API key management, and every feature below marke
 - **FR-54** Users and API keys share a settings section with two tabs. Use compact,
   uniform-height rows, search, filter pills, pagination, and action menus. Keep filters when
   switching tabs. Selected filters must have a clear, high-contrast state.
+- **FR-55** Web editors support Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z. Keep selections and history
+  across formatting, paste, mentions, and link changes. Link Edit/Remove controls stay
+  reachable from the link by pointer and keyboard.
+- **FR-56** Save unsent comments, replies, and comment edits on the device, scoped by server,
+  account, and immutable task/thread IDs. Restore after refresh or navigation. Keep question
+  options and mentions. Show save failures, and offer discard. Successful sends clear drafts.
+- **FR-57** Replies use the same file picker as root comments. Restore file names and ask
+  for file selection again after restart. Retry a failed upload against the already-posted
+  comment so it does not create duplicate text.
+- **FR-58** Identity table columns fit the available width. Bound variable-length columns
+  and show their full values on hover, focus, or tap. Keep horizontal scrolling on phones.
+- **FR-59** The inbox Decisions filter shows unanswered multiple-choice conversations.
+  Filtering precedes counts and pagination. Mark all read uses the same filter across all
+  pages and respects current access. The API and CLI expose the same filter.
 
 ### Task list presentation
 

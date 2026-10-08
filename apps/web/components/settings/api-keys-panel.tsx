@@ -36,6 +36,7 @@ import { hasScope } from '@/lib/scopes';
 import { useResource } from '@/lib/use-resource';
 import { invalidateResources } from '@/lib/invalidation';
 import { RowMenu } from '@/components/row-menu';
+import { TruncatedCell } from '@/components/truncated-cell';
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { FilterPill, IDENTITY_PAGE_SIZE, ListPagination } from './list-controls';
 import { formatRelative } from '@/lib/format';
@@ -63,6 +64,7 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
   const [search, setSearch] = React.useState('');
   const [stateFilter, setStateFilter] = React.useState<'active' | 'revoked' | 'all'>('active');
   const [page, setPage] = React.useState(0);
+  const [tableWidth, setTableWidth] = React.useState(640);
   const [details, setDetails] = React.useState<ApiKey | null>(null);
   const [newKeyOpen, setNewKeyOpen] = React.useState(false);
   const [keyName, setKeyName] = React.useState('');
@@ -177,23 +179,23 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
               <Skeleton className="h-12 w-full" />
             </View>
           ) : (
-            <ScrollView horizontal contentContainerStyle={{ flexGrow: 1 }}><View style={{ minWidth: 1000, flex: 1 }} className="border-border rounded border">
-              <View className="border-border bg-muted/40 h-8 flex-row items-center gap-3 border-b px-3">
-                <View className="w-4" /><Text className="text-muted-foreground min-w-40 flex-1 text-[11px]">Name</Text><Text className="text-muted-foreground w-32 text-[11px]">Prefix</Text>
-                <Text className="text-muted-foreground w-44 text-[11px]">Owner</Text><Text className="text-muted-foreground w-28 text-[11px]">Created</Text><Text className="text-muted-foreground w-28 text-[11px]">Last used</Text><Text className="text-muted-foreground w-20 text-[11px]">State</Text><View className="w-7" />
+            <ScrollView horizontal onLayout={({ nativeEvent }) => setTableWidth(Math.max(640, nativeEvent.layout.width))}><View style={{ width: tableWidth }} className="border-border rounded border">
+              <View className="border-border bg-muted/40 h-8 flex-row items-center gap-2 border-b px-2">
+                <View className="w-4" /><Text className="text-muted-foreground min-w-20 max-w-56 flex-1 text-[11px]">Name</Text><Text className="text-muted-foreground w-24 text-[11px]">Prefix</Text>
+                <Text className="text-muted-foreground min-w-20 max-w-44 flex-1 text-[11px]">Owner</Text><Text className="text-muted-foreground w-20 text-[11px]">Created</Text><Text className="text-muted-foreground w-20 text-[11px]">Last used</Text><Text className="text-muted-foreground w-14 text-[11px]">State</Text><View className="ml-auto w-7" />
               </View>
             {pageKeys.map((k) => (
               <View
                   key={k.id}
-                testID={`api-key-row-${k.id}`} className="action-row border-border hover:bg-accent/30 h-10 flex-row items-center gap-3 border-b px-3">
+                testID={`api-key-row-${k.id}`} className="action-row border-border hover:bg-accent/30 h-10 flex-row items-center gap-2 border-b px-2">
                 <Icon as={KeyRoundIcon} className="text-muted-foreground size-4" />
-                <Text numberOfLines={1} className="min-w-40 flex-1 text-xs font-medium">{k.name}</Text>
-                <Text className="text-muted-foreground w-32 font-mono text-[11px]">{k.token_prefix}…</Text>
-                <Text numberOfLines={1} className="w-44 text-[11px]">{ownerLabel(k.user_id)}</Text>
-                <Text className="text-muted-foreground w-28 text-[11px]">{formatRelative(k.created_at)}</Text>
-                <Text className="text-muted-foreground w-28 text-[11px]">{k.last_used_at ? formatRelative(k.last_used_at) : 'Never'}</Text>
-                <Text className={`w-20 text-[11px] ${k.revoked_at ? 'text-muted-foreground' : ''}`}>{k.revoked_at ? 'Revoked' : 'Active'}</Text>
-                <RowMenu label={`Actions for API key ${k.name}`} hover={false}>
+                <TruncatedCell value={k.name} className="min-w-20 max-w-56 flex-1" textClassName="font-medium" />
+                <Text className="text-muted-foreground w-24 font-mono text-[11px]">{k.token_prefix}…</Text>
+                <TruncatedCell value={ownerLabel(k.user_id)} className="min-w-20 max-w-44 flex-1" />
+                <Text numberOfLines={1} className="text-muted-foreground w-20 text-[11px]">{formatRelative(k.created_at)}</Text>
+                <Text numberOfLines={1} className="text-muted-foreground w-20 text-[11px]">{k.last_used_at ? formatRelative(k.last_used_at) : 'Never'}</Text>
+                <Text className={`w-14 text-[11px] ${k.revoked_at ? 'text-muted-foreground' : ''}`}>{k.revoked_at ? 'Revoked' : 'Active'}</Text>
+                <RowMenu label={`Actions for API key ${k.name}`} hover={false} className="ml-auto">
                   <DropdownMenuItem onPress={() => setDetails(k)}><Text>Key details</Text></DropdownMenuItem>
                   {typeof navigator !== 'undefined' && navigator.clipboard ? <DropdownMenuItem onPress={() => navigator.clipboard.writeText(k.id).catch(() => setError('Could not copy key ID'))}><Text>Copy key ID</Text></DropdownMenuItem> : null}
                   {!k.revoked_at ? <><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onPress={() => setConfirmRevoke(k)}><Text>Revoke key</Text></DropdownMenuItem></> : null}

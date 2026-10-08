@@ -59,12 +59,13 @@ export interface ClientOptions {
 type Body = Record<string, unknown>;
 type Query = Record<string, string | number | boolean | undefined>;
 
-export interface UploadInput {
-  /** File/Blob (browser) or raw bytes (Node). */
-  data: Blob | Uint8Array;
+export type UploadInput = {
   filename: string;
   contentType?: string;
-}
+} & (
+  | { /** File/Blob (browser) or raw bytes (Node). */ data: Blob | Uint8Array }
+  | { /** Local file/content URI for React Native's FormData implementation. */ uri: string }
+);
 
 export class TemujiraClient {
   private baseUrl: string;
@@ -476,6 +477,10 @@ export class TemujiraClient {
   // ---- attachments ----
   private uploadForm(file: UploadInput): FormData {
     const fd = new FormData();
+    if ('uri' in file) {
+      fd.append('file', { uri: file.uri, name: file.filename, type: file.contentType ?? 'application/octet-stream' } as unknown as Blob);
+      return fd;
+    }
     const blob =
       file.data instanceof Blob
         ? file.data
@@ -525,7 +530,7 @@ export class TemujiraClient {
   watchInbox(query: { after?: number; limit?: number } = {}) {
     return this.call("inbox.watch", {}, { query }) as Promise<{ items: InboxEvent[]; cursor: number; has_more: boolean }>;
   }
-  listInbox(query: { include_read?: boolean; limit?: number; offset?: number } = {}) {
+  listInbox(query: { include_read?: boolean; needs_decision?: boolean; limit?: number; offset?: number } = {}) {
     return this.call("inbox.list", {}, { query }) as Promise<{
       items: InboxConversation[];
       unread: number;
@@ -534,7 +539,7 @@ export class TemujiraClient {
       offset: number;
     }>;
   }
-  markInboxRead(query: { mark_read?: boolean } = { mark_read: true }) {
+  markInboxRead(query: { mark_read?: boolean; needs_decision?: boolean } = { mark_read: true }) {
     return this.call("inbox.update", {}, { query }) as Promise<{ ok: true; updated: number }>;
   }
   markInboxItemRead(id: string) {

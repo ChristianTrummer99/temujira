@@ -315,8 +315,8 @@ tmj activity list [--workspace <workspaceIdOrKey>] [--task <taskIdOrKey>]
                   [--category <group>]...
                   [--limit <n>] [--offset <n>]
 
-tmj inbox list [--all] [--limit <n>] [--offset <n>]
-tmj inbox read [itemId]
+tmj inbox list [--all] [--decisions] [--limit <n>] [--offset <n>]
+tmj inbox read [itemId] [--decisions]
 tmj inbox watch [--after <cursor> | --cursor-file <path>]
                 [--once] [--interval <seconds>] [--limit <n>]
 ```
@@ -348,6 +348,12 @@ conversations read. The response's `updated` count is the number of conversation
 Reading or opening items never marks them read. A successful reply or question answer
 marks only the replying user's existing notifications in that thread read. Notifications
 for other threads and other users stay unchanged. New responses start unread.
+
+`--decisions` filters to conversations whose root has multiple-choice options and no answer.
+It works with `list --all` and applies before counts/pages. `read --decisions` acknowledges
+only currently matching, accessible conversations across all pages. It cannot be combined
+with an item ID. The API parameter is `needs_decision=true` on list and bulk read. Watch
+events are not filtered by decision state.
 
 Inbox `items`, `total`, `unread`, `limit`, and `offset` now describe conversations, grouped
 before pagination. `thread_id` identifies the root comment. `id` comes from the oldest

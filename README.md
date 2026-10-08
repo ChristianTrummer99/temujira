@@ -81,8 +81,10 @@ tmj comment add --task ENG-42 --body "Ship it today or tomorrow?" \
 tmj comment add --task ENG-42 --body "Tomorrow" --reply-to <question-id> --answer 1
 
 tmj inbox list          # mentions and replies aimed at you, across every workspace
+tmj inbox list --decisions # unanswered multiple-choice questions
 tmj inbox read <itemId> # clear one conversation (inbox ID from inbox list)
 tmj inbox read          # mark them all read
+tmj inbox read --decisions # mark only unanswered questions read
 tmj task mine           # active tasks you created, were assigned, commented on or were mentioned in
 tmj activity list --workspace ENG --mine
 tmj activity list --task ENG-42
@@ -105,6 +107,30 @@ its current notifications. When the recipient replies in a thread
 read. Other threads and other recipients are not cleared. New responses update the same
 inbox item and make it unread again. The unread badge counts conversations, not replies.
 Inbox totals and pagination also count conversations, before applying the page limit.
+
+Select **Decisions** to show conversations with an unanswered multiple-choice question.
+The filter checks the root question, even when the latest message is a reply. **Mark all
+decisions read** clears only matching conversations across all pages. Status messages and
+answered questions stay unread. The sidebar badge still counts all unread conversations.
+The API uses `needs_decision=true` on both `GET /inbox` and `POST /inbox/read?mark_read=true`.
+
+### Editing and saved drafts
+
+Use Cmd/Ctrl+Z to undo and Cmd/Ctrl+Shift+Z to redo in web text editors. Ctrl+Y also redoes
+an edit. Typing, paste, formatting, mentions, and link changes keep their history. Move the
+pointer from a link to its Edit/Remove toolbar, or focus the link with the keyboard.
+
+Unsent comments, replies, and comment edits are saved on the current device. Text, mentions,
+question options, and the reply target survive refresh or navigation. Each draft is separate
+for its server, account, task, and thread. **Discard draft** removes it; a successful post
+or save clears it. A failed request keeps it. Drafts use browser local storage on the web
+and device storage on native apps. They are not synchronized between devices or included in
+server backups. Clearing browser/app storage removes them.
+
+Comments and replies have the same **Attach file** control. Drafts save the file name, so
+select the file again after a refresh or app restart. If text was posted but the upload
+failed, **Retry attachment** uploads to that existing message. It does not post the text
+again. **Cancel attachment** leaves the posted message in place.
 
 ```sh
 tmj activity list --category replies --category files --workspace ENG --json
@@ -205,6 +231,8 @@ history are retained.
 pills, fixed-height rows, row action menus, and 50-row pages. Users can be filtered by type,
 state, and admin role. Keys can be filtered by state and owner. The user menu can open that
 user's keys or create a key directly. Searches and filters are kept when switching tabs.
+Columns fit the available width, with horizontal scrolling on narrow screens. Long names,
+login values, and owners have bounded widths. Hover, focus, or tap a value to read it in full.
 
 ### Watch notifications
 

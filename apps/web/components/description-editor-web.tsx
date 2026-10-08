@@ -29,6 +29,14 @@ export function WebDescriptionEditor({
   return (
     <div
       className={cn('tmj-description-editor w-full', className)}
+      onKeyDownCapture={(event) => {
+        const editor = handle.current;
+        if (!editable || !editor?.getContentDOM()?.contains(event.target as Node) || event.altKey || (!event.metaKey && !event.ctrlKey)) return;
+        const key = event.key.toLowerCase();
+        if (key !== 'z' && !(key === 'y' && event.ctrlKey)) return;
+        event.preventDefault(); event.stopPropagation();
+        if (key === 'y' || event.shiftKey) editor.redo(); else editor.undo();
+      }}
       onBlur={() => onBlurCommit?.()}>
       <AtomicCodeMirrorEditor
         documentId={documentId}

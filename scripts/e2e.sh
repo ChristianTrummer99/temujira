@@ -195,6 +195,16 @@ as_member() { TEMUJIRA_URL="http://localhost:$PORT" TEMUJIRA_API_KEY="$MEMBER_KE
 as_member inbox list --json | jq -e '.unread >= 1 and (.items[0].kind == "mention")' >/dev/null || die "mention did not reach inbox"
 as_member inbox list --json | jq -e '.items[0].task_key != null and .items[0].workspace.key == "ENG"' >/dev/null || die "inbox item missing task/workspace context"
 
+say "Decisions filter and scoped bulk acknowledgement"
+DECISION=$(tmj comment add --task "$T1" --body "Choose a release" --question "Now" --question "Later" --mention dev@e2e.test --json | jq -r '.comment.id')
+tmj comment add --task "$T1" --body "More context" --reply-to "$DECISION" --mention dev@e2e.test >/dev/null || die "decision context reply"
+as_member inbox list --decisions --json | jq -e --arg id "$DECISION" '.unread == 1 and .total == 1 and .items[0].thread_id == $id' >/dev/null || die "decision filter counts"
+as_member inbox read --decisions --json | jq -e '.updated == 1' >/dev/null || die "decision mark read"
+as_member inbox list --json | jq -e '.unread == 1' >/dev/null || die "decision read cleared ordinary mention"
+as_member inbox list --decisions --all --json | jq -e '.total == 1 and .unread == 0' >/dev/null || die "decision all filter"
+tmj comment add --task "$T1" --body "Now" --reply-to "$DECISION" --answer 0 >/dev/null || die "decision answer"
+as_member inbox list --decisions --all --json | jq -e '.total == 0' >/dev/null || die "answered question matched decisions"
+
 say "Replies notify the parent author; mark-read clears the inbox"
 MEMBER_ROOT=$(as_member comment add --task "$T1" --body "Member question here" --json | jq -r '.comment.id')
 tmj comment add --task "$T1" --body "Admin answering" --reply-to "$MEMBER_ROOT" >/dev/null || die "admin reply"

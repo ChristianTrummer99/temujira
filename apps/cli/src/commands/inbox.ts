@@ -67,13 +67,15 @@ export function registerInbox(program: Command): void {
     .command("list")
     .description("List inbox conversations, newest first (unread only unless --all)")
     .option("--all", "include items you have already read")
+    .option("--decisions", "only unanswered multiple-choice conversations")
     .option("--limit <n>", "page size (max 200)", nonNegativeInt("--limit"))
     .option("--offset <n>", "page offset", nonNegativeInt("--offset"))
     .action(
-      async (opts: { all?: boolean; limit?: number; offset?: number }, cmd: Command) => {
+      async (opts: { all?: boolean; decisions?: boolean; limit?: number; offset?: number }, cmd: Command) => {
         const ctx = getCtx(cmd);
         const query: NonNullable<Parameters<typeof ctx.client.listInbox>[0]> = {};
         if (opts.all) query.include_read = true;
+        if (opts.decisions) query.needs_decision = true;
         if (opts.limit !== undefined) query.limit = opts.limit;
         if (opts.offset !== undefined) query.offset = opts.offset;
         const res = await ctx.client.listInbox(query);
@@ -111,12 +113,14 @@ export function registerInbox(program: Command): void {
     .command("read")
     .description("Mark a conversation read; omit the id to mark all accessible conversations read")
     .argument("[itemId]", "inbox item id from `inbox list`, not a comment id")
-    .action(async (itemId: string | undefined, _opts: Record<string, never>, cmd: Command) => {
+    .option("--decisions", "mark only unanswered multiple-choice conversations read (omit itemId)")
+    .action(async (itemId: string | undefined, opts: { decisions?: boolean }, cmd: Command) => {
+      if (itemId !== undefined && opts.decisions) throw new CliError("use --decisions without an item id", EXIT_CODES.usage);
       if (itemId !== undefined && !isUlid(itemId)) {
         throw new CliError("inbox item must be an id from `tmj inbox list`", EXIT_CODES.usage);
       }
       const ctx = getCtx(cmd);
-      const res = itemId !== undefined ? await ctx.client.markInboxItemRead(itemId) : await ctx.client.markInboxRead({ mark_read: true });
+      const res = itemId !== undefined ? await ctx.client.markInboxItemRead(itemId) : await ctx.client.markInboxRead({ mark_read: true, needs_decision: opts.decisions });
       emit(ctx.mode, {
         json: res,
         human: () => `marked ${res.updated} conversation${res.updated === 1 ? "" : "s"} read`,

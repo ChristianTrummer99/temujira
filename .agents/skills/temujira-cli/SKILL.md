@@ -217,6 +217,12 @@ notification ID, including an ID from the watcher, can mark its conversation rea
 The watcher still emits individual notifications, so grouping does not hide new messages
 from monitors. Stored notification history is retained.
 
+Use `inbox list --decisions --json` to list conversations with an unanswered multiple-choice
+question. The root question determines the match, including when a newer reply is plain text.
+Use `inbox read --decisions --json` to mark only those conversations read across all pages.
+Without that flag, a bulk read acknowledges all accessible conversations. Do not combine
+`--decisions` with an item ID. Counts use the selected filter and current permissions.
+
 Activity supports action groups via repeated `--category` flags, for example
 `tmj activity list --category replies --category files --json`. Groups combine with OR;
 workspace, task, actor, exact action, and permission filters still apply. See the reference

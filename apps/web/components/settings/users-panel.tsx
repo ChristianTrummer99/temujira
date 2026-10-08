@@ -1,5 +1,6 @@
 import { UserAvatar } from '@/components/user-avatar';
 import { UserInfoDialog } from '@/components/user-info-dialog';
+import { TruncatedCell } from '@/components/truncated-cell';
 import { ProfilePictureEditor } from '@/components/profile-picture-editor';
 import { RowMenu } from '@/components/row-menu';
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
@@ -47,6 +48,7 @@ export default function UsersPanel({ onShowKeys }: { onShowKeys: (userId: string
   const [stateFilter, setStateFilter] = React.useState<'active' | 'inactive' | 'all'>('active');
   const [adminsOnly, setAdminsOnly] = React.useState(false);
   const [page, setPage] = React.useState(0);
+  const [tableWidth, setTableWidth] = React.useState(640);
   const [renameFor, setRenameFor] = React.useState<User | null>(null);
   const [renameName, setRenameName] = React.useState('');
   const [renaming, setRenaming] = React.useState(false);
@@ -287,13 +289,13 @@ export default function UsersPanel({ onShowKeys }: { onShowKeys: (userId: string
               <Skeleton className="h-12 w-full" />
             </View>
           ) : (
-            <ScrollView horizontal contentContainerStyle={{ flexGrow: 1 }}>
-            <View style={{ minWidth: 960, flex: 1 }} className="border-border rounded border">
-            <View className="border-border bg-muted/40 h-8 flex-row items-center gap-3 border-b px-3">
-              <View className="w-6" /><Text className="text-muted-foreground min-w-40 flex-1 text-[11px]">Name</Text>
-              <Text className="text-muted-foreground w-56 text-[11px]">Login</Text><Text className="text-muted-foreground w-16 text-[11px]">Type</Text>
-              <Text className="text-muted-foreground w-16 text-[11px]">Role</Text><Text className="text-muted-foreground w-20 text-[11px]">Identity</Text>
-              <Text className="text-muted-foreground w-20 text-[11px]">State</Text><View className="w-7" />
+            <ScrollView horizontal onLayout={({ nativeEvent }) => setTableWidth(Math.max(640, nativeEvent.layout.width))}>
+            <View style={{ width: tableWidth }} className="border-border rounded border">
+            <View className="border-border bg-muted/40 h-8 flex-row items-center gap-2 border-b px-2">
+              <View className="w-6" /><Text className="text-muted-foreground min-w-20 max-w-48 flex-1 text-[11px]">Name</Text>
+              <Text className="text-muted-foreground min-w-24 max-w-56 flex-1 text-[11px]">Login</Text><Text className="text-muted-foreground w-12 text-[11px]">Type</Text>
+              <Text className="text-muted-foreground w-12 text-[11px]">Role</Text><Text className="text-muted-foreground w-16 text-[11px]">Identity</Text>
+              <Text className="text-muted-foreground w-14 text-[11px]">State</Text><View className="ml-auto w-7" />
             </View>
             {visibleUsers.map((u) => {
               const isMe = u.id === me?.id;
@@ -301,15 +303,15 @@ export default function UsersPanel({ onShowKeys }: { onShowKeys: (userId: string
               return (
                 <View
                   key={u.id}
-                  testID={`user-row-${u.id}`} className="action-row border-border hover:bg-accent/30 h-10 flex-row items-center gap-3 border-b px-3">
+                  testID={`user-row-${u.id}`} className="action-row border-border hover:bg-accent/30 h-10 flex-row items-center gap-2 border-b px-2">
                   <UserAvatar user={u} className="size-6" textClassName="text-[10px]" />
-                  <Text numberOfLines={1} className="min-w-40 flex-1 text-xs font-medium">{u.name}{isMe ? ' (you)' : ''}</Text>
-                  <Text numberOfLines={1} className="text-muted-foreground w-56 text-[11px]">{u.is_agent ? 'API-key login' : u.email ?? '—'}</Text>
-                  <Text className="w-16 text-[11px]">{u.is_agent ? 'Agent' : 'Human'}</Text>
-                  <Text className="w-16 text-[11px]">{u.role === 'admin' ? 'Admin' : 'Member'}</Text>
-                  <Text className="w-20 text-[11px]">{u.is_agent ? u.exclusive_identity ? 'Exclusive' : 'Shared' : '—'}</Text>
-                  <Text className={`w-20 text-[11px] ${u.deactivated_at ? 'text-muted-foreground' : ''}`}>{u.deactivated_at ? 'Inactive' : 'Active'}</Text>
-                  <RowMenu label={`Actions for user ${u.name}`} hover={false}>
+                  <TruncatedCell value={`${u.name}${isMe ? ' (you)' : ''}`} className="min-w-20 max-w-48 flex-1" textClassName="font-medium" />
+                  <TruncatedCell value={u.is_agent ? 'API-key login' : u.email ?? '—'} className="min-w-24 max-w-56 flex-1" textClassName="text-muted-foreground" />
+                  <Text className="w-12 text-[11px]">{u.is_agent ? 'Agent' : 'Human'}</Text>
+                  <Text className="w-12 text-[11px]">{u.role === 'admin' ? 'Admin' : 'Member'}</Text>
+                  <Text className="w-16 text-[11px]">{u.is_agent ? u.exclusive_identity ? 'Exclusive' : 'Shared' : '—'}</Text>
+                  <Text className={`w-14 text-[11px] ${u.deactivated_at ? 'text-muted-foreground' : ''}`}>{u.deactivated_at ? 'Inactive' : 'Active'}</Text>
+                  <RowMenu label={`Actions for user ${u.name}`} hover={false} className="ml-auto">
                     <DropdownMenuItem onPress={() => setDetailsFor(u)}><Text>User details</Text></DropdownMenuItem>
                     {canManageKeys || isMe ? <DropdownMenuItem onPress={() => onShowKeys(u.id)}><Text>View API keys</Text></DropdownMenuItem> : null}
                     {canManageKeys || isMe ? <DropdownMenuItem onPress={() => { setMintFor(u); setKeyName(`${u.name.split(/\s+/)[0].toLowerCase()}-key`); }}><Text>Create API key</Text></DropdownMenuItem> : null}

@@ -691,7 +691,7 @@ export const ROUTES = {
     method: "GET",
     path: "/inbox",
     auth: "user",
-    summary: "One inbox item per conversation, with the latest notification; counts and pages are conversations",
+    summary: "List inbox conversations; needs_decision filters unanswered multiple-choice questions before counts and pages",
     query: ListInboxQuerySchema,
     response: z.object({
       items: z.array(InboxConversationSchema),
@@ -705,7 +705,7 @@ export const ROUTES = {
     method: "POST",
     path: "/inbox/read",
     auth: "user",
-    summary: "Mark all accessible conversations read (?mark_read=1); updated counts conversations",
+    summary: "Mark matching accessible conversations read (?mark_read=1, optional needs_decision=1); updated counts conversations",
     query: UpdateInboxQuerySchema,
     response: z.object({ ok: z.literal(true), updated: z.number().int() }),
   },
