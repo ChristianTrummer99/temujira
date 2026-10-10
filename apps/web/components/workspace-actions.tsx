@@ -29,7 +29,6 @@ export function WorkspaceActions({ workspace, onChanged, className }: { workspac
   }
   return <>
     <RowMenu label={`Actions for workspace ${workspace.name}`} className={className}>
-      <DropdownMenuItem onPress={() => router.push(`/w/${workspace.key}`)}><Text>Open workspace</Text></DropdownMenuItem>
       <DropdownMenuItem onPress={() => router.push(`/w/${workspace.key}/activity`)}><Text>Workspace activity</Text></DropdownMenuItem>
       {hasScope(user, 'workspaces:manage') ? <>
         <DropdownMenuSeparator />

@@ -11,14 +11,12 @@ import { splitTaskKey } from '@/lib/format';
 import { invalidateResources } from '@/lib/invalidation';
 import { hasScope } from '@/lib/scopes';
 import type { Task, User } from '@temujira/client';
-import { useRouter } from 'expo-router';
 import * as React from 'react';
 
 export function TaskActions({ task, users, onChanged, onDeleted, hover = true }: {
   task: Task; users: User[]; onChanged?: (task: Task) => void; onDeleted?: () => void; hover?: boolean;
 }) {
   const { client, user } = useAuth();
-  const router = useRouter();
   const canWrite = hasScope(user, 'tasks:write');
   const [dialog, setDialog] = React.useState<'rename' | 'assign' | 'delete' | null>(null);
   const [title, setTitle] = React.useState(task.title);
@@ -37,7 +35,6 @@ export function TaskActions({ task, users, onChanged, onDeleted, hover = true }:
   }
   return <>
     <RowMenu label={`Actions for ${task.key}`} hover={hover}>
-      <DropdownMenuItem onPress={() => router.push(href)}><Text>Open task</Text></DropdownMenuItem>
       {typeof navigator !== 'undefined' && navigator.clipboard ? <DropdownMenuItem onPress={async () => {
         try { await navigator.clipboard.writeText(new URL(href, window.location.href).href); }
         catch { setError('Could not copy the link'); }

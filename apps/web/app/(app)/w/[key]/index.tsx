@@ -620,7 +620,7 @@ function TaskRow({
         </PopoverContent></Popover>
       </> : null}
       <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)} className="min-w-0 flex-1 flex-row flex-wrap items-center gap-x-3 gap-y-1 py-1">
-        <Text className="text-muted-foreground w-16 shrink-0 font-mono text-xs">{task.key}</Text>
+        <Text numberOfLines={1} className="text-muted-foreground min-w-16 shrink-0 font-mono text-xs">{task.key}</Text>
         <Text numberOfLines={1} className="min-w-24 flex-1 text-sm">{task.title}</Text>
       </Pressable>
       {fieldValue ? (

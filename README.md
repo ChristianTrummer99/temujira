@@ -217,8 +217,11 @@ controls; active filter chips can be cleared one at a time.
 
 Task rows have a fixed space for a hover action menu, so their contents do not move when
 the menu appears. Use it to rename, assign, archive/restore, copy a link, or delete a task.
+Ticket keys never wrap. A long key pushes the title to the right; short keys keep the
+column aligned. The row itself opens the ticket, so the action menu has no Open task item.
 Statuses use the same color, dot, and text as tags, with a rounded rectangle and a chevron.
-Workspace hover menus offer rename, archive/restore, activity, and delete actions.
+Workspace hover menus offer rename, archive/restore, activity, and delete actions. The
+workspace row opens the workspace, so its menu has no Open workspace item.
 
 Delete is permanent and separate from Archive. The UI asks for confirmation; the CLI uses
 `task delete <idOrKey> --yes` and `workspace delete <idOrKey> --yes`. Task deletion removes

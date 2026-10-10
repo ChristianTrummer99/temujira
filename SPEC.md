@@ -94,7 +94,9 @@ email/password authentication, API key management, and every feature below marke
 - **FR-53** Workspace and task rows have action menus. Hover reveals the ellipsis in reserved
   space; keyboard focus and touch also expose it. Support rename, archive/restore, and
   confirmed permanent deletion with API/CLI parity. Task rows are compact; status controls
-  match tag typography and colors, using a rounded rectangle and a chevron.
+  match tag typography and colors, using a rounded rectangle and a chevron. Ticket keys stay
+  on one line; a long key pushes the following content instead of wrapping. A menu never
+  repeats an open action when the row itself is clickable.
 - **FR-54** Users and API keys share a settings section with two tabs. Use compact,
   uniform-height rows, search, filter pills, pagination, and action menus. Keep filters when
   switching tabs. Selected filters must have a clear, high-contrast state.
