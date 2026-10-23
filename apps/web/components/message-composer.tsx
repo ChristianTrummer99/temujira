@@ -28,6 +28,7 @@ export function MessageComposer({ taskKey, users, parentId, draft, onPosted, onC
   const questionValid = !!parentId || !data.asQuestion || (options.length >= 2 && options.length <= 10);
   const hasContent = !!data.body.trim() || queue.items.length > 0;
   const disabled = posting || !draft.ready;
+  const canSubmit = !disabled && hasScope(user, 'tasks:write') && !queue.missingFiles && (!!data.postedCommentId || (hasContent && questionValid));
 
   async function reload() {
     try { await onPosted(); }
@@ -61,7 +62,8 @@ export function MessageComposer({ taskKey, users, parentId, draft, onPosted, onC
 
   return <View className="border-border bg-card gap-2 rounded-md border p-2.5" testID={`${label}-composer`}>
     {data.postedCommentId ? <Text role="status" className="text-muted-foreground text-sm">Message posted. Retry the attachment to finish.</Text> : <>
-      <MarkdownField value={data.body} mentionUsers={users} label={label} onPasteFiles={queue.add} pasteDisabled={disabled || !hasScope(user, 'tasks:write')}>
+      <MarkdownField value={data.body} mentionUsers={users} label={label} onPasteFiles={queue.add} pasteDisabled={disabled || !hasScope(user, 'tasks:write')}
+        onSubmitShortcut={post} submitDisabled={!canSubmit}>
         <MentionInput value={data.body} onChangeText={(body) => draft.update({ body })}
           onMentionIdsChange={(mentionIds) => draft.update({ mentionIds })} initialMentionIds={data.mentionIds} mentions={users}
           editable={!disabled} autoFocus={!!parentId} placeholder={parentId ? 'Reply…' : 'Write a comment — @ to mention, markdown supported...'} className="min-h-20" />
@@ -85,7 +87,7 @@ export function MessageComposer({ taskKey, users, parentId, draft, onPosted, onC
       <View className="flex-row gap-2">
         {onCancel ? <Button variant="ghost" size="sm" disabled={posting} onPress={onCancel}><Text>Cancel</Text></Button> : null}
         <Button size="sm" accessibilityLabel={data.postedCommentId ? 'Retry attachment' : parentId ? 'Post reply' : 'Post comment'} onPress={post}
-          disabled={disabled || !hasScope(user, 'tasks:write') || queue.missingFiles || (!data.postedCommentId && (!hasContent || !questionValid))}>
+          disabled={!canSubmit}>
           <Text>{posting ? 'Posting...' : data.postedCommentId ? 'Retry attachment' : parentId ? 'Reply' : 'Comment'}</Text>
         </Button>
       </View>

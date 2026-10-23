@@ -776,7 +776,8 @@ function NewTaskDialog({
 
               <View className="gap-1.5">
                 <Label nativeID="task-description-label">Description</Label>
-                <MarkdownField value={description} mentionUsers={users} label="new task description" onPasteFiles={queue.add} pasteDisabled={submitting || !!createdId || !hasScope(me, 'tasks:write')}>
+                <MarkdownField value={description} mentionUsers={users} label="new task description" onPasteFiles={queue.add} pasteDisabled={submitting || !!createdId || !hasScope(me, 'tasks:write')}
+                  onSubmitShortcut={() => void onCreate()} submitDisabled={submitting || (!createdId && !title.trim()) || queue.missingFiles}>
                   <Textarea
                     aria-labelledby="task-description-label"
                     placeholder="Add more context (supports markdown)..."

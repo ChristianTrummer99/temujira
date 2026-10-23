@@ -7,7 +7,9 @@ export function editableText(root: Node): string {
   const isBlock = (node: Node) => node.nodeType === 1 && /^(DIV|P|LI)$/.test((node as Element).tagName);
   function read(node: Node, placeholder = false): string {
     if (node.nodeType === 3) return node.textContent ?? '';
-    if (node.nodeType === 1 && (node as Element).tagName === 'BR') return '\n';
+    if (node.nodeType === 1 && (node as Element).tagName === 'BR') {
+      return (node as Element).hasAttribute('data-tmj-fill') ? '' : '\n';
+    }
     const children = Array.from(node.childNodes);
     if (placeholder && children.length === 1 && (children[0] as Element).tagName === 'BR') return '';
     let value = '';

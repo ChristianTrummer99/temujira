@@ -4,7 +4,16 @@ import { editableText } from '../lib/editable-text';
 // Minimal DOM fixtures captured from Chromium multiline paste. The reader only needs
 // nodeType/tagName/childNodes/textContent, so these tests don't need a browser environment.
 const text = (value: string) => ({ nodeType: 3, textContent: value, childNodes: [] }) as unknown as Node;
-const element = (tagName: string, ...childNodes: Node[]) => ({ nodeType: 1, tagName, childNodes }) as unknown as Node;
+const element = (tagName: string, ...childNodes: Node[]) => ({
+  nodeType: 1, tagName, childNodes,
+  getAttribute: () => null,
+  hasAttribute: () => false,
+}) as unknown as Node;
+const filler = () => ({
+  nodeType: 1, tagName: 'BR', childNodes: [],
+  getAttribute: (name: string) => name === 'data-tmj-fill' ? '' : null,
+  hasAttribute: (name: string) => name === 'data-tmj-fill',
+}) as unknown as Node;
 
 describe('Markdown composer source preservation', () => {
   it('keeps blank lines and table row separators from browser block markup', () => {
@@ -21,5 +30,8 @@ describe('Markdown composer source preservation', () => {
   it('ignores the empty-editor placeholder but preserves a real inline break', () => {
     expect(editableText(element('DIV', element('BR')))).toBe('');
     expect(editableText(element('DIV', text('a'), element('BR'), text('b')))).toBe('a\nb');
+  });
+  it('ignores the caret filler after a trailing newline', () => {
+    expect(editableText(element('DIV', text('a\n'), filler()))).toBe('a\n');
   });
 });

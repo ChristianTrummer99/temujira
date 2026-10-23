@@ -274,6 +274,7 @@ function readChildren(nodes: NodeListOf<ChildNode>): { segs: InlineSeg[]; ok: bo
       else segs.push({ kind: 'text', text: t });
     } else if (node instanceof HTMLElement) {
       if (node.getAttribute('data-tmj-mk') !== null) continue; // marker text, dropped
+      if (node.tagName === 'BR' && node.hasAttribute('data-tmj-fill')) continue; // caret line box
       const mention = node.getAttribute('data-tmj-mention');
       if (mention) {
         segs.push({ kind: 'mention', idOrKey: mention, text: node.textContent ?? '' });
@@ -417,6 +418,14 @@ function appendSegment(parent: HTMLElement, s: InlineSeg) {
 function buildDOM(el: HTMLElement, segs: InlineSeg[]) {
   el.textContent = '';
   for (const s of segs) appendSegment(el, s);
+  // A text node that ends with a newline gives the caret no last line box. Chrome then
+  // inserts typing before that newline. A filler BR (ignored by our readers) fixes the
+  // caret position without adding a source character.
+  if (el.textContent?.endsWith('\n')) {
+    const br = el.ownerDocument.createElement('br');
+    br.setAttribute('data-tmj-fill', '');
+    el.appendChild(br);
+  }
 }
 
 // ------------------------------------------------------------------ formatting

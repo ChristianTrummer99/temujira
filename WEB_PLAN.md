@@ -95,6 +95,10 @@ propagation if the row also navigates on web). The create dialog gains tag toggl
 - Web rich editors use source-level history with selection restore. Cmd/Ctrl+Z, Shift+Z,
   and Ctrl+Y also work across DOM decoration. Descriptions use CodeMirror history. Link
   actions share pointer/focus ownership with the link and have a padded crossing area.
+- `WebFieldEvents` captures Cmd/Ctrl+Enter before the editor turns it into a newline and
+  runs the field's primary submit: comment, reply, comment edit, or new task. Empty or
+  invalid fields use the same disabled guard as their button. A trailing-newline filler BR
+  gives the caret a real last line without adding source characters.
 
 **Inbox** (`inbox.tsx`): Unread/All tabs over server-grouped conversations, one item per
 recipient/thread. The badge, totals, and pages count conversations. Only the accordion header

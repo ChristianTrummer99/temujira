@@ -1587,7 +1587,8 @@ function CommentCard({
         </View>
         {editing ? (
           <View className="gap-2">
-            <MarkdownField value={editBody} mentionUsers={users} label="edited comment" onPasteFiles={uploads.add} pasteDisabled={saving || !hasScope(user, 'tasks:write')}>
+            <MarkdownField value={editBody} mentionUsers={users} label="edited comment" onPasteFiles={uploads.add} pasteDisabled={saving || !hasScope(user, 'tasks:write')}
+              onSubmitShortcut={() => void onSaveEdit()} submitDisabled={saving || !editBody.trim()}>
               <Textarea value={editBody} onChangeText={(body) => editDraft.update({ body })} editable={!saving} className="min-h-20" />
             </MarkdownField>
             {Platform.OS === 'web' ? <Text className="text-muted-foreground text-xs">Pasted images are attached to this comment immediately.</Text> : null}

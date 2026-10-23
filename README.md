@@ -119,6 +119,8 @@ The API uses `needs_decision=true` on both `GET /inbox` and `POST /inbox/read?ma
 Use Cmd/Ctrl+Z to undo and Cmd/Ctrl+Shift+Z to redo in web text editors. Ctrl+Y also redoes
 an edit. Typing, paste, formatting, mentions, and link changes keep their history. Move the
 pointer from a link to its Edit/Remove toolbar, or focus the link with the keyboard.
+Press Cmd+Enter (Mac) or Ctrl+Enter to post a comment or reply, save a comment edit, or
+create a task from the new-task description. Plain Enter still adds a newline.
 
 Unsent comments, replies, and comment edits are saved on the current device. Text, mentions,
 question options, and the reply target survive refresh or navigation. Each draft is separate

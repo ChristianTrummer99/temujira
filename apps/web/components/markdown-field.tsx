@@ -1,5 +1,5 @@
 import { Markdown } from '@/components/markdown';
-import { AttachmentPaste } from '@/components/attachment-paste';
+import { WebFieldEvents } from '@/components/web-field-events';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import type { UploadInput, User } from '@temujira/client';
@@ -14,6 +14,8 @@ export function MarkdownField({
   label = 'Markdown',
   onPasteFiles,
   pasteDisabled,
+  onSubmitShortcut,
+  submitDisabled,
 }: {
   value: string;
   mentionUsers?: User[];
@@ -21,6 +23,9 @@ export function MarkdownField({
   label?: string;
   onPasteFiles?: (files: UploadInput[]) => void;
   pasteDisabled?: boolean;
+  /** Web: Cmd/Ctrl+Enter triggers the field's primary submit action. */
+  onSubmitShortcut?: () => void;
+  submitDisabled?: boolean;
 }) {
   const [preview, setPreview] = React.useState(false);
   return (
@@ -45,7 +50,9 @@ export function MarkdownField({
           <Text className="text-xs">Preview</Text>
         </Button>
       </View>
-      <View style={preview ? { display: 'none' } : undefined}><AttachmentPaste onFiles={onPasteFiles} disabled={pasteDisabled}>{children}</AttachmentPaste></View>
+      <View style={preview ? { display: 'none' } : undefined}>
+        <WebFieldEvents onFiles={onPasteFiles} filesDisabled={pasteDisabled} onSubmit={onSubmitShortcut} submitDisabled={submitDisabled}>{children}</WebFieldEvents>
+      </View>
       {preview ? (
         <View className="border-border min-h-20 min-w-0 rounded-md border p-3">
           {value.trim() ? (

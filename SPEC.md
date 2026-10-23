@@ -119,6 +119,10 @@ email/password authentication, API key management, and every feature below marke
   without replacing text or earlier files. Keep normal text/link paste. Use existing upload
   permissions and limits; show progress and retry failures. Multiple pending files survive
   draft restore as file names, and successful uploads are excluded from retries.
+- **FR-61** Cmd+Enter (Mac) or Ctrl+Enter submits in browser composers: post a comment or
+  reply, save a comment edit, and create a task from the new-task description. Apply the same
+  validity and permission guards as the primary button. Plain Enter continues to insert a
+  newline, including at the end of the text.
 
 ### Task list presentation
 
