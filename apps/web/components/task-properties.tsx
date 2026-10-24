@@ -63,10 +63,9 @@ export function TaskTagsControl({ task, tags, onChanged, onTagsChanged, disabled
   }
   return <Popover>
     <PopoverTrigger asChild>
-      <Button variant="ghost" size="sm" disabled={disabled || !canWrite} accessibilityLabel={`Tags for ${task.key}`} className="h-7 max-w-64 gap-1 px-1 sm:h-7">
-        {showTags && task.tags.length ? <TagPills tags={task.tags.slice(0, 2)} /> : <Icon as={TagIcon} className="text-muted-foreground size-3.5" />}
+      <Button variant="ghost" size="sm" disabled={disabled || !canWrite} accessibilityLabel={`Tags for ${task.key}`} className="h-7 min-w-0 flex-1 shrink justify-start gap-1 overflow-hidden px-1 sm:h-7">
+        {showTags && task.tags.length ? <TagPills tags={task.tags} max={5} /> : <Icon as={TagIcon} className="text-muted-foreground size-3.5" />}
         {!showTags ? <Text className="text-sm">Edit tags</Text> : null}
-        {showTags && task.tags.length > 2 ? <Text className="text-muted-foreground text-xs">+{task.tags.length - 2}</Text> : null}
         <Icon as={PlusIcon} className="text-muted-foreground size-3" />
       </Button>
     </PopoverTrigger>

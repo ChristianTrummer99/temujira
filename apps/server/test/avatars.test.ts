@@ -57,5 +57,5 @@ it("rejects unsafe types and oversized pictures without losing the current pictu
   const after = await (await t.app.request(`/api/v1/users/${person.userId}`, { headers: bearer(person.token) })).json() as { user: User };
   expect(after.user.avatar_id).toBe(before.user.avatar_id);
   expect(t.ctx.storage.exists(before.user.avatar_id!)).toBe(true);
-  expect(readdirSync(t.ctx.storage.path(".")).some((name) => name.startsWith(".tmp-"))).toBe(false);
+  expect(readdirSync(t.ctx.storage.path(".")).filter((name) => name.startsWith(".tmp-"))).toEqual([]);
 });

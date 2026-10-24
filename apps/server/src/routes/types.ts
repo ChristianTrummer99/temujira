@@ -4,12 +4,13 @@ import type { RouteId } from "@temujira/shared";
 import type { LoginRateLimiter } from "../auth";
 import type { ServerConfig } from "../config";
 import type { Db } from "../db";
-import type { IdentitySessionRow, UserRow } from "../serialize";
+import type { ScopedUser } from "../access";
+import type { IdentitySessionRow } from "../serialize";
 import type { LocalStorage } from "../storage";
 
 export type AppEnv = {
   Variables: {
-    user?: UserRow;
+    user?: ScopedUser;
     authKind?: "cookie" | "bearer";
     sessionId?: string;
     /** Set for Bearer `tmj_` API-key requests: the key that authenticated. */
@@ -41,7 +42,7 @@ export const body = <T>(c: Ctx): T => c.get("body") as T;
 /** Validated query params (set by the registry validation middleware). */
 export const query = <T>(c: Ctx): T => c.get("query") as T;
 /** The authenticated user; only call on auth != public routes. */
-export const currentUser = (c: Ctx): UserRow => {
+export const currentUser = (c: Ctx): ScopedUser => {
   const u = c.get("user");
   if (!u) throw new Error("currentUser() called on an unauthenticated route");
   return u;

@@ -5,11 +5,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
 import { useBackgroundRoute } from '@/lib/background-route';
 import { invalidateResources } from '@/lib/invalidation';
 import { hasScope } from '@/lib/scopes';
 import type { Workspace } from '@temujira/client';
+import { ActivityIcon, ArchiveIcon, PencilIcon, RotateCcwIcon, TrashIcon } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
 
@@ -29,13 +31,13 @@ export function WorkspaceActions({ workspace, onChanged, className }: { workspac
   }
   return <>
     <RowMenu label={`Actions for workspace ${workspace.name}`} className={className}>
-      <DropdownMenuItem onPress={() => router.push(`/w/${workspace.key}/activity`)}><Text>Workspace activity</Text></DropdownMenuItem>
+      <DropdownMenuItem onPress={() => router.push(`/w/${workspace.key}/activity`)}><Icon as={ActivityIcon} className="text-muted-foreground size-3.5" /><Text>Workspace activity</Text></DropdownMenuItem>
       {hasScope(user, 'workspaces:manage') ? <>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={busy} onPress={() => { setName(workspace.name); setError(''); setDialog('rename'); }}><Text>Rename workspace</Text></DropdownMenuItem>
-        <DropdownMenuItem disabled={busy} onPress={() => update({ archived: !workspace.archived_at })}><Text>{workspace.archived_at ? 'Restore workspace' : 'Archive workspace'}</Text></DropdownMenuItem>
+        <DropdownMenuItem disabled={busy} onPress={() => { setName(workspace.name); setError(''); setDialog('rename'); }}><Icon as={PencilIcon} className="text-muted-foreground size-3.5" /><Text>Rename workspace</Text></DropdownMenuItem>
+        <DropdownMenuItem disabled={busy} onPress={() => update({ archived: !workspace.archived_at })}><Icon as={workspace.archived_at ? RotateCcwIcon : ArchiveIcon} className="text-muted-foreground size-3.5" /><Text>{workspace.archived_at ? 'Restore workspace' : 'Archive workspace'}</Text></DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" disabled={busy} onPress={() => setDialog('delete')}><Text>Delete workspace</Text></DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" disabled={busy} onPress={() => setDialog('delete')}><Icon as={TrashIcon} className="size-3.5" /><Text>Delete workspace</Text></DropdownMenuItem>
       </> : null}
     </RowMenu>
     <Dialog open={dialog === 'rename' || (!!error && !dialog)} onOpenChange={(open) => { if (!open && !busy) { setDialog(null); setError(''); } }}>

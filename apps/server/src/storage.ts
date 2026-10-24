@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { HttpError } from "./errors";
@@ -41,7 +41,10 @@ export class LocalStorage {
       }
     };
     await new Promise<void>((resolve, reject) => {
-      const out = createWriteStream(tmpPath, { flags: "wx" });
+      // Open synchronously so the path exists before any data arrives. An async open can
+      // complete after an early abort cleaned up, which would recreate the temp file.
+      const fd = openSync(tmpPath, "wx");
+      const out = createWriteStream(tmpPath, { fd });
       let aborted = false;
       source.on("data", (chunk: Buffer) => {
         if (aborted) return;

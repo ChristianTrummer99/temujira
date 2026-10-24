@@ -80,6 +80,20 @@ Protect credentials:
   tmj user create --name "Build Bot" --agent --with-key --json
   ```
 
+### Narrow a key below its owner
+
+A key can hold fewer scopes and less workspace access than its owner. It can never hold more.
+
+```sh
+tmj apikey create --name ci --scope tasks:write --workspace ENG --json
+tmj apikey create --name read-only --no-scopes --json
+```
+
+`--scope` and `--workspace` repeat. `--no-scopes` and `--no-workspaces` create explicit empty
+limits; omit the limits to inherit the owner's access. The server rejects scopes or workspaces
+the owner lacks. Non-admins cannot mint keys for admin accounts or grant more than they hold.
+A delegated key created without limits gets the intersection of both identities' access.
+
 ## Use machine-readable output
 
 Pass `--json` explicitly for automation even though non-TTY output usually becomes JSON.
@@ -174,6 +188,16 @@ Personal queues are retired. Use task filters, tags, assignees, and explicit sta
 Run `task links`, fetch each `blocked_by` task with `task get`, and inspect its state before
 starting dependent work. Embedded link summaries are not enough to inspect blockers.
 After completion, fetch the task and assert the intended status.
+
+Move a task to another workspace when its ownership changes:
+
+```sh
+tmj task move-workspace ENG-42 --workspace OPS --status Backlog --json
+```
+
+The task gets a new key there. It keeps comments, files, links, the assignee, and inbox
+notifications. Tags and custom field values from the old workspace are removed. You need
+access to both workspaces and `tasks:write`.
 
 For bulk edits, first read the selected tasks and verify their workspace. Then use:
 

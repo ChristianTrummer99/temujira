@@ -70,6 +70,14 @@ implementation agents report needed changes rather than editing `packages/shared
   30-day sliding expiry.
 - **API keys**: `tmj_` + 40 hex chars; DB stores SHA-256 + first-12-chars display prefix;
   full token shown exactly once. Create/list/revoke; admins can mint keys for agent users.
+  Keys may carry a scope subset and workspace allowlist. NULL limits inherit the owner;
+  empty arrays deny all write scopes or all workspaces. At authentication the effective user
+  intersects the owner's scopes/workspace access with the key limits. Creation rejects
+  scopes or workspaces the owner lacks; non-admin managers cannot target admins or grant
+  more than they hold. The same admin-target guard applies to key revocation and identity
+  session acquisition. An unlimited key delegated by a non-admin stores the intersection of
+  the manager's and owner's scopes/workspaces instead of inheriting. Identity acquisition
+  is refused when the target's workspace access is broader than the caller's.
 - One middleware accepts cookie, `Bearer tms_…`, or `Bearer tmj_…` and yields the same
   `ctx.user`. Deactivated user ⇒ everything refused.
 - **CSRF**: cookie-authed mutations require an Origin header whose host matches
@@ -114,7 +122,10 @@ TEXT ULID PKs, INTEGER unix-ms timestamps, INTEGER 0/1 booleans.
   `task_id`, `before_id` (null = end), and optional `status_id`; it preserves all other tasks.
   Bulk updates validate up to 200 task IDs in one workspace, then commit all changes together.
   Add/remove tag deltas preserve unrelated tags. Each affected task gets its own audit event.
-  Supports archive/restore and permanent deletion.
+  Supports archive/restore and permanent deletion. A cross-workspace move allocates a number
+  from the target's counter, appends the task to its order, swaps the status, clears the old
+  workspace's tags and field values, and repoints inbox rows to the target workspace. Comments,
+  files, links, and associations stay with the task. The move event records both keys.
 - **inbox_events**: an AUTOINCREMENT sequence and unique inbox-item FK. An insert trigger
   records notifications. Deleting an inbox item cascades its event but does not reuse its
   cursor. The watch endpoint pages forward after applying user/workspace permissions.

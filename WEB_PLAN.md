@@ -69,9 +69,16 @@ Select, group-by Select (none/status/tag/assignee), Archived checkbox, and an Ac
 button. Grouping is **client-side** over the flat list (`group_by` is only a server hint):
 status groups ordered by `position` and colored; tag groups in `listTags` order where a
 task with two tags appears in **both**, plus a trailing "No tag"; assignee groups
-alphabetical plus "Unassigned". Task rows gain tag pills (max 3 + overflow), a dimmed
+alphabetical plus "Unassigned". Task rows gain tag pills (up to 5 + overflow), a dimmed
 archived style, and a hover-revealed archive/unarchive button (nested Pressable — stop
 propagation if the row also navigates on web). The create dialog gains tag toggles.
+The tag strip is the flexible middle of the row: pills start after the title, shrink and
+truncate before the status control, and show a +N chip for the rest. Every task/workspace
+action menu uses lucide icons. The task menu includes **Move to workspace**: choose an
+active target workspace and one of its statuses. The confirm dialog explains that tags and
+custom fields are cleared and the key changes. Lists invalidate after the move; an open
+tray replaces its route with the new key. Dropdown layers sit above sheet overlays so their
+items stay clickable inside the tray.
 
 **Task detail** (`w/[key]/t/[num].tsx`):
 - Tag editor via Popover with a checkbox per workspace tag → `updateTask({ tag_ids })`.
@@ -125,7 +132,10 @@ mounted to preserve searches and filters. Tables use fixed-height rows, 50-row p
 horizontal scrolling on narrow screens, and action menus. User actions include details,
 rename, picture, access, keys, role, and activation as permitted by the caller's scopes.
 API keys have owner/state/text filters and details/revoke menus; full tokens appear only
-at creation. The old settings/users and settings/api-keys URLs redirect to the matching tab.
+at creation. The new-key dialog can limit the key's scopes and workspaces below the owner;
+limit checkboxes start at the owner's full access, and the server rejects wider grants.
+Key details show both limits. The old settings/users and settings/api-keys URLs redirect to
+the matching tab.
 Measure the horizontal viewport to size each table, with a 640 px minimum on small screens.
 Name/login/owner columns have minimum and maximum widths; fixed metadata columns stay narrow.
 Full values are available on hover, keyboard focus, and tap through `TruncatedCell`.

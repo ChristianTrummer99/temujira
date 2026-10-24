@@ -13,7 +13,7 @@ import type { ServerConfig } from "./config";
 import type { Db } from "./db";
 import { apiKeys, identitySessions, sessions, users } from "./db/schema";
 import { forbidden, unauthorized, HttpError } from "./errors";
-import { hasScope } from "./access";
+import { hasScope, parseKeyScopes, parseKeyWorkspaceIds, type ScopedUser } from "./access";
 import type { IdentitySessionRow, UserRow } from "./serialize";
 import { newId, now } from "./util";
 
@@ -193,7 +193,7 @@ export function clearSessionCookie(c: Context, config: ServerConfig): void {
 export type AuthKind = "cookie" | "bearer";
 
 export interface AuthResult {
-  user: UserRow;
+  user: ScopedUser;
   kind: AuthKind;
   sessionId?: string;
   /** Bearer `tmj_` API-key id. */
@@ -250,7 +250,7 @@ function verifySessionToken(
   return { user: row.user, sessionId: row.session.id };
 }
 
-function verifyApiKey(db: Db, token: string): { user: UserRow; keyId: string } | null {
+function verifyApiKey(db: Db, token: string): { user: UserRow; keyId: string; scopes: ReturnType<typeof parseKeyScopes>; workspaceIds: ReturnType<typeof parseKeyWorkspaceIds> } | null {
   const t = now();
   const row = db
     .select({ key: apiKeys, user: users })
@@ -265,7 +265,12 @@ function verifyApiKey(db: Db, token: string): { user: UserRow; keyId: string } |
       .where(eq(apiKeys.id, row.key.id))
       .run();
   }
-  return { user: row.user, keyId: row.key.id };
+  return {
+    user: row.user,
+    keyId: row.key.id,
+    scopes: parseKeyScopes(row.key.scopes),
+    workspaceIds: parseKeyWorkspaceIds(row.key.workspaceIds),
+  };
 }
 
 /**
@@ -307,7 +312,7 @@ export function authenticate(c: Context, db: Db): AuthResult | null {
       if (!key) return null;
       const { identitySession, blockedReason } = exclusiveIdentityCheck(db, key.user, key.keyId);
       return {
-        user: key.user,
+        user: { ...key.user, keyScopes: key.scopes, keyWorkspaceIds: key.workspaceIds },
         kind: "bearer",
         apiKeyId: key.keyId,
         identitySession,

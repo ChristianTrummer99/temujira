@@ -31,6 +31,7 @@ import {
   ListMyTasksQuerySchema,
   ListTagsQuerySchema,
   ListTasksQuerySchema,
+  MoveTaskInputSchema,
   ListUsersQuerySchema,
   ListWorkspacesQuerySchema,
   LoginInputSchema,
@@ -560,6 +561,15 @@ export const ROUTES = {
     scope: "tasks:write",
     summary: "Edit title/description, move status, (un)assign, archive/unarchive",
     body: UpdateTaskInputSchema,
+    response: z.object({ task: TaskSchema }),
+  },
+  "tasks.move": {
+    method: "POST",
+    path: "/tasks/:idOrKey/move",
+    auth: "user",
+    scope: "tasks:write",
+    summary: "Move a task to another workspace; gets a new key there and clears workspace-scoped tags/fields",
+    body: MoveTaskInputSchema,
     response: z.object({ task: TaskSchema }),
   },
   "tasks.delete": {

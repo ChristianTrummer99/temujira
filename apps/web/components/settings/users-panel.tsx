@@ -35,7 +35,7 @@ import { hasScope } from '@/lib/scopes';
 import { useResource } from '@/lib/use-resource';
 import type { User } from '@temujira/client';
 import { SCOPES, type ScopeId } from '@temujira/shared';
-import { CopyIcon, PlusIcon } from 'lucide-react-native';
+import { CopyIcon, ImageIcon, InfoIcon, KeyRoundIcon, PencilIcon, PlusIcon, ShieldIcon, UserCheckIcon, UserCogIcon, UserXIcon } from 'lucide-react-native';
 import * as React from 'react';
 import { ScrollView, View } from 'react-native';
 
@@ -312,18 +312,18 @@ export default function UsersPanel({ onShowKeys }: { onShowKeys: (userId: string
                   <Text className="w-16 text-[11px]">{u.is_agent ? u.exclusive_identity ? 'Exclusive' : 'Shared' : '—'}</Text>
                   <Text className={`w-14 text-[11px] ${u.deactivated_at ? 'text-muted-foreground' : ''}`}>{u.deactivated_at ? 'Inactive' : 'Active'}</Text>
                   <RowMenu label={`Actions for user ${u.name}`} hover={false} className="ml-auto">
-                    <DropdownMenuItem onPress={() => setDetailsFor(u)}><Text>User details</Text></DropdownMenuItem>
-                    {canManageKeys || isMe ? <DropdownMenuItem onPress={() => onShowKeys(u.id)}><Text>View API keys</Text></DropdownMenuItem> : null}
-                    {canManageKeys || isMe ? <DropdownMenuItem onPress={() => { setMintFor(u); setKeyName(`${u.name.split(/\s+/)[0].toLowerCase()}-key`); }}><Text>Create API key</Text></DropdownMenuItem> : null}
+                    <DropdownMenuItem onPress={() => setDetailsFor(u)}><Icon as={InfoIcon} className="text-muted-foreground size-3.5" /><Text>User details</Text></DropdownMenuItem>
+                    {canManageKeys || isMe ? <DropdownMenuItem onPress={() => onShowKeys(u.id)}><Icon as={KeyRoundIcon} className="text-muted-foreground size-3.5" /><Text>View API keys</Text></DropdownMenuItem> : null}
+                    {canManageKeys || isMe ? <DropdownMenuItem onPress={() => { setMintFor(u); setKeyName(`${u.name.split(/\s+/)[0].toLowerCase()}-key`); }}><Icon as={PlusIcon} className="text-muted-foreground size-3.5" /><Text>Create API key</Text></DropdownMenuItem> : null}
                     {isMe || (canManageUsers && canEdit) ? <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onPress={() => { setRenameFor(u); setRenameName(u.name); setError(null); }}><Text>Rename user</Text></DropdownMenuItem>
-                      <DropdownMenuItem onPress={() => setPictureFor(u)}><Text>Change picture</Text></DropdownMenuItem>
+                      <DropdownMenuItem onPress={() => { setRenameFor(u); setRenameName(u.name); setError(null); }}><Icon as={PencilIcon} className="text-muted-foreground size-3.5" /><Text>Rename user</Text></DropdownMenuItem>
+                      <DropdownMenuItem onPress={() => setPictureFor(u)}><Icon as={ImageIcon} className="text-muted-foreground size-3.5" /><Text>Change picture</Text></DropdownMenuItem>
                     </> : null}
-                    {canManageUsers && canEdit ? <DropdownMenuItem onPress={() => openAccess(u)}><Text>Edit access</Text></DropdownMenuItem> : null}
-                    {isAdmin && !isMe ? <DropdownMenuItem onPress={() => toggleRole(u)}><Text>{u.role === 'admin' ? 'Change to member' : 'Change to admin'}</Text></DropdownMenuItem> : null}
-                    {canManageUsers && canEdit && !isMe ? <DropdownMenuItem variant={u.deactivated_at ? 'default' : 'destructive'} onPress={() => toggleDeactivate(u)}><Text>{u.deactivated_at ? 'Reactivate' : 'Deactivate'}</Text></DropdownMenuItem> : null}
-                    {typeof navigator !== 'undefined' && navigator.clipboard ? <DropdownMenuItem onPress={() => navigator.clipboard.writeText(u.id).catch(() => setError('Could not copy user ID'))}><Text>Copy user ID</Text></DropdownMenuItem> : null}
+                    {canManageUsers && canEdit ? <DropdownMenuItem onPress={() => openAccess(u)}><Icon as={ShieldIcon} className="text-muted-foreground size-3.5" /><Text>Edit access</Text></DropdownMenuItem> : null}
+                    {isAdmin && !isMe ? <DropdownMenuItem onPress={() => toggleRole(u)}><Icon as={UserCogIcon} className="text-muted-foreground size-3.5" /><Text>{u.role === 'admin' ? 'Change to member' : 'Change to admin'}</Text></DropdownMenuItem> : null}
+                    {canManageUsers && canEdit && !isMe ? <DropdownMenuItem variant={u.deactivated_at ? 'default' : 'destructive'} onPress={() => toggleDeactivate(u)}><Icon as={u.deactivated_at ? UserCheckIcon : UserXIcon} className="size-3.5" /><Text>{u.deactivated_at ? 'Reactivate' : 'Deactivate'}</Text></DropdownMenuItem> : null}
+                    {typeof navigator !== 'undefined' && navigator.clipboard ? <DropdownMenuItem onPress={() => navigator.clipboard.writeText(u.id).catch(() => setError('Could not copy user ID'))}><Icon as={CopyIcon} className="text-muted-foreground size-3.5" /><Text>Copy user ID</Text></DropdownMenuItem> : null}
                   </RowMenu>
                 </View>
               );

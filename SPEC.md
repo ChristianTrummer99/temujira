@@ -96,7 +96,8 @@ email/password authentication, API key management, and every feature below marke
   confirmed permanent deletion with API/CLI parity. Task rows are compact; status controls
   match tag typography and colors, using a rounded rectangle and a chevron. Ticket keys stay
   on one line; a long key pushes the following content instead of wrapping. A menu never
-  repeats an open action when the row itself is clickable.
+  repeats an open action when the row itself is clickable. Tag pills use the free row width
+  and truncate before the status control; a +N chip shows the remainder.
 - **FR-54** Users and API keys share a settings section with two tabs. Use compact,
   uniform-height rows, search, filter pills, pagination, and action menus. Keep filters when
   switching tabs. Selected filters must have a clear, high-contrast state.
@@ -123,6 +124,14 @@ email/password authentication, API key management, and every feature below marke
   reply, save a comment edit, and create a task from the new-task description. Apply the same
   validity and permission guards as the primary button. Plain Enter continues to insert a
   newline, including at the end of the text.
+- **FR-62** Move a task to another accessible workspace with a chosen target status. Give it
+  a new number and key there. Keep comments, files, links, the assignee, and inbox
+  notifications. Clear tags and custom field values from the old workspace. Record the move
+  in activity. Expose it in the UI, API, and CLI.
+- **FR-63** API keys can be narrowed below their owner with a scope subset and a workspace
+  allowlist. A key can never exceed its owner; the server rejects wider grants. Empty limits
+  mean no write scopes or no workspaces, and omitted limits inherit. Show and list the limits,
+  and expose them through the CLI. Non-admins cannot mint keys for admin accounts.
 
 ### Task list presentation
 

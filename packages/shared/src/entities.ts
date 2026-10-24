@@ -66,6 +66,10 @@ export const ApiKeySchema = z.object({
   token_prefix: z.string(),
   last_used_at: TimestampSchema.nullable(),
   revoked_at: TimestampSchema.nullable(),
+  /** null = inherit the owner's scopes; [] = no write scopes. */
+  scopes: z.array(ScopeSchema).nullable(),
+  /** null = inherit the owner's workspace access; [] = no workspaces. */
+  workspace_ids: z.array(UlidSchema).nullable(),
   created_at: TimestampSchema,
 });
 export type ApiKey = z.infer<typeof ApiKeySchema>;
@@ -384,6 +388,10 @@ export const CreateApiKeyInputSchema = z.object({
   name: NameSchema,
   /** Admin only: mint a key for another user (agent provisioning). */
   user_id: UlidSchema.optional(),
+  /** Omit to inherit the owner's scopes. A supplied list must be a subset. [] = no write scopes. */
+  scopes: z.array(ScopeSchema).optional(),
+  /** Omit to inherit the owner's workspace access. A supplied list must be a subset. [] = none. */
+  workspace_ids: z.array(UlidSchema).optional(),
 });
 
 export const CreateUserInputSchema = z
@@ -485,6 +493,13 @@ export const UpdateTaskInputSchema = z.object({
   tag_ids: z.array(UlidSchema).optional(),
   /** Field id → value. Only present keys are touched; "" clears. */
   field_values: z.record(UlidSchema, z.string().max(500)).optional(),
+});
+
+/** Move a task to another workspace. It gets a new number/key there. */
+export const MoveTaskInputSchema = z.object({
+  workspace_id: UlidSchema,
+  /** Target status. Defaults to the target workspace's first status. */
+  status_id: UlidSchema.optional(),
 });
 
 /** One workspace, one transaction. Tag changes preserve unrelated tags. */
@@ -620,7 +635,7 @@ export const ListTagsQuerySchema = z.object({});
 
 /** Shared by the API, CLI and filter pills; multiple groups are combined with OR. */
 export const ACTIVITY_CATEGORIES = [
-  { id: "tasks", label: "Tasks", actions: ["task.created", "task.updated", "task.reordered", "task.deleted"] },
+  { id: "tasks", label: "Tasks", actions: ["task.created", "task.updated", "task.moved", "task.reordered", "task.deleted"] },
   { id: "comments", label: "Comments", actions: ["comment.created", "comment.updated", "comment.deleted"] },
   { id: "replies", label: "Replies", actions: ["comment.replied"] },
   { id: "mentions", label: "Mentions", actions: ["comment.mentioned"] },

@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogClose,
@@ -41,8 +42,11 @@ import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdow
 import { FilterPill, IDENTITY_PAGE_SIZE, ListPagination } from './list-controls';
 import { formatRelative } from '@/lib/format';
 import type { ApiKey, User } from '@temujira/client';
+import { SCOPE_IDS, SCOPES, scopeLabel, type ScopeId } from '@temujira/shared';
 import {
+  BanIcon,
   CopyIcon,
+  InfoIcon,
   KeyRoundIcon,
   PlusIcon,
 } from 'lucide-react-native';
@@ -73,6 +77,10 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
   const [createdToken, setCreatedToken] = React.useState<string | null>(null);
   const [confirmRevoke, setConfirmRevoke] = React.useState<ApiKey | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [limitScopes, setLimitScopes] = React.useState(false);
+  const [keyScopes, setKeyScopes] = React.useState<ScopeId[]>([]);
+  const [limitWorkspaces, setLimitWorkspaces] = React.useState(false);
+  const [keyWorkspaceIds, setKeyWorkspaceIds] = React.useState<string[]>([]);
 
   const resource = useResource(async () => {
     const [keysRes, usersRes] = await Promise.all([
@@ -85,8 +93,23 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
   }, [client, canManageKeys]);
   const keys = resource.data?.keys ?? null;
   const users = resource.data?.users ?? [];
+  const workspaceResource = useResource(() => client.listWorkspaces(), [client]);
+  const allWorkspaces = workspaceResource.data?.items ?? [];
 
   const userById = React.useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+  const owner = mintFor?.value && mintFor.value !== 'me' ? userById.get(mintFor.value) : me;
+  const ownerScopes: ScopeId[] = owner ? (owner.role === 'admin' ? [...SCOPE_IDS] : owner.scopes) : [];
+  const ownerWorkspaces = React.useMemo(() => {
+    if (!owner) return [];
+    const allowed = owner.workspace_access_all ? null : owner.workspace_ids;
+    return allWorkspaces.filter((workspace) => !workspace.archived_at && (allowed === null || allowed.includes(workspace.id)));
+  }, [owner, allWorkspaces]);
+
+  function openNewKey() {
+    setLimitScopes(false); setKeyScopes([]);
+    setLimitWorkspaces(false); setKeyWorkspaceIds([]);
+    setNewKeyOpen(true);
+  }
 
   function ownerLabel(userId: string): string {
     if (userId === me?.id) return `${me.name} (you)`;
@@ -122,10 +145,14 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
       const { apiKey, token } = await client.createApiKey({
         name: keyName.trim(),
         ...(target ? { user_id: target } : {}),
+        ...(limitScopes ? { scopes: keyScopes } : {}),
+        ...(limitWorkspaces ? { workspace_ids: keyWorkspaceIds } : {}),
       });
       resource.setData((prev) => ({ keys: [apiKey, ...(prev?.keys ?? [])], users: prev?.users ?? [] }));
       setKeyName('');
       setMintFor(MINE);
+      setLimitScopes(false); setKeyScopes([]);
+      setLimitWorkspaces(false); setKeyWorkspaceIds([]);
       setCreatedToken(token);
       setStateFilter('active'); setSearch(''); setPage(0); invalidateResources();
     } catch (e) {
@@ -159,7 +186,7 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
           <View className="flex-row flex-wrap items-center gap-2">
             <Input accessibilityLabel="Search API keys" placeholder="Search key name, prefix, owner, or ID…" value={search} onChangeText={setSearch} className="h-8 min-w-48 flex-1 text-xs" />
             <View className="flex-row items-center gap-2">
-              <Button onPress={() => setNewKeyOpen(true)} className="gap-1">
+              <Button onPress={openNewKey} className="gap-1">
                 <Icon as={PlusIcon} className="text-primary-foreground size-4" />
                 <Text>New key</Text>
               </Button>
@@ -196,9 +223,9 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
                 <Text numberOfLines={1} className="text-muted-foreground w-20 text-[11px]">{k.last_used_at ? formatRelative(k.last_used_at) : 'Never'}</Text>
                 <Text className={`w-14 text-[11px] ${k.revoked_at ? 'text-muted-foreground' : ''}`}>{k.revoked_at ? 'Revoked' : 'Active'}</Text>
                 <RowMenu label={`Actions for API key ${k.name}`} hover={false} className="ml-auto">
-                  <DropdownMenuItem onPress={() => setDetails(k)}><Text>Key details</Text></DropdownMenuItem>
-                  {typeof navigator !== 'undefined' && navigator.clipboard ? <DropdownMenuItem onPress={() => navigator.clipboard.writeText(k.id).catch(() => setError('Could not copy key ID'))}><Text>Copy key ID</Text></DropdownMenuItem> : null}
-                  {!k.revoked_at ? <><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onPress={() => setConfirmRevoke(k)}><Text>Revoke key</Text></DropdownMenuItem></> : null}
+                  <DropdownMenuItem onPress={() => setDetails(k)}><Icon as={InfoIcon} className="text-muted-foreground size-3.5" /><Text>Key details</Text></DropdownMenuItem>
+                  {typeof navigator !== 'undefined' && navigator.clipboard ? <DropdownMenuItem onPress={() => navigator.clipboard.writeText(k.id).catch(() => setError('Could not copy key ID'))}><Icon as={CopyIcon} className="text-muted-foreground size-3.5" /><Text>Copy key ID</Text></DropdownMenuItem> : null}
+                  {!k.revoked_at ? <><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onPress={() => setConfirmRevoke(k)}><Icon as={BanIcon} className="size-3.5" /><Text>Revoke key</Text></DropdownMenuItem></> : null}
                 </RowMenu>
               </View>
             ))}
@@ -215,6 +242,8 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
         <DialogContent><DialogHeader><DialogTitle>{details?.name}</DialogTitle></DialogHeader>
           {details ? <View className="gap-2"><Text selectable className="font-mono text-xs">{details.id}</Text>
             <Text className="text-sm">Owner: {ownerLabel(details.user_id)}</Text><Text className="text-sm">Prefix: {details.token_prefix}…</Text>
+            <Text className="text-sm">Scopes: {details.scopes === null ? 'Inherit owner' : details.scopes.length ? details.scopes.map(scopeLabel).join(', ') : 'None'}</Text>
+            <Text className="text-sm">Workspaces: {details.workspace_ids === null ? 'Inherit owner' : details.workspace_ids.length ? `${details.workspace_ids.length} selected` : 'None'}</Text>
             <Text className="text-sm">Created: {formatTime(details.created_at)}</Text><Text className="text-sm">Last used: {formatTime(details.last_used_at)}</Text>
             <Text className="text-sm">Revoked: {formatTime(details.revoked_at)}</Text></View> : null}
         </DialogContent>
@@ -242,7 +271,11 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
             {canManageKeys ? (
               <View className="gap-1.5">
                 <Label>Owner</Label>
-                <Select value={mintFor} onValueChange={setMintFor}>
+                <Select value={mintFor} onValueChange={(option) => {
+                  setMintFor(option);
+                  setLimitScopes(false); setKeyScopes([]);
+                  setLimitWorkspaces(false); setKeyWorkspaceIds([]);
+                }}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Owner" />
                   </SelectTrigger>
@@ -258,6 +291,49 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
                 </Text>
               </View>
             ) : null}
+            <View className="border-border gap-2 rounded-md border p-3">
+              <Text className="text-sm font-medium">Key limits</Text>
+              <Text className="text-muted-foreground text-xs">
+                A key never exceeds its owner. Leave these off to inherit the owner&apos;s access.
+              </Text>
+              <View className="flex-row items-center gap-2">
+                <Checkbox checked={limitScopes} onCheckedChange={(value) => {
+                  const on = value === true;
+                  setLimitScopes(on);
+                  if (on && keyScopes.length === 0) setKeyScopes(ownerScopes);
+                }} />
+                <Text className="text-sm">Limit scopes</Text>
+              </View>
+              {limitScopes ? <View className="gap-1.5 pl-6">
+                {SCOPES.map((scope) => {
+                  const available = ownerScopes.includes(scope.id);
+                  return <View key={scope.id} className="flex-row items-center gap-2">
+                    <Checkbox checked={keyScopes.includes(scope.id)} disabled={!available}
+                      onCheckedChange={(value) => setKeyScopes((previous) =>
+                        value === true ? [...previous, scope.id] : previous.filter((id) => id !== scope.id))} />
+                    <Text className={`text-sm ${available ? '' : 'text-muted-foreground'}`}>{scope.label}</Text>
+                  </View>;
+                })}
+              </View> : null}
+              <View className="flex-row items-center gap-2">
+                <Checkbox checked={limitWorkspaces} onCheckedChange={(value) => {
+                  const on = value === true;
+                  setLimitWorkspaces(on);
+                  if (on && keyWorkspaceIds.length === 0) setKeyWorkspaceIds(ownerWorkspaces.map((workspace) => workspace.id));
+                }} />
+                <Text className="text-sm">Limit workspaces</Text>
+              </View>
+              {limitWorkspaces ? <ScrollView style={{ maxHeight: 160 }} contentContainerClassName="gap-1.5 pl-6">
+                {ownerWorkspaces.length === 0
+                  ? <Text className="text-muted-foreground text-xs">No workspaces are available to limit.</Text>
+                  : ownerWorkspaces.map((workspace) => <View key={workspace.id} className="flex-row items-center gap-2">
+                    <Checkbox checked={keyWorkspaceIds.includes(workspace.id)}
+                      onCheckedChange={(value) => setKeyWorkspaceIds((previous) =>
+                        value === true ? [...previous, workspace.id] : previous.filter((id) => id !== workspace.id))} />
+                    <Text className="text-sm">{workspace.key} · {workspace.name}</Text>
+                  </View>)}
+              </ScrollView> : null}
+            </View>
           </View>
           <DialogFooter>
             <DialogClose asChild>

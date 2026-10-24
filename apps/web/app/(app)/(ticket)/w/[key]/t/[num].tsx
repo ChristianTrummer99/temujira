@@ -294,7 +294,11 @@ export default function TaskDetailScreen() {
             </View>
           </View>
           <View className="flex-row items-center gap-1">
-            <TaskActions task={task} users={users} onChanged={setTask} onDeleted={close} hover={false} />
+            <TaskActions task={task} users={users} onChanged={setTask} onDeleted={close} hover={false}
+              onMoved={(moved) => {
+                const target = splitTaskKey(moved.key);
+                if (target) router.replace(`/w/${target.workspaceKey}/t/${target.number}`);
+              }} />
             {expanded ? (
               <Button
                 variant="ghost"

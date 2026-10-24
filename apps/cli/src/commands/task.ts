@@ -22,6 +22,7 @@ export const COMMAND_ROUTES = {
   "task bulk": ["tasks.bulkUpdate", "tasks.get", "statuses.list", "tags.list", "users.list", "auth.me", "fields.list"],
   "task reorder": ["tasks.reorder", "tasks.get", "statuses.list"],
   "task move": ["tasks.update", "tasks.get", "statuses.list"],
+  "task move-workspace": ["tasks.move", "workspaces.get", "statuses.list"],
   "task assign": ["tasks.update", "users.list", "auth.me"],
   "task unassign": ["tasks.update"],
   "task archive": ["tasks.update"],
@@ -520,6 +521,25 @@ export function registerTask(program: Command): void {
       }
       const { task: moved } = await ctx.client.updateTask(idOrKey, { status_id: statusId });
       emitTask(ctx, moved, () => `${moved.key} → ${moved.status.name}`);
+    });
+
+  task
+    .command("move-workspace")
+    .description("Move a task to another workspace (new key; tags and custom fields are cleared)")
+    .argument("<idOrKey>", "task id or key")
+    .requiredOption("--workspace <idOrKey>", "target workspace id or key")
+    .option("--status <idOrName>", "target status (default: first status of the target workspace)")
+    .action(async (idOrKey: string, opts: { workspace: string; status?: string }, cmd: Command) => {
+      const ctx = getCtx(cmd);
+      const { workspace: target } = await ctx.client.getWorkspace(opts.workspace);
+      const status_id = opts.status
+        ? await resolveStatusId(ctx.client, target.id, opts.status)
+        : undefined;
+      const { task: moved } = await ctx.client.moveTask(idOrKey, {
+        workspace_id: target.id,
+        ...(status_id ? { status_id } : {}),
+      });
+      emitTask(ctx, moved, () => `moved ${idOrKey} → ${moved.key} (${moved.status.name})`);
     });
 
   task

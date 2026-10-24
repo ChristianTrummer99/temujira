@@ -30,12 +30,12 @@ export function TagPills({ tags, max = 3 }: { tags: Tag[]; max?: number }) {
   const shown = tags.slice(0, max);
   const overflow = tags.length - shown.length;
   return (
-    <View className="flex-row items-center gap-1">
+    <View className="min-w-0 shrink flex-row flex-nowrap items-center gap-1 overflow-hidden">
       {shown.map((tag) => (
         <TagPill key={tag.id} tag={tag} />
       ))}
       {overflow > 0 ? (
-        <View className="border-border rounded-full border px-1.5 py-0.5">
+        <View className="border-border shrink-0 rounded-full border px-1.5 py-0.5">
           <Text className="text-muted-foreground text-[11px]">+{overflow}</Text>
         </View>
       ) : null}

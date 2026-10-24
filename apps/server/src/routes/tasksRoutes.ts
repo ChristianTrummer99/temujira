@@ -4,6 +4,7 @@ import type {
   CreateTaskInputSchema,
   ListMyTasksQuerySchema,
   ListTasksQuerySchema,
+  MoveTaskInputSchema,
   UpdateTaskInputSchema,
   BulkUpdateTasksInput,
   ReorderTaskInput,
@@ -14,6 +15,7 @@ import {
   attachments,
   fieldDefs,
   fieldValues as fieldValuesTable,
+  inboxItems,
   statuses,
   tags,
   taskAssociations,
@@ -168,7 +170,7 @@ function sameRecord(a: Record<string, string>, b: Record<string, string>): boole
 
 export function tasksHandlers(
   ctx: AppContext,
-): Pick<Handlers, "tasks.list" | "tasks.mine" | "tasks.create" | "tasks.get" | "tasks.update" | "tasks.bulkUpdate" | "tasks.reorder"> {
+): Pick<Handlers, "tasks.list" | "tasks.mine" | "tasks.create" | "tasks.get" | "tasks.update" | "tasks.move" | "tasks.bulkUpdate" | "tasks.reorder"> {
   const serializeTask = (row: TaskRow, key: string) => taskToApi(
     row, key,
     ctx.db.select().from(statuses).where(eq(statuses.id, row.statusId)).get()!,
@@ -547,6 +549,64 @@ export function tasksHandlers(
       const tagRows = loadTagsForTasks(ctx.db, [updated.id]).get(updated.id) ?? [];
       const fieldValues = loadFieldValuesForTasks(ctx.db, [updated.id]).get(updated.id);
       return c.json({ task: taskToApi(updated, workspace.key, status, assignee, tagRows, undefined, undefined, fieldValues) });
+    },
+
+    /** Cross-workspace move: allocate a new number, give the task a fresh key, and
+     * clear tags/field values because those definitions belong to the old workspace. */
+    "tasks.move": (c) => {
+      const user = currentUser(c);
+      const { task, workspace: source } = requireTask(ctx.db, c.req.param("idOrKey") ?? "", user);
+      const input = body<z.infer<typeof MoveTaskInputSchema>>(c);
+      if (input.workspace_id === task.workspaceId) {
+        throw validationError("task is already in that workspace");
+      }
+      const target = requireWorkspace(ctx.db, input.workspace_id, user);
+      let status: StatusRow;
+      if (input.status_id !== undefined) {
+        status = statusOfWorkspace(ctx.db, input.status_id, target.id);
+      } else {
+        const first = ctx.db.select().from(statuses).where(eq(statuses.workspaceId, target.id))
+          .orderBy(asc(statuses.position)).limit(1).get();
+        if (!first) throw conflict("workspace has no statuses");
+        status = first;
+      }
+      const t = now();
+      const moved = ctx.db.transaction((tx): TaskRow => {
+        // Read and bump the target counter in the same transaction, like task creation.
+        const fresh = tx.select().from(workspaces).where(eq(workspaces.id, target.id)).get()!;
+        const number = fresh.nextTaskNumber;
+        tx.update(workspaces).set({ nextTaskNumber: number + 1 }).where(eq(workspaces.id, target.id)).run();
+        const last = tx.select({ p: sql<number | null>`max(${tasks.position})` }).from(tasks)
+          .where(eq(tasks.workspaceId, target.id)).get()?.p ?? 0;
+        const row = tx.update(tasks).set({
+          workspaceId: target.id,
+          number,
+          position: last + 1,
+          statusId: status.id,
+          updatedAt: t,
+        }).where(eq(tasks.id, task.id)).returning().get()!;
+        tx.delete(taskTags).where(eq(taskTags.taskId, task.id)).run();
+        tx.delete(fieldValuesTable).where(eq(fieldValuesTable.taskId, task.id)).run();
+        // Keep notifications; they must link to the task's new workspace.
+        tx.update(inboxItems).set({ workspaceId: target.id }).where(eq(inboxItems.taskId, task.id)).run();
+        return row;
+      });
+      recordActivity(ctx.db, {
+        workspaceId: target.id,
+        taskId: task.id,
+        actorId: user.id,
+        action: "task.moved",
+        metadata: {
+          from_workspace_id: source.id,
+          from_workspace_key: source.key,
+          from_key: `${source.key}-${task.number}`,
+          to_key: `${target.key}-${moved.number}`,
+        },
+      });
+      const assignee = moved.assigneeId
+        ? (ctx.db.select().from(users).where(eq(users.id, moved.assigneeId)).get() ?? null)
+        : null;
+      return c.json({ task: taskToApi(moved, target.key, status, assignee, [], undefined, undefined, {}) });
     },
   };
 }

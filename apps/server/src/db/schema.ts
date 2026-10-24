@@ -86,6 +86,10 @@ export const apiKeys = sqliteTable(
     tokenPrefix: text("token_prefix").notNull(),
     lastUsedAt: integer("last_used_at"),
     revokedAt: integer("revoked_at"),
+    /** NULL = inherit the user's scopes; JSON array = narrower key scopes. */
+    scopes: text("scopes"),
+    /** NULL = inherit workspace access; JSON array = narrower key workspaces. */
+    workspaceIds: text("workspace_ids"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [uniqueIndex("api_keys_token_hash_unique").on(t.tokenHash), index("api_keys_user_id_idx").on(t.userId)],

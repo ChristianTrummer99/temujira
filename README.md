@@ -218,12 +218,20 @@ Status and tag controls also work directly in each row. The Filters button opens
 controls; active filter chips can be cleared one at a time.
 
 Task rows have a fixed space for a hover action menu, so their contents do not move when
-the menu appears. Use it to rename, assign, archive/restore, copy a link, or delete a task.
-Ticket keys never wrap. A long key pushes the title to the right; short keys keep the
-column aligned. The row itself opens the ticket, so the action menu has no Open task item.
+the menu appears. Use it to rename, assign, move to another workspace, archive/restore,
+copy a link, or delete a task. Ticket keys never wrap. A long key pushes the title to the
+right; short keys keep the column aligned. The row itself opens the ticket, so the action
+menu has no Open task item. Tag pills use the free row width and truncate before the status
+control; a +N chip shows the rest.
 Statuses use the same color, dot, and text as tags, with a rounded rectangle and a chevron.
 Workspace hover menus offer rename, archive/restore, activity, and delete actions. The
 workspace row opens the workspace, so its menu has no Open workspace item.
+
+**Move to workspace** changes a task's workspace. Choose the target workspace and status.
+The task gets a new key and number there. Comments, files, links, the assignee, and its
+inbox notifications stay with it. Tags and custom field values belong to the old workspace,
+so they are cleared. The activity feed records the old and new keys. Both workspaces must
+be accessible to you.
 
 Delete is permanent and separate from Archive. The UI asks for confirmation; the CLI uses
 `task delete <idOrKey> --yes` and `workspace delete <idOrKey> --yes`. Task deletion removes
@@ -235,6 +243,7 @@ deleted-resource labels; deleted workspace history is admin-only.
 ```sh
 tmj task bulk ENG-1 ENG-2 --workspace ENG --status "In Progress" --add-tag review --json
 tmj task reorder ENG-2 --before ENG-1 --json
+tmj task move-workspace ENG-42 --workspace OPS --status Backlog --json
 tmj task list --workspace ENG --sort position --order asc --unassigned --json
 ```
 
@@ -250,6 +259,24 @@ state, and admin role. Keys can be filtered by state and owner. The user menu ca
 user's keys or create a key directly. Searches and filters are kept when switching tabs.
 Columns fit the available width, with horizontal scrolling on narrow screens. Long names,
 login values, and owners have bounded widths. Hover, focus, or tap a value to read it in full.
+
+When you create a key, you can narrow it below its owner. **Limit scopes** selects the
+write capabilities the key may use. **Limit workspaces** selects the workspaces it may see.
+A key can never exceed its owner: the server rejects scopes or workspaces the owner does not
+hold. Leave a limit off to inherit the owner's access. Key details show the stored limits.
+
+```sh
+# A key that can write tasks, only in the ENG workspace.
+tmj apikey create --name ci --scope tasks:write --workspace ENG --json
+tmj apikey create --name read-only --no-scopes --json
+tmj apikey list --json   # includes scopes and workspace_ids
+```
+
+`--no-scopes` creates a key with no write capabilities. `--no-workspaces` creates a key
+that can see no workspaces. Omit both to inherit. Non-admin managers cannot target admin
+accounts: they cannot mint or revoke an admin's keys, or acquire an admin agent's identity
+session. A delegated key without explicit limits also gets, at most, the manager's own
+scopes and workspaces. The same access check applies to acquiring an agent identity.
 
 ### Watch notifications
 

@@ -193,7 +193,7 @@ export class TemujiraClient {
   listApiKeys(query: { user_id?: string; all?: boolean } = {}) {
     return this.call("apiKeys.list", {}, { query }) as Promise<{ items: ApiKey[] }>;
   }
-  createApiKey(body: { name: string; user_id?: string }) {
+  createApiKey(body: { name: string; user_id?: string; scopes?: ScopeId[]; workspace_ids?: string[] }) {
     return this.call("apiKeys.create", {}, { body }) as Promise<{ apiKey: ApiKey; token: string }>;
   }
   revokeApiKey(id: string) {
@@ -404,6 +404,10 @@ export class TemujiraClient {
   ) {
     return this.call("tasks.update", { idOrKey }, { body }) as Promise<{ task: Task }>;
   }
+  /** Move to another workspace; the task gets a new number/key and clears tags/fields. */
+  moveTask(idOrKey: string, body: { workspace_id: string; status_id?: string }) {
+    return this.call("tasks.move", { idOrKey }, { body }) as Promise<{ task: Task }>;
+  }
 
   bulkUpdateTasks(workspace: string, body: BulkUpdateTasksInput) {
     return this.call("tasks.bulkUpdate", { idOrKey: workspace }, { body }) as Promise<{ items: Task[] }>;
@@ -599,6 +603,7 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "tasks.create": "createTask",
   "tasks.get": "getTask",
   "tasks.update": "updateTask",
+  "tasks.move": "moveTask",
   "tasks.delete": "deleteTask",
   "tasks.bulkUpdate": "bulkUpdateTasks",
   "tasks.reorder": "reorderTask",

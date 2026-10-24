@@ -19,7 +19,7 @@ export const AUDIT_ACTIONS = {
   "statuses.create": "status.created", "statuses.update": "status.updated", "statuses.delete": "status.deleted", "statuses.reorder": "statuses.reordered",
   "tags.create": "tag.created", "tags.update": "tag.updated", "tags.delete": "tag.deleted",
   "fields.create": "field.created", "fields.update": "field.updated", "fields.delete": "field.deleted", "fields.reorder": "fields.reordered",
-  "tasks.create": "task.created", "tasks.update": "task.updated",
+  "tasks.create": "task.created", "tasks.update": "task.updated", "tasks.move": "task.moved",
   "tasks.delete": "task.deleted",
   "tasks.bulkUpdate": "task.updated", "tasks.reorder": "task.reordered",
   "links.create": "task.linked", "links.delete": "task.unlinked",

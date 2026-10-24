@@ -20,6 +20,8 @@ tmj me update [--name <name>] [--password]
 
 tmj apikey list [--user <userId>] [--all]
 tmj apikey create --name <name> [--user <userId>]
+                  [--scope <scope>]... [--no-scopes]
+                  [--workspace <idOrKey>]... [--no-workspaces]
 tmj apikey revoke <apiKeyId>
 ```
 
@@ -35,6 +37,14 @@ configuration, outside the project. Nearest directory binding overrides environm
 config; flags override the binding. `--global-auth` skips bindings. `auth status` reports
 the resolved identity and source. `forget` removes local credentials without revocation.
 Only keys minted by CLI login/setup have a saved revocation ID used by global `auth logout`.
+
+`apikey create --scope` and `--workspace` narrow a key below its owner; a key can never
+exceed the owner. Repeat either flag to select several values. `--no-scopes` creates a key
+with no write scopes, and `--no-workspaces` creates one with no workspace access. Omit the
+limits to inherit. The server rejects scopes or workspaces the owner lacks. Non-admins
+cannot mint keys for admin accounts, and cannot grant more than they hold themselves.
+A delegated key created without limits by a non-admin gets the intersection of the manager's
+and owner's access. The same access rule applies to acquiring an agent identity session.
 
 ## Users
 
@@ -156,6 +166,7 @@ tmj task update <taskIdOrKey>
                 [--field <fieldNameOrId=value>]...
 
 tmj task move <taskIdOrKey> --status <statusIdOrName>
+tmj task move-workspace <taskIdOrKey> --workspace <idOrKey> [--status <idOrName>]
 tmj task assign <taskIdOrKey> --user <userIdOrEmailOrMe>
 tmj task unassign <taskIdOrKey>
 tmj task archive <taskIdOrKey>
@@ -189,6 +200,12 @@ its tasks, statuses, tags, field definitions, and access grants. Both require `-
 Task deletion uses `tasks:write`; workspace deletion uses `workspaces:manage`. Both check
 workspace access. Files are removed after the database transaction commits. Audit history
 is retained with key/title snapshots; deleted workspace history is admin-only.
+
+`task move-workspace` gives the task a new number and key in the target workspace and keeps
+its comments, files, links, assignee, and inbox notifications. Tags and custom field values
+from the old workspace are cleared. `--status` must belong to the target workspace; the
+default is its first status. The caller needs access to both workspaces and `tasks:write`.
+The audit event keeps the old and new keys.
 
 ## Task links
 

@@ -1,11 +1,11 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import type { z } from "zod";
 import type { ReleaseIdentitySessionInputSchema } from "@temujira/shared";
-import { requireScope } from "../access";
+import { accessibleWorkspaceIds, requireScope } from "../access";
 import { activeIdentitySession, newApiKeyToken, sha256hex } from "../auth";
 import type { Db } from "../db";
 import { apiKeys, identitySessions, users } from "../db/schema";
-import { HttpError, conflict, notFound, validationError } from "../errors";
+import { HttpError, conflict, forbidden, notFound, validationError } from "../errors";
 import { identitySessionToApi, userToApi, type UserRow } from "../serialize";
 import { newId, now } from "../util";
 import { body, currentUser, type AppContext, type Handlers } from "./types";
@@ -48,6 +48,18 @@ export function identitySessionHandlers(
     "identitySessions.acquire": (c) => {
       const actor = currentUser(c);
       const target = requireIdentity(ctx.db, c.req.param("userId") ?? "");
+      if (target.role === "admin" && actor.role !== "admin") {
+        throw forbidden("only admins can acquire admin identities");
+      }
+      if (actor.role !== "admin") {
+        const actorAccess = accessibleWorkspaceIds(ctx.db, actor);
+        if (actorAccess !== null) {
+          const targetAccess = accessibleWorkspaceIds(ctx.db, target);
+          if (targetAccess === null || targetAccess.some((id) => !actorAccess.includes(id))) {
+            throw forbidden("cannot acquire an identity with broader workspace access");
+          }
+        }
+      }
       if (!target.isAgent) {
         throw validationError("exclusive identity sessions apply to agent accounts");
       }

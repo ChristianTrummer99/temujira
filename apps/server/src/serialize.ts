@@ -1,5 +1,5 @@
 import { LINK_INVERSE, type LinkType } from "@temujira/shared";
-import { parseScopes } from "./access";
+import { parseKeyScopes, parseKeyWorkspaceIds, parseScopes } from "./access";
 import type {
   ActivityEvent,
   ApiKey,
@@ -87,6 +87,8 @@ export function apiKeyToApi(k: ApiKeyRow): ApiKey {
     token_prefix: k.tokenPrefix,
     last_used_at: k.lastUsedAt,
     revoked_at: k.revokedAt,
+    scopes: parseKeyScopes(k.scopes) ?? null,
+    workspace_ids: parseKeyWorkspaceIds(k.workspaceIds) ?? null,
     created_at: k.createdAt,
   };
 }

@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { z } from "zod";
 import type { LoginInputSchema, UpdateMeInputSchema } from "@temujira/shared";
+import { accessibleWorkspaceIds, userScopes } from "../access";
 import {
   clearSessionCookie,
   createSession,
@@ -63,7 +64,20 @@ export function authHandlers(
       return c.json({ ok: true as const });
     },
 
-    "auth.me": (c) => c.json({ user: userToApi(currentUser(c)) }),
+    "auth.me": (c) => {
+      const user = currentUser(c);
+      // A scoped API key must see its effective limits, not the owner's full access.
+      if (user.keyScopes === undefined && user.keyWorkspaceIds === undefined) {
+        return c.json({ user: userToApi(user) });
+      }
+      const workspaces = accessibleWorkspaceIds(ctx.db, user);
+      return c.json({
+        user: userToApi(
+          { ...user, scopes: JSON.stringify(userScopes(user)), workspaceAccessAll: workspaces === null ? 1 : 0 },
+          workspaces ?? [],
+        ),
+      });
+    },
 
     "auth.updateMe": async (c) => {
       const input = body<z.infer<typeof UpdateMeInputSchema>>(c);

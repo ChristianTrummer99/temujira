@@ -161,6 +161,21 @@ tmj tag update "$TAG_URGENT" --name Critical --json | jq -e '.tag.name == "Criti
 tmj tag delete "$TAG_URGENT" >/dev/null || die "tag delete"
 tmj tag list --workspace ENG --json | jq -e '.items | length == 1' >/dev/null || die "tag not removed"
 
+say "Move a task between workspaces"
+tmj workspace create --name Operations --key OPS --json | jq -e '.workspace.key == "OPS"' >/dev/null || die "move target workspace"
+MOVE_TASK=$(tmj task create --workspace ENG --title "Transfer me" --tag Backend --json | jq -r '.task.key')
+MOVE_COMMENT=$(tmj comment add --task "$MOVE_TASK" --body "Keep this comment" --json | jq -r '.comment.id')
+MOVED_KEY=$(tmj task move-workspace "$MOVE_TASK" --workspace OPS --status Backlog --json | jq -r '.task.key')
+case "$MOVED_KEY" in OPS-*) ;; *) die "move did not allocate an OPS key: $MOVED_KEY" ;; esac
+tmj task get "$MOVED_KEY" --json | jq -e '.task.tags | length == 0' >/dev/null || die "move kept old tags"
+tmj comment list --task "$MOVED_KEY" --json | jq -e --arg id "$MOVE_COMMENT" '.items | map(.id) | index($id) != null' >/dev/null || die "move lost comments"
+tmj activity list --task "$MOVED_KEY" --json | jq -e '[.items[].action] | index("task.moved") != null' >/dev/null || die "move activity"
+set +e
+tmj task get "$MOVE_TASK" >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" = 4 ] || die "old task key should exit 4, got $RC"
+
 say "Bulk task edits and saved order"
 tmj task bulk "$T1" "$T2" --workspace ENG --status Backlog --add-tag Backend --json | jq -e '.items | length == 2' >/dev/null || die "bulk update"
 tmj task list --workspace ENG --tag Backend --status Backlog --json | jq -e '.total == 2' >/dev/null || die "bulk state"
@@ -247,6 +262,26 @@ tmj task get ENG-999 >/dev/null 2>&1; RC2=$?
 set -e
 [ "$RC1" = 3 ] || die "wrong password exit code: $RC1"
 [ "$RC2" = 4 ] || die "missing task exit code: $RC2"
+
+say "Scoped API key: narrower scopes and workspace access"
+SCOPED_JSON=$(tmj apikey create --name scoped-e2e --scope tasks:write --workspace ENG --json)
+SCOPED_KEY=$(echo "$SCOPED_JSON" | jq -r '.token')
+SCOPED_ID=$(echo "$SCOPED_JSON" | jq -r '.apiKey.id')
+echo "$SCOPED_JSON" | jq -e '.apiKey.scopes == ["tasks:write"] and (.apiKey.workspace_ids | length) == 1' >/dev/null || die "scoped key limits"
+as_scope() { TEMUJIRA_URL="http://localhost:$PORT" TEMUJIRA_API_KEY="$SCOPED_KEY" HOME="$HOME_DIR" node apps/cli/dist/index.js "$@"; }
+as_scope workspace list --json | jq -e '[.items[].key] == ["ENG"]' >/dev/null || die "scoped key workspace limit"
+as_scope task get "$T1" --json | jq -e --arg k "$T1" '.task.key == $k' >/dev/null || die "scoped read"
+set +e
+as_scope tag create --workspace ENG --name ScopedNope >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" = 3 ] || die "scoped key tag write should exit 3, got $RC"
+tmj apikey revoke "$SCOPED_ID" >/dev/null || die "revoke scoped key"
+set +e
+as_scope auth whoami >/dev/null 2>&1
+RC=$?
+set -e
+[ "$RC" = 3 ] || die "revoked scoped key should exit 3, got $RC"
 
 say "Permanent deletion through the CLI"
 tmj task delete "$T1" --yes --json | jq -e '.ok == true' >/dev/null || die "task delete"
