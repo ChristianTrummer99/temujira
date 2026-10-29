@@ -215,7 +215,10 @@ Selection clears when filters or pages change. Tags have separate add/remove act
 Choose **Manual order** and drag a row handle. Drag between status groups to change status
 and position together. Click the handle for Move up/Move down, or use Alt + ↑ / ↓.
 Status and tag controls also work directly in each row. The Filters button opens the filter
-controls; active filter chips can be cleared one at a time.
+controls; active filter chips can be cleared one at a time. The tag filter supports multiple
+selections. **All selected** requires every selected tag (the default). **Any selected**
+requires at least one. Search the tag list, clear individual tags, or use **Clear tags** to
+remove only the tag filter. Counts and pages use the same server-side filter.
 
 Task rows have a fixed space for a hover action menu, so their contents do not move when
 the menu appears. Use it to rename, assign, move to another workspace, archive/restore,
@@ -245,6 +248,7 @@ tmj task bulk ENG-1 ENG-2 --workspace ENG --status "In Progress" --add-tag revie
 tmj task reorder ENG-2 --before ENG-1 --json
 tmj task move-workspace ENG-42 --workspace OPS --status Backlog --json
 tmj task list --workspace ENG --sort position --order asc --unassigned --json
+tmj task list --workspace ENG --tag Backend --tag Urgent --tag-match any --json
 ```
 
 Bulk changes accept up to 200 tasks from one workspace and apply all or none. Task order

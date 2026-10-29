@@ -249,11 +249,13 @@ export function tasksHandlers(
       if (q.status_id !== undefined) conds.push(eq(tasks.statusId, q.status_id));
       if (q.assignee_id !== undefined) conds.push(eq(tasks.assigneeId, q.assignee_id));
       if (q.unassigned) conds.push(isNull(tasks.assigneeId));
-      if (q.tag_id !== undefined) {
-        // Semi-join: keeps `total` honest and never duplicates a task row.
-        conds.push(
-          sql`EXISTS (SELECT 1 FROM ${taskTags} WHERE ${taskTags.taskId} = ${tasks.id} AND ${taskTags.tagId} = ${q.tag_id})`,
-        );
+      const tagIds = [...new Set([...(q.tag_id ? [q.tag_id] : []), ...(q.tag_ids?.split(",") ?? [])])];
+      if (tagIds.length) {
+        // Match inside a subquery so multiple matching tags never duplicate a task or its count.
+        const matchingTags = sql`SELECT 1 FROM ${taskTags} WHERE ${taskTags.taskId} = ${tasks.id} AND ${inArray(taskTags.tagId, tagIds)}`;
+        conds.push(q.tag_match === "any"
+          ? sql`EXISTS (${matchingTags})`
+          : sql`(SELECT count(*) FROM ${taskTags} WHERE ${taskTags.taskId} = ${tasks.id} AND ${inArray(taskTags.tagId, tagIds)}) = ${tagIds.length}`);
       }
       if (q.field_id !== undefined) {
         // Custom-field filter (FR-34): field_id alone = "has any value"; plus field_value = exact option.

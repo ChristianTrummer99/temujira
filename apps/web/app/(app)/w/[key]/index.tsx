@@ -1,6 +1,7 @@
 import { EmptyState } from '@/components/empty-state';
 import { TaskStatusControl, TaskTagsControl } from '@/components/task-properties';
 import { TaskActions } from '@/components/task-actions';
+import { TaskTagFilter } from '@/components/task-tag-filter';
 import { TaskDragHandle, TaskDropZone } from '@/components/task-drag';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TagPill } from '@/components/tag-pill';
@@ -31,6 +32,7 @@ import { hasScope } from '@/lib/scopes';
 import { DEFAULT_GROUP_BY, groupTasks, type GroupBy, type TaskGroup } from '@/lib/group-tasks';
 import { useResource } from '@/lib/use-resource';
 import type { BulkUpdateTasksInput, FieldDef, Status, Tag, Task, User } from '@temujira/client';
+import type { TaskTagMatchMode } from '@temujira/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ActivityIcon,
@@ -119,7 +121,9 @@ export default function WorkspaceTasksScreen() {
   const [search, setSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<Option>(undefined);
   const [assigneeFilter, setAssigneeFilter] = React.useState<Option>(undefined);
-  const [tagFilter, setTagFilter] = React.useState<Option>(undefined);
+  const [tagIds, setTagIds] = React.useState<string[]>([]);
+  const [tagMatch, setTagMatch] = React.useState<TaskTagMatchMode>('all');
+  React.useEffect(() => { setTagIds([]); setTagMatch('all'); }, [workspaceKey]);
   const [fieldFilter, setFieldFilter] = React.useState<Option>(undefined);
   const [fieldValueFilter, setFieldValueFilter] = React.useState<Option>(undefined);
   const [groupOption, setGroupOption] = React.useState<Option>(DEFAULT_GROUP_OPTION);
@@ -134,7 +138,7 @@ export default function WorkspaceTasksScreen() {
 
   const statusId = statusFilter?.value && statusFilter.value !== 'all' ? statusFilter.value : '';
   const assigneeValue = assigneeFilter?.value ?? 'all';
-  const tagId = tagFilter?.value && tagFilter.value !== 'all' ? tagFilter.value : '';
+  const tagQuery = tagIds.length ? tagIds.join(',') : undefined;
   const fieldId = fieldFilter?.value && fieldFilter.value !== 'all' ? fieldFilter.value : '';
   const fieldValue =
     fieldId && fieldValueFilter?.value && fieldValueFilter.value !== 'all'
@@ -142,7 +146,7 @@ export default function WorkspaceTasksScreen() {
       : '';
   const groupBy = (groupOption?.value ?? DEFAULT_GROUP_BY) as GroupBy | string;
   const sort = (sortOption?.value ?? 'position') as 'position' | 'created_at' | 'updated_at' | 'title';
-  const filterKey = JSON.stringify([workspaceKey, debouncedSearch, statusId, assigneeValue, tagId, fieldId, fieldValue, includeArchived, groupBy, sort]);
+  const filterKey = JSON.stringify([workspaceKey, debouncedSearch, statusId, assigneeValue, tagQuery, tagMatch, fieldId, fieldValue, includeArchived, groupBy, sort]);
   const queryKey = `${filterKey}:${offset}`;
   React.useEffect(() => { setSelected(new Set()); setOffset(0); setActionError(''); setNotice(''); }, [filterKey]);
 
@@ -159,7 +163,8 @@ export default function WorkspaceTasksScreen() {
           assignee_id:
             assigneeValue !== 'all' && assigneeValue !== 'unassigned' ? assigneeValue : undefined,
           unassigned: assigneeValue === 'unassigned',
-          tag_id: tagId || undefined,
+          tag_ids: tagQuery,
+          tag_match: tagIds.length ? tagMatch : undefined,
           field_id: fieldId || undefined,
           field_value: fieldValue || undefined,
           include_archived: includeArchived || undefined,
@@ -186,7 +191,8 @@ export default function WorkspaceTasksScreen() {
       debouncedSearch,
       statusId,
       assigneeValue,
-      tagId,
+      tagQuery,
+      tagMatch,
       fieldId,
       fieldValue,
       includeArchived,
@@ -257,7 +263,7 @@ export default function WorkspaceTasksScreen() {
   const filterChips = [
     ...(statusId ? [{ label: statuses.find((s) => s.id === statusId)?.name ?? 'Status', clear: () => setStatusFilter(undefined) }] : []),
     ...(assigneeValue !== 'all' ? [{ label: assigneeValue === 'unassigned' ? 'Unassigned' : users.find((u) => u.id === assigneeValue)?.name ?? 'Assignee', clear: () => setAssigneeFilter(undefined) }] : []),
-    ...(tagId ? [{ label: tags.find((t) => t.id === tagId)?.name ?? 'Tag', clear: () => setTagFilter(undefined) }] : []),
+    ...tagIds.map((id) => ({ label: tags.find((tag) => tag.id === id)?.name ?? 'Tag', clear: () => setTagIds((previous) => previous.filter((tagId) => tagId !== id)) })),
     ...(fieldId ? [{ label: `${activeField?.name ?? 'Field'}${fieldValue ? `: ${fieldValue}` : ''}`, clear: () => { setFieldFilter(undefined); setFieldValueFilter(undefined); } }] : []),
     ...(includeArchived ? [{ label: 'Includes archived', clear: () => setIncludeArchived(false) }] : []),
   ];
@@ -342,17 +348,7 @@ export default function WorkspaceTasksScreen() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={tagFilter} onValueChange={setTagFilter}>
-          <SelectTrigger className="min-w-32">
-            <SelectValue placeholder="All tags" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" label="All tags" />
-            {tags.map((tag) => (
-              <SelectItem key={tag.id} value={tag.id} label={tag.name} />
-            ))}
-          </SelectContent>
-        </Select>
+        <TaskTagFilter key={workspaceKey} tags={tags} selected={tagIds} match={tagMatch} onSelectedChange={setTagIds} onMatchChange={setTagMatch} />
         {selectFields.length > 0 || groupField ? (
           <Select
             value={fieldFilter}
@@ -401,6 +397,7 @@ export default function WorkspaceTasksScreen() {
         </Button>
         </View> : null}
         {filterChips.length ? <View className="flex-row flex-wrap items-center gap-2">
+          {tagIds.length > 1 ? <Text className="text-muted-foreground text-xs">{tagMatch === 'all' ? 'All selected tags' : 'Any selected tag'}</Text> : null}
           {filterChips.map((chip, i) => <Button key={i} variant="secondary" size="sm" className="h-7 gap-1.5 rounded-full" onPress={chip.clear} accessibilityLabel={`Clear ${chip.label} filter`}><Text className="text-xs">{chip.label}</Text><Icon as={XIcon} className="size-3" /></Button>)}
           <Button variant="ghost" size="sm" className="h-7" onPress={() => filterChips.forEach((chip) => chip.clear())}><Text className="text-muted-foreground text-xs">Clear filters</Text></Button>
         </View> : null}

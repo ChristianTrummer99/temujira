@@ -158,6 +158,13 @@ email/password authentication, API key management, and every feature below marke
 - **FR-35 (v2)** Field definitions and values are available via the API and CLI, like every
   other action (the parity contract).
 
+### Tag filters
+
+- Task filters support multiple selected tags. Match all selected tags by default, or choose
+  any selected tag. Users can search the tag list and remove selections without closing it.
+  Show active tag filters and allow individual or complete clearing. Apply the same filter
+  to server counts and pages. Expose both modes in the API and CLI; retain single-tag support.
+
 ### Linked tickets
 
 - **FR-24 (v2)** A task can be linked to other tasks with a relationship modifier — e.g.

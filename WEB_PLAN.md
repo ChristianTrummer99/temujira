@@ -80,6 +80,13 @@ custom fields are cleared and the key changes. Lists invalidate after the move; 
 tray replaces its route with the new key. Dropdown layers sit above sheet overlays so their
 items stay clickable inside the tray.
 
+`TaskTagFilter` replaces the single-tag Select with a searchable checkbox list. Keep it open
+while tags are selected or cleared. All selected tags must match by default; Any selected
+matches at least one. Active chips clear individual tags. Send `tag_ids` and `tag_match` to
+the API so counts and pagination use the same filter. A filter or mode change resets task
+selection and pagination; opening a ticket preserves the filters. Reset tag filters when
+switching workspaces.
+
 **Task detail** (`w/[key]/t/[num].tsx`):
 - Custom fields are separate from tags. `TaskFields` shows a two-column Field / Value table,
   including an empty state. `AddFieldDialog`, shared with workspace settings, creates Text,

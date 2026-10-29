@@ -5,12 +5,13 @@ import {
   LINK_RELATIONS,
   TASK_GROUP_FIELDS,
   TASK_SORT_FIELDS,
+  TASK_TAG_MATCH_MODES,
   linkRelationLabel,
 } from "@temujira/shared";
 import { getCtx, type Ctx } from "../context";
 import { CliError, EXIT_CODES } from "../exit";
 import { emit, indent, kv, table, truncate, ts, userRef } from "../output";
-import { isUlid, resolveStatusId, resolveTagId, resolveTagIds, resolveUserId } from "../resolve";
+import { isUlid, resolveStatusId, resolveTagIds, resolveUserId } from "../resolve";
 import { collect, nonNegativeInt, resolveTextOption } from "../util";
 
 export const COMMAND_ROUTES = {
@@ -159,7 +160,8 @@ interface TaskListOpts {
   status?: string;
   assignee?: string;
   unassigned?: boolean;
-  tag?: string;
+  tag: string[];
+  tagMatch: "all" | "any";
   fieldId?: string;
   fieldValue?: string;
   search?: string;
@@ -259,7 +261,8 @@ export function registerTask(program: Command): void {
     .option("--status <idOrName>", "filter by status (id or case-insensitive name)")
     .option("--assignee <idOrEmailOrMe>", 'filter by assignee (id, email, or "me")')
     .addOption(new Option("--unassigned", "only tasks with no assignee").conflicts("assignee"))
-    .option("--tag <idOrName>", "filter by tag (id or case-insensitive name)")
+    .option("--tag <idOrName>", "filter by tag (repeatable; id or case-insensitive name)", collect, [] as string[])
+    .addOption(new Option("--tag-match <mode>", "match all or any selected tags").choices(TASK_TAG_MATCH_MODES).default("all"))
     .option("--field-id <fieldId>", "filter by a custom select field (tasks with any value)")
     .option("--field-value <value>", 'with --field-id: filter to this option value')
     .option("--search <q>", "search tasks, comments, and indexed attachment text")
@@ -280,7 +283,11 @@ export function registerTask(program: Command): void {
       }
       if (opts.assignee) query.assignee_id = await resolveUserId(ctx.client, opts.assignee);
       if (opts.unassigned) query.unassigned = true;
-      if (opts.tag) query.tag_id = await resolveTagId(ctx.client, opts.workspace, opts.tag);
+      if (opts.tag.length) {
+        const tagIds = [...new Set(await resolveTagIds(ctx.client, opts.workspace, opts.tag))];
+        query.tag_ids = tagIds.join(",");
+        query.tag_match = opts.tagMatch;
+      }
       if (opts.fieldId) {
         query.field_id = opts.fieldId;
         if (!isUlid(opts.fieldId)) {

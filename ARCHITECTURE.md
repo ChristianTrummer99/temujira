@@ -126,6 +126,9 @@ TEXT ULID PKs, INTEGER unix-ms timestamps, INTEGER 0/1 booleans.
   from the target's counter, appends the task to its order, swaps the status, clears the old
   workspace's tags and field values, and repoints inbox rows to the target workspace. Comments,
   files, links, and associations stay with the task. The move event records both keys.
+  List filters accept comma-separated `tag_ids` and `tag_match=all|any` (default all).
+  Deduplicate ids and use a task-tag subquery before counts and pagination. Keep `tag_id`
+  for older clients; if both forms are supplied, combine their ids under the selected mode.
 - **inbox_events**: an AUTOINCREMENT sequence and unique inbox-item FK. An insert trigger
   records notifications. Deleting an inbox item cascades its event but does not reuse its
   cursor. The watch endpoint pages forward after applying user/workspace permissions.

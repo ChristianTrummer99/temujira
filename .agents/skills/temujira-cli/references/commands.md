@@ -140,7 +140,7 @@ before removing options. Deletion also deletes all task values for that field.
 tmj task list --workspace <workspaceIdOrKey>
               [--status <statusIdOrName>]
               [--assignee <userIdOrEmailOrMe> | --unassigned]
-              [--tag <tagIdOrName>]
+              [--tag <tagIdOrName>]... [--tag-match all|any]
               [--field-id <fieldId>] [--field-value <value>]
               [--search <query>] [--archived]
               [--sort created_at|updated_at|number|title|position]
@@ -184,6 +184,10 @@ Task list defaults to 50 results and groups only the returned page. `--search` f
 text, comments, filenames, and indexed attachment text. `--archived` includes archived tasks. JSON stays flat when human output
 uses `--group-by`. `task mine` includes tasks associated through creation, assignment,
 comments, or mentions.
+
+Repeat `task list --tag` to select several tags. Every selected tag must match by default;
+`--tag-match any` matches at least one. Duplicate tags count once. The server applies this
+filter before totals and pagination. Names are resolved within the selected workspace.
 
 `--description-file -` reads stdin. Repeated task-create tags form the initial set.
 Supplying tags to task update replaces the full set. Fields update only the supplied

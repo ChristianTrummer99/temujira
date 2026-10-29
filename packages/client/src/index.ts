@@ -345,6 +345,9 @@ export class TemujiraClient {
       assignee_id?: string;
       unassigned?: boolean;
       tag_id?: string;
+      /** Comma-separated tag ids; combined with tag_id if both are supplied. */
+      tag_ids?: string;
+      tag_match?: "all" | "any";
       field_id?: string;
       field_value?: string;
       q?: string;

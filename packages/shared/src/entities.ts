@@ -607,12 +607,23 @@ export const DeleteStatusQuerySchema = z.object({
 export const TASK_SORT_FIELDS = ["created_at", "updated_at", "number", "title", "position"] as const;
 
 export const TASK_GROUP_FIELDS = ["none", "status", "tag", "assignee"] as const;
+export const TASK_TAG_MATCH_MODES = ["all", "any"] as const;
+export type TaskTagMatchMode = (typeof TASK_TAG_MATCH_MODES)[number];
+export const MAX_TASK_FILTER_TAGS = 200;
 
 export const ListTasksQuerySchema = z.object({
   status_id: UlidSchema.optional(),
   assignee_id: UlidSchema.optional(),
   unassigned: QueryBoolSchema,
+  /** Single-tag filter kept for older clients. Combined with tag_ids when both are set. */
   tag_id: UlidSchema.optional(),
+  /** Comma-separated tag ids. Duplicate ids count once. */
+  tag_ids: z.string().min(1).max(MAX_TASK_FILTER_TAGS * 27 - 1).refine(
+    (value) => value.split(",").every((id) => UlidSchema.safeParse(id).success),
+    "tag_ids must be comma-separated tag ids",
+  ).optional(),
+  /** Whether a task needs all or any selected tags. Applied before counts and pagination. */
+  tag_match: z.enum(TASK_TAG_MATCH_MODES).default("all"),
   /** Search task title/description, comments, attachment names and indexed text. */
   q: z.string().optional(),
   /** Filter to tasks with a value for this custom select field. */
