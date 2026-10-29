@@ -221,8 +221,8 @@ Task rows have a fixed space for a hover action menu, so their contents do not m
 the menu appears. Use it to rename, assign, move to another workspace, archive/restore,
 copy a link, or delete a task. Ticket keys never wrap. A long key pushes the title to the
 right; short keys keep the column aligned. The row itself opens the ticket, so the action
-menu has no Open task item. Tag pills use the free row width and truncate before the status
-control; a +N chip shows the rest.
+menu has no Open task item. Tag pills align to the right before the status control. They use
+the free row width without overlapping the status; a +N chip shows the rest.
 Statuses use the same color, dot, and text as tags, with a rounded rectangle and a chevron.
 Workspace hover menus offer rename, archive/restore, activity, and delete actions. The
 workspace row opens the workspace, so its menu has no Open workspace item.
@@ -250,6 +250,17 @@ tmj task list --workspace ENG --sort position --order asc --unassigned --json
 Bulk changes accept up to 200 tasks from one workspace and apply all or none. Task order
 is shared by the workspace. Personal queues have been removed; old stored rows and audit
 history are retained.
+
+### Custom fields
+
+Open a ticket and use **Custom fields → Add field** to add a workspace field. Choose Text,
+Number, or Choice. Each ticket in that workspace has its own value, shown in a two-column
+**Field / Value** table. Fields are separate from tags. Values save when you leave an input,
+press Enter, or choose an option. Clear a value to leave the field unset.
+
+Creating fields requires `workspaces:manage`; editing values requires `tasks:write`.
+Use **Settings → Workspaces → Custom fields** to rename, reorder, or delete definitions.
+The existing `tmj field` commands and `tmj task update --field` also support these fields.
 
 ### Users and API keys
 

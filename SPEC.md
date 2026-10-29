@@ -96,8 +96,8 @@ email/password authentication, API key management, and every feature below marke
   confirmed permanent deletion with API/CLI parity. Task rows are compact; status controls
   match tag typography and colors, using a rounded rectangle and a chevron. Ticket keys stay
   on one line; a long key pushes the following content instead of wrapping. A menu never
-  repeats an open action when the row itself is clickable. Tag pills use the free row width
-  and truncate before the status control; a +N chip shows the remainder.
+  repeats an open action when the row itself is clickable. Tag pills align to the right,
+  use the free row width, and truncate before the status control; a +N chip shows the remainder.
 - **FR-54** Users and API keys share a settings section with two tabs. Use compact,
   uniform-height rows, search, filter pills, pagination, and action menus. Keep filters when
   switching tabs. Selected filters must have a clear, high-contrast state.
@@ -150,7 +150,9 @@ email/password authentication, API key management, and every feature below marke
   user-defined options (mirroring how statuses work, which is the model the user pointed
   at), alongside simple scalar types.
 - **FR-33 (v2)** Custom field values are set per task, displayed as **columns in the task
-  list**, and editable in the task detail.
+  list**, and editable in a **Field / Value table** in the task detail. Show this section even
+  when the workspace has no fields. Workspace managers can add text, number, and choice
+  fields directly from the ticket. Field definitions apply to that workspace, not to tags.
 - **FR-34 (v2)** Select-type custom fields can be used as the **grouping key** and as a
   filter, like status/tag/assignee.
 - **FR-35 (v2)** Field definitions and values are available via the API and CLI, like every

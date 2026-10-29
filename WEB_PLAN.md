@@ -72,8 +72,8 @@ task with two tags appears in **both**, plus a trailing "No tag"; assignee group
 alphabetical plus "Unassigned". Task rows gain tag pills (up to 5 + overflow), a dimmed
 archived style, and a hover-revealed archive/unarchive button (nested Pressable — stop
 propagation if the row also navigates on web). The create dialog gains tag toggles.
-The tag strip is the flexible middle of the row: pills start after the title, shrink and
-truncate before the status control, and show a +N chip for the rest. Every task/workspace
+The tag strip is the flexible middle of the row: pills align to the right before the status
+control, shrink within the available width, and show a +N chip for the rest. Every task/workspace
 action menu uses lucide icons. The task menu includes **Move to workspace**: choose an
 active target workspace and one of its statuses. The confirm dialog explains that tags and
 custom fields are cleared and the key changes. Lists invalidate after the move; an open
@@ -81,6 +81,12 @@ tray replaces its route with the new key. Dropdown layers sit above sheet overla
 items stay clickable inside the tray.
 
 **Task detail** (`w/[key]/t/[num].tsx`):
+- Custom fields are separate from tags. `TaskFields` shows a two-column Field / Value table,
+  including an empty state. `AddFieldDialog`, shared with workspace settings, creates Text,
+  Number, or Choice definitions for the workspace (`workspaces:manage`). Task writers edit
+  values inline (`tasks:write`); other readers see plain values. Save only the changed field
+  and merge that value into the current task, so concurrent field saves cannot replace each
+  other. Failed saves keep the input for retry. Adding a field refreshes the workspace data.
 - Tag editor via Popover with a checkbox per workspace tag → `updateTask({ tag_ids })`.
   Any member may tag; only tag CRUD is admin.
 - Comment composer becomes `MentionInput`; posting sends `mention_ids`, and optionally

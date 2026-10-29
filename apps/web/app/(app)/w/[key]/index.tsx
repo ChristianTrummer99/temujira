@@ -619,7 +619,7 @@ function TaskRow({
           <Text className="text-muted-foreground p-2 text-xs">Keyboard: Alt + ↑ / ↓</Text>
         </PopoverContent></Popover>
       </> : null}
-      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)} className="min-w-0 flex-1 flex-row items-center gap-x-3 py-1 sm:max-w-[45%] sm:flex-none">
+      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)} className="min-w-0 flex-1 flex-row items-center gap-x-3 py-1 sm:max-w-[45%] sm:flex-initial">
         <Text numberOfLines={1} className="text-muted-foreground min-w-16 shrink-0 font-mono text-xs">{task.key}</Text>
         <Text numberOfLines={1} className="min-w-0 flex-1 text-sm">{task.title}</Text>
       </Pressable>
@@ -633,7 +633,7 @@ function TaskRow({
           <Text>Archived</Text>
         </Badge>
       ) : null}
-      <View className="hidden min-w-0 flex-1 sm:flex"><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} /></View>
+      <View className="hidden min-w-0 flex-1 sm:flex sm:min-w-14"><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} /></View>
       <TaskStatusControl task={task} statuses={controls.statuses} onChanged={controls.onChanged} disabled={controls.busy} />
       <View className="hidden sm:flex">{task.assignee ? (
         <UserAvatar user={task.assignee} className="size-6" textClassName="text-[10px]" />

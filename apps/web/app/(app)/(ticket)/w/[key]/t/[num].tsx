@@ -9,6 +9,7 @@ import { MarkdownField } from '@/components/markdown-field';
 import { ActivityFeed } from '@/components/activity-feed';
 import { TaskStatusControl, TaskTagsControl } from '@/components/task-properties';
 import { TaskActions } from '@/components/task-actions';
+import { TaskFields } from '@/components/task-fields';
 import { MessageComposer } from '@/components/message-composer';
 import { AttachmentUploads, useAttachmentUploads } from '@/components/attachment-uploads';
 import { DraftStatus } from '@/components/draft-status';
@@ -346,7 +347,17 @@ export default function TaskDetailScreen() {
 
           <InlineDescriptionEditor key={task.id} task={task} users={users} onChanged={setTask} onAttachment={appendTaskAttachment} />
 
-          <FieldsSection task={task} fields={fields} onChanged={setTask} />
+          <TaskFields key={task.id} task={task} fields={fields}
+            onAdded={(field) => resource.setData((previous) => previous?.task.workspace_id === field.workspace_id ? {
+              ...previous, fields: [...previous.fields, field],
+            } : previous)}
+            onValueSaved={(fieldId, value, updatedAt) => resource.setData((previous) => {
+              if (!previous || previous.task.id !== task.id) return previous;
+              const values = { ...previous.task.field_values };
+              if (value) values[fieldId] = value;
+              else delete values[fieldId];
+              return { ...previous, task: { ...previous.task, field_values: values, updated_at: Math.max(previous.task.updated_at, updatedAt) } };
+            })} />
 
           <LinksSection task={task} onChanged={setTask} />
 
@@ -589,150 +600,6 @@ function ArchiveControl({ task, onChanged }: { task: Task; onChanged: (t: Task) 
         <Text className="text-muted-foreground text-sm">{archived ? 'Unarchive' : 'Archive'}</Text>
       </Button>
       {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
-    </View>
-  );
-}
-
-/** Per-field value editors for a task (FR-32/33). Changes save immediately. */
-function FieldsSection({
-  task,
-  fields,
-  onChanged,
-}: {
-  task: Task;
-  fields: FieldDef[];
-  onChanged: (t: Task) => void;
-}) {
-  const { client } = useAuth();
-  const [error, setError] = React.useState<string | null>(null);
-
-  async function saveValues(fieldId: string, raw: string) {
-    const value = raw.trim();
-    setError(null);
-    try {
-      const { task: updated } = await client.updateTask(task.id, {
-        field_values: { ...(task.field_values ?? {}), [fieldId]: value },
-      });
-      onChanged(updated);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save field');
-    }
-  }
-
-  if (fields.length === 0) return null;
-
-  return (
-    <View className="gap-2">
-      <Text className="text-sm font-medium">Custom fields</Text>
-      <View className="border-border bg-card gap-3 rounded-md border p-3">
-        {fields.map((field) => {
-          const current = task.field_values?.[field.id] ?? '';
-          if (field.type === 'select') {
-            return (
-              <SelectEditor
-                key={field.id}
-                field={field}
-                value={current}
-                onSave={(v) => saveValues(field.id, v)}
-              />
-            );
-          }
-          return (
-            <TextEditor key={field.id} field={field} value={current} onSave={(v) => saveValues(field.id, v)} />
-          );
-        })}
-        {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-      </View>
-    </View>
-  );
-}
-
-function SelectEditor({
-  field,
-  value,
-  onSave,
-}: {
-  field: FieldDef;
-  value: string;
-  onSave: (v: string) => void;
-}) {
-  const [saving, setSaving] = React.useState(false);
-  const selected: Option | undefined = value ? { value, label: value } : undefined;
-
-  async function onChange(next: Option | undefined) {
-    const v = next?.value ?? '';
-    if (v === value) return;
-    setSaving(true);
-    try {
-      await onSave(v);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <View className="gap-1.5">
-      <View className="flex-row items-center justify-between">
-        <Label>{field.name}</Label>
-        {saving ? <Text className="text-muted-foreground text-xs">Saving…</Text> : null}
-      </View>
-      <Select value={selected} onValueChange={onChange}>
-        <SelectTrigger className="w-full">
-          <SelectValue placeholder={`Select ${field.name}`} />
-        </SelectTrigger>
-        <SelectContent>
-          {field.options.map((option) => (
-            <SelectItem key={option} value={option} label={option} />
-          ))}
-          <SelectItem value="" label="— None —" />
-        </SelectContent>
-      </Select>
-    </View>
-  );
-}
-
-function TextEditor({
-  field,
-  value,
-  onSave,
-}: {
-  field: FieldDef;
-  value: string;
-  onSave: (v: string) => void;
-}) {
-  const [draft, setDraft] = React.useState(value);
-  const [saving, setSaving] = React.useState(false);
-  const [touched, setTouched] = React.useState(false);
-
-  React.useEffect(() => setDraft(value), [value]);
-
-  async function save() {
-    if (!touched || draft.trim() === value) return;
-    setSaving(true);
-    try {
-      await onSave(draft);
-      setTouched(false);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <View className="gap-1.5">
-      <View className="flex-row items-center justify-between">
-        <Label>{field.name}</Label>
-        {saving ? <Text className="text-muted-foreground text-xs">Saving…</Text> : null}
-      </View>
-      <Input
-        value={draft}
-        onChangeText={(v) => {
-          setDraft(v);
-          setTouched(true);
-        }}
-        onBlur={() => void save()}
-        keyboardType={field.type === 'number' ? 'numeric' : 'default'}
-        placeholder={field.type === 'number' ? 'Number…' : `${field.name}…`}
-      />
     </View>
   );
 }

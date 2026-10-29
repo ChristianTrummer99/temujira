@@ -1,4 +1,5 @@
 import { TagPill } from '@/components/tag-pill';
+import { AddFieldDialog } from '@/components/add-field-dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,6 +44,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
+import { hasScope } from '@/lib/scopes';
 import { useWorkspaceList } from '@/lib/workspaces';
 import type { FieldDef, Status, Tag, Workspace } from '@temujira/client';
 import {
@@ -164,7 +166,7 @@ function WorkspaceCard({
                 </Badge>
               ) : null}
             </View>
-            <CardDescription>Statuses, tags, and workspace settings.</CardDescription>
+            <CardDescription>Statuses, tags, custom fields, and workspace settings.</CardDescription>
           </View>
           <View className="flex-row gap-1">
             <RenameDialog workspace={workspace} onDone={onReload} />
@@ -754,9 +756,8 @@ function EditStatusDialog({
 }
 
 /**
- * Custom field definitions (FR-31..35). Any member may maintain them, matching the
- * statuses model: the field list is a per-workspace shape definition, and values live
- * on tasks. Type is immutable once created; options are editable for select fields.
+ * Workspace managers maintain field definitions; task writers edit ticket values.
+ * Type is fixed after creation. Choice options remain editable.
  */
 function FieldsSection({
   workspaceKey,
@@ -765,6 +766,8 @@ function FieldsSection({
   workspaceKey: string;
   client: ReturnType<typeof useAuth>['client'];
 }) {
+  const { user } = useAuth();
+  const canManage = hasScope(user, 'workspaces:manage');
   const [fields, setFields] = React.useState<FieldDef[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -803,8 +806,7 @@ function FieldsSection({
       <View className="flex-row items-center justify-between">
         <Text className="text-sm font-medium">Custom fields</Text>
         <AddFieldDialog
-          workspaceKey={workspaceKey}
-          client={client}
+          workspace={workspaceKey}
           onAdded={(f) => setFields((prev) => [...(prev ?? []), f])}
         />
       </View>
@@ -847,7 +849,7 @@ function FieldsSection({
                   variant="ghost"
                   size="sm"
                   className="h-7 w-7 p-0"
-                  disabled={i === 0}
+                  disabled={!canManage || i === 0}
                   onPress={() => onMove(field.id, -1)}>
                   <Icon as={ChevronUpIcon} className="text-muted-foreground size-3.5" />
                 </Button>
@@ -855,12 +857,12 @@ function FieldsSection({
                   variant="ghost"
                   size="sm"
                   className="h-7 w-7 p-0"
-                  disabled={i === fields.length - 1}
+                  disabled={!canManage || i === fields.length - 1}
                   onPress={() => onMove(field.id, 1)}>
                   <Icon as={ChevronDownIcon} className="text-muted-foreground size-3.5" />
                 </Button>
               </View>
-              <EditFieldDialog
+              {canManage ? <EditFieldDialog
                 field={field}
                 client={client}
                 onUpdated={(updated) =>
@@ -869,129 +871,12 @@ function FieldsSection({
                   )
                 }
                 onDeleted={(id) => setFields((prev) => (prev ?? []).filter((x) => x.id !== id))}
-              />
+              /> : null}
             </View>
           ))}
         </View>
       )}
     </View>
-  );
-}
-
-const FIELD_TYPES = ['select', 'text', 'number'] as const;
-
-function AddFieldDialog({
-  workspaceKey,
-  client,
-  onAdded,
-}: {
-  workspaceKey: string;
-  client: ReturnType<typeof useAuth>['client'];
-  onAdded: (f: FieldDef) => void;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const [name, setName] = React.useState('');
-  const [type, setType] = React.useState<(typeof FIELD_TYPES)[number]>('text');
-  const [optionsText, setOptionsText] = React.useState('');
-  const [creating, setCreating] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  function parseOptions(): string[] {
-    return [...new Set(optionsText.split(',').map((o) => o.trim()).filter(Boolean))];
-  }
-
-  async function onCreate() {
-    if (creating || !name.trim()) return;
-    setCreating(true);
-    setError(null);
-    try {
-      const options = parseOptions();
-      const { field } = await client.createField(workspaceKey, {
-        name: name.trim(),
-        type,
-        options: type === 'select' ? options : undefined,
-      });
-      onAdded(field);
-      setName('');
-      setType('text');
-      setOptionsText('');
-      setOpen(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create field');
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 gap-1">
-          <Icon as={PlusIcon} className="text-muted-foreground size-3.5" />
-          <Text className="text-xs">Add</Text>
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="w-full max-w-sm">
-        <DialogHeader>
-          <DialogTitle>New custom field</DialogTitle>
-          <DialogDescription>
-            A named field every task in this workspace can carry a value for.
-          </DialogDescription>
-        </DialogHeader>
-        <View className="gap-4">
-          <View className="gap-1.5">
-            <Label>Name</Label>
-            <Input value={name} onChangeText={setName} placeholder="Priority" />
-          </View>
-          <View className="gap-1.5">
-            <Label>Type (can&apos;t change later)</Label>
-            <View className="flex-row gap-2">
-              {FIELD_TYPES.map((t) => (
-                <Button
-                  key={t}
-                  variant={type === t ? 'default' : 'outline'}
-                  size="sm"
-                  className="flex-1"
-                  onPress={() => setType(t)}>
-                  <Text>{t === 'select' ? 'select' : t}</Text>
-                </Button>
-              ))}
-            </View>
-          </View>
-          {type === 'select' ? (
-            <View className="gap-1.5">
-              <Label>Options (comma-separated)</Label>
-              <Input
-                value={optionsText}
-                onChangeText={setOptionsText}
-                placeholder="low, medium, high"
-                autoCapitalize="none"
-              />
-              <Text className="text-muted-foreground text-xs">
-                Select fields power grouping and filtering on the task list.
-              </Text>
-            </View>
-          ) : null}
-          {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-        </View>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">
-              <Text>Cancel</Text>
-            </Button>
-          </DialogClose>
-          <Button
-            onPress={onCreate}
-            disabled={
-              creating ||
-              !name.trim() ||
-              (type === 'select' && parseOptions().length === 0)
-            }>
-            <Text>{creating ? 'Creating...' : 'Create'}</Text>
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

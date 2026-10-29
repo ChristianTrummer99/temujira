@@ -161,13 +161,26 @@ tmj tag update "$TAG_URGENT" --name Critical --json | jq -e '.tag.name == "Criti
 tmj tag delete "$TAG_URGENT" >/dev/null || die "tag delete"
 tmj tag list --workspace ENG --json | jq -e '.items | length == 1' >/dev/null || die "tag not removed"
 
+say "Workspace custom fields and per-ticket values"
+REFERENCE_FIELD=$(tmj field create --workspace ENG --name "Customer reference" --type text --json | jq -r '.field.id')
+ESTIMATE_FIELD=$(tmj field create --workspace ENG --name Estimate --type number --json | jq -r '.field.id')
+PRIORITY_FIELD=$(tmj field create --workspace ENG --name Priority --type select --options "Low,Medium,High" --json | jq -r '.field.id')
+tmj field list --workspace ENG --json | jq -e '.items | length == 3' >/dev/null || die "custom field definitions"
+tmj task update "$T1" --field "Customer reference=ABC-123" --field "Estimate=3.5" --field "Priority=High" >/dev/null || die "custom field values"
+tmj task get "$T1" --json | jq -e --arg ref "$REFERENCE_FIELD" --arg estimate "$ESTIMATE_FIELD" --arg priority "$PRIORITY_FIELD" '.task.field_values[$ref] == "ABC-123" and .task.field_values[$estimate] == "3.5" and .task.field_values[$priority] == "High"' >/dev/null || die "custom field value types"
+tmj task get "$T2" --json | jq -e '.task.field_values | length == 0' >/dev/null || die "field values copied to another ticket"
+tmj task update "$T1" --field "Estimate=" >/dev/null || die "clear custom field value"
+tmj task get "$T1" --json | jq -e --arg ref "$REFERENCE_FIELD" --arg estimate "$ESTIMATE_FIELD" '.task.field_values[$ref] == "ABC-123" and .task.field_values[$estimate] == null' >/dev/null || die "clearing a field changed another value"
+
 say "Move a task between workspaces"
 tmj workspace create --name Operations --key OPS --json | jq -e '.workspace.key == "OPS"' >/dev/null || die "move target workspace"
-MOVE_TASK=$(tmj task create --workspace ENG --title "Transfer me" --tag Backend --json | jq -r '.task.key')
+tmj field list --workspace OPS --json | jq -e '.items | length == 0' >/dev/null || die "field definitions leaked across workspaces"
+MOVE_TASK=$(tmj task create --workspace ENG --title "Transfer me" --tag Backend --field "Customer reference=transfer" --json | jq -r '.task.key')
 MOVE_COMMENT=$(tmj comment add --task "$MOVE_TASK" --body "Keep this comment" --json | jq -r '.comment.id')
 MOVED_KEY=$(tmj task move-workspace "$MOVE_TASK" --workspace OPS --status Backlog --json | jq -r '.task.key')
 case "$MOVED_KEY" in OPS-*) ;; *) die "move did not allocate an OPS key: $MOVED_KEY" ;; esac
 tmj task get "$MOVED_KEY" --json | jq -e '.task.tags | length == 0' >/dev/null || die "move kept old tags"
+tmj task get "$MOVED_KEY" --json | jq -e '.task.field_values | length == 0' >/dev/null || die "move kept old field values"
 tmj comment list --task "$MOVED_KEY" --json | jq -e --arg id "$MOVE_COMMENT" '.items | map(.id) | index($id) != null' >/dev/null || die "move lost comments"
 tmj activity list --task "$MOVED_KEY" --json | jq -e '[.items[].action] | index("task.moved") != null' >/dev/null || die "move activity"
 set +e
