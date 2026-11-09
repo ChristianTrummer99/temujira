@@ -571,6 +571,33 @@ function TaskGroupCard({
   );
 }
 
+/** Elements in a task row that keep their own click behavior. */
+const ROW_CONTROLS =
+  'a, button, input, select, textarea, label, [role="button"], [role="link"], [role="checkbox"], ' +
+  '[role="combobox"], [role="menuitem"], [role="option"], [role="switch"], [draggable="true"]';
+
+/**
+ * Web: a click on any empty part of a task row opens the task, the same as a click on its title.
+ * Clicks on the row's controls keep their own behavior. Popovers and selects render in portals:
+ * their clicks bubble through React but are not inside the row, so they are ignored too.
+ * Cmd/Ctrl-click opens the task in a new tab. A click that ends a text selection does nothing.
+ */
+function rowClickProps(href: string, open: (href: string) => void): object {
+  if (Platform.OS !== 'web') return {};
+  return {
+    onClick: (e: { defaultPrevented: boolean; button: number; metaKey: boolean; ctrlKey: boolean; target: EventTarget | null; currentTarget: EventTarget }) => {
+      const row = e.currentTarget as HTMLElement;
+      const target = e.target as Element | null;
+      if (e.defaultPrevented || e.button !== 0 || !target || !row.contains(target)) return;
+      const control = target.closest(ROW_CONTROLS);
+      if (control && row.contains(control)) return;
+      if (window.getSelection()?.toString()) return;
+      if (e.metaKey || e.ctrlKey) window.open(href, '_blank', 'noopener');
+      else open(href);
+    },
+  };
+}
+
 function TaskRow({
   task,
   workspaceKey,
@@ -592,14 +619,16 @@ function TaskRow({
   const router = useRouter();
   const archived = task.archived_at != null;
   const fieldValue = field ? (task.field_values ?? {})[field.id] : undefined;
+  const href = `/w/${workspaceKey}/t/${task.number}`;
 
   return (
     <TaskDropZone enabled={controls.dragEnabled} onDrop={() => controls.onDrop(task.id)}><View
+      {...rowClickProps(href, (to) => router.push(to))}
       testID={`task-row-${task.key}`}
       className={
         'action-row border-border flex-row items-center gap-2 px-3 py-1' +
         (last ? '' : ' border-b') +
-        (Platform.OS === 'web' ? ' hover:bg-accent/50 transition-colors' : '') +
+        (Platform.OS === 'web' ? ' hover:bg-accent/50 cursor-pointer transition-colors' : '') +
         (controls.selected.has(task.id) ? ' bg-primary/5' : '') +
         (archived ? ' opacity-55' : '')
       }>
@@ -616,7 +645,7 @@ function TaskRow({
           <Text className="text-muted-foreground p-2 text-xs">Keyboard: Alt + ↑ / ↓</Text>
         </PopoverContent></Popover>
       </> : null}
-      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(`/w/${workspaceKey}/t/${task.number}`)} className="min-w-0 flex-1 flex-row items-center gap-x-3 py-1 sm:max-w-[45%] sm:flex-initial">
+      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(href)} className="min-w-0 flex-1 flex-row items-center gap-x-3 py-1 sm:max-w-[45%] sm:flex-initial">
         <Text numberOfLines={1} className="text-muted-foreground min-w-16 shrink-0 font-mono text-xs">{task.key}</Text>
         <Text numberOfLines={1} className="min-w-0 flex-1 text-sm">{task.title}</Text>
       </Pressable>
@@ -630,7 +659,7 @@ function TaskRow({
           <Text>Archived</Text>
         </Badge>
       ) : null}
-      {/* The cell takes the free width and right-aligns the tags; only the tag button itself is clickable. */}
+      {/* The cell takes the free width and right-aligns the tags; only the tag button opens the tag picker. */}
       <View className="hidden min-w-0 flex-1 sm:flex sm:min-w-14 sm:flex-row sm:justify-end"><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} /></View>
       <TaskStatusControl task={task} statuses={controls.statuses} onChanged={controls.onChanged} disabled={controls.busy} />
       <View className="hidden sm:flex">{task.assignee ? (
