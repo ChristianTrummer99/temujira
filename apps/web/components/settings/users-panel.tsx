@@ -450,7 +450,7 @@ export default function UsersPanel({ onShowKeys }: { onShowKeys: (userId: string
             </DialogTitle>
             <DialogDescription>
               {mintedToken
-                ? "Copy this now — it won't be shown again. Hand it to the agent or set it as TEMUJIRA_API_KEY."
+                ? 'Copy this key now. It will not be shown again. Use it with the CLI or give it to an agent.'
                 : 'Name the key so you can recognize it later.'}
             </DialogDescription>
           </DialogHeader>

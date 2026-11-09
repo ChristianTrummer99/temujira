@@ -7,11 +7,11 @@ import { collect, readStdin } from "../util";
 
 /**
  * The raw escape hatch (client.request) can reach every registry route — it is
- * the standing parity floor. It is the canonical home of the meta routes, which
+ * the standing parity floor. It is the canonical home of the meta and instance routes, which
  * have no dedicated command.
  */
 export const COMMAND_ROUTES = {
-  api: ["meta.health", "meta.openapi"],
+  api: ["meta.health", "meta.openapi", "instance.get", "instance.update"],
 } as const satisfies Record<string, readonly RouteId[]>;
 
 const METHODS = ["GET", "POST", "PATCH", "PUT", "DELETE", "HEAD", "OPTIONS"];

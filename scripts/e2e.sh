@@ -56,8 +56,14 @@ done
 curl -fsS "http://localhost:$PORT/api/v1/health" | jq -e '.ok == true' >/dev/null || die "health payload"
 
 say "First-run setup via CLI"
-tmj --url "http://localhost:$PORT" setup --email admin@e2e.test --password e2e-password-1 --name "E2E Admin" --quiet >/dev/null || die "setup"
+tmj --url "http://localhost:$PORT" setup --email admin@e2e.test --password e2e-password-1 --name "E2E Admin" --display-name "E2E Tasks" --quiet >/dev/null || die "setup"
 tmj auth whoami --json | jq -e '.user.role == "admin"' >/dev/null || die "whoami"
+
+say "App display name"
+tmj api GET /instance | jq -e '.instance.display_name == "E2E Tasks"' >/dev/null || die "setup display name"
+tmj api PATCH /instance --body '{"display_name":"Company Tasks"}' | jq -e '.instance.display_name == "Company Tasks"' >/dev/null || die "set display name"
+tmj api GET /instance | jq -e '.instance.display_name == "Company Tasks"' >/dev/null || die "saved display name"
+tmj api PATCH /instance --body '{"display_name":"Temujira"}' >/dev/null || die "reset display name"
 
 say "Setup self-disables"
 curl -fsS "http://localhost:$PORT/api/v1/setup" | jq -e '.needsSetup == false' >/dev/null || die "needsSetup should be false"

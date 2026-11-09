@@ -353,9 +353,7 @@ export default function ApiKeysPanel({ userId, onClearUser }: { userId?: string;
           <DialogHeader>
             <DialogTitle>API key</DialogTitle>
             <DialogDescription>
-              Copy this now — it won&apos;t be shown again. Set it as{' '}
-              <Text className="font-mono">TEMUJIRA_API_KEY</Text> for the CLI, or hand it to the
-              agent.
+              Copy this key now. It will not be shown again. Use it with the CLI or give it to an agent.
             </DialogDescription>
           </DialogHeader>
           <View className="border-border bg-muted/50 gap-2 rounded-md border p-3">

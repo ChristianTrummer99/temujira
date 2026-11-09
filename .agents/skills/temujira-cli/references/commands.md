@@ -6,7 +6,7 @@ Use `tmj <group> <command> --help` as the live authority. All leaf commands acce
 ## Setup, authentication, and account
 
 ```text
-tmj setup --email <email> --password <password> [--name <name>]
+tmj setup --email <email> --password <password> [--name <name>] [--display-name <appName>]
 
 tmj auth login --email <email> [--password <password>]
 tmj auth whoami
@@ -45,6 +45,18 @@ limits to inherit. The server rejects scopes or workspaces the owner lacks. Non-
 cannot mint keys for admin accounts, and cannot grant more than they hold themselves.
 A delegated key created without limits by a non-admin gets the intersection of the manager's
 and owner's access. The same access rule applies to acquiring an agent identity session.
+
+## App display name
+
+```sh
+tmj api GET /instance
+tmj api PATCH /instance --body '{"display_name":"Acme Tasks"}'
+```
+
+The name applies to the whole installation. Reading it is public. Changes require an
+admin session or an unrestricted admin API key. Scope- or workspace-limited keys cannot
+change it. Use 1–80 characters on one line. Set `Temujira` to restore the default name.
+The CLI remains `tmj`. The setup option `--name` names the admin; `--display-name` names the app.
 
 ## Users
 

@@ -202,6 +202,28 @@ config. `--global-auth` skips directory bindings. `auth forget` removes stored c
 without revocation. `auth logout` revokes only a global key minted by CLI login/setup;
 imported shared keys have no automatic revocation ID.
 
+### Company branding
+
+Admins can set an **App name** in **Settings → Branding**, or during first-run setup.
+The name appears in the sidebar, sign-in and setup screens, and browser title. The sidebar
+initial follows the name. The setting applies to the whole installation and is saved in
+the database. It takes effect without a build or restart. Other open tabs update on focus.
+Use **Use default name**, then **Save changes**, to restore Temujira.
+
+The public `GET /api/v1/instance` endpoint returns only `instance.display_name`.
+`PATCH /api/v1/instance` requires an admin session or an unrestricted admin API key.
+Names must contain 1–80 characters on one line. The server escapes names in the initial
+HTML, so the correct browser title appears before the app loads.
+
+```sh
+tmj api GET /instance
+tmj api PATCH /instance --body '{"display_name":"Acme Tasks"}'
+# First-run setup also accepts --display-name "Acme Tasks".
+```
+
+The CLI command remains `tmj`; its environment variables and API URLs keep their names.
+Native app launcher names and icons are build settings in `apps/web/app.json`.
+
 ### Task selection and order
 
 Tickets open as trays over the current screen, including Inbox, Search, Activity, and a

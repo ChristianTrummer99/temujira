@@ -11,7 +11,7 @@ import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
 import { hasScope } from '@/lib/scopes';
 import { useRouter } from 'expo-router';
-import { FolderCogIcon, UserIcon, UsersIcon } from 'lucide-react-native';
+import { FolderCogIcon, PaletteIcon, UserIcon, UsersIcon } from 'lucide-react-native';
 import { ScrollView, View, Pressable } from 'react-native';
 
 export default function SettingsIndexScreen() {
@@ -19,6 +19,13 @@ export default function SettingsIndexScreen() {
   const { user } = useAuth();
 
   const links = [
+    {
+      to: '/settings/branding',
+      title: 'Branding',
+      desc: 'Set the app name for your company',
+      icon: PaletteIcon,
+      visible: user?.role === 'admin',
+    },
     {
       to: '/settings/profile',
       title: 'Profile',
@@ -47,7 +54,7 @@ export default function SettingsIndexScreen() {
       <Card>
         <CardHeader>
           <CardTitle>Settings</CardTitle>
-          <CardDescription>Manage your account and this Temujira instance.</CardDescription>
+          <CardDescription>Manage your account and app settings.</CardDescription>
         </CardHeader>
         <CardContent className="gap-2">
           {links.map((link) => (

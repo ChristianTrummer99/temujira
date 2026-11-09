@@ -10,6 +10,12 @@ import {
   type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 
+/** One row per installation. An absent row uses the default app name. */
+export const instanceSettings = sqliteTable("instance_settings", {
+  id: integer("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+}, (t) => [check("instance_settings_singleton", sql`${t.id} = 1`)]);
+
 export const users = sqliteTable(
   "users",
   {

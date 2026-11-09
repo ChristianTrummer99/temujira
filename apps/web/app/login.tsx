@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
+import { useInstance } from '@/lib/instance';
 import { Link, useRouter } from 'expo-router';
 import * as React from 'react';
 import { View } from 'react-native';
@@ -18,6 +19,7 @@ import { View } from 'react-native';
 export default function LoginScreen() {
   const router = useRouter();
   const { client, login, user, loading } = useAuth();
+  const { instance } = useInstance();
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
@@ -65,7 +67,7 @@ export default function LoginScreen() {
     <View className="bg-background flex-1 items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Sign in to Temujira</CardTitle>
+          <CardTitle>Sign in to {instance.display_name}</CardTitle>
           <CardDescription>Enter your email and password to continue.</CardDescription>
         </CardHeader>
         <CardContent className="gap-4">

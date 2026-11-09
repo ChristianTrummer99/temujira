@@ -18,6 +18,12 @@ export const NameSchema = z.string().trim().min(1).max(200);
 export const TitleSchema = z.string().trim().min(1).max(500);
 export const MarkdownBodySchema = z.string().min(1).max(100_000);
 export const DescriptionSchema = z.string().max(100_000);
+export const DEFAULT_INSTANCE_NAME = "Temujira";
+export const InstanceNameSchema = z.string().trim().min(1, "Enter an app name.").max(80, "Use 80 characters or less.")
+  .regex(/^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+$/u, "Use a single line with visible characters.");
+
+export const InstanceSettingsSchema = z.object({ display_name: InstanceNameSchema });
+export type InstanceSettings = z.infer<typeof InstanceSettingsSchema>;
 
 /** Accepts "true"/"1"/"yes" (query strings) or a real boolean. */
 export const QueryBoolSchema = z
@@ -367,6 +373,7 @@ export const SetupInputSchema = z.object({
   email: EmailInputSchema,
   name: NameSchema,
   password: PasswordSchema,
+  display_name: InstanceNameSchema.optional(),
 });
 
 export const LoginInputSchema = z.object({
@@ -653,7 +660,7 @@ export const ACTIVITY_CATEGORIES = [
   { id: "assignments", label: "Assignments", actions: ["task.assigned", "task.unassigned"] },
   { id: "files", label: "Files", actions: ["attachment.uploaded", "attachment.deleted"] },
   { id: "links", label: "Links", actions: ["task.linked", "task.unlinked"] },
-  { id: "settings", label: "Settings", actions: ["workspace.created", "workspace.updated", "workspace.deleted", "status.created", "status.updated", "status.deleted", "statuses.reordered", "tag.created", "tag.updated", "tag.deleted", "field.created", "field.updated", "field.deleted", "fields.reordered"] },
+  { id: "settings", label: "Settings", actions: ["instance.updated", "workspace.created", "workspace.updated", "workspace.deleted", "status.created", "status.updated", "status.deleted", "statuses.reordered", "tag.created", "tag.updated", "tag.deleted", "field.created", "field.updated", "field.deleted", "fields.reordered"] },
   { id: "accounts", label: "Accounts", actions: ["instance.initialized", "auth.signed_in", "auth.signed_out", "profile.updated", "user.created", "user.updated", "user.deactivated", "api_key.created", "api_key.revoked", "identity.acquired", "identity.released", "avatar.updated", "avatar.removed", "inbox.read", "queue.added", "queue.state_changed", "queue.removed", "queue.reordered"] },
 ] as const;
 export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number]["id"];

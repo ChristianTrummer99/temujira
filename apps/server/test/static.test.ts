@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { makeTestApp } from "./helpers";
+import { bearer, jsonReq, makeTestApp, setupAdmin } from "./helpers";
 
 let t: Awaited<ReturnType<typeof makeTestApp>>;
 let webDist: string;
@@ -11,7 +11,7 @@ beforeAll(async () => {
   // A fake Expo export: index.html + an asset.
   webDist = mkdtempSync(join(tmpdir(), "tmj-web-"));
   mkdirSync(join(webDist, "assets"), { recursive: true });
-  writeFileSync(join(webDist, "index.html"), "<!doctype html><title>Temujira</title><div id=root></div>");
+  writeFileSync(join(webDist, "index.html"), "<!doctype html><html><head><title>Temujira</title></head><body><div id=root></div></body></html>");
   writeFileSync(join(webDist, "assets", "logo.png"), "PNGDATA");
   t = await makeTestApp({ webDist });
 });
@@ -51,5 +51,23 @@ describe("static web serving + SPA fallback", () => {
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("not_found");
+  });
+
+  it("sends the saved name on first load and deep links, with HTML safely escaped", async () => {
+    const admin = await setupAdmin(t.app);
+    const name = `R&D \"$&\" </title><script>x</script>`;
+    const response = await t.app.request("/api/v1/instance", jsonReq("PATCH", { display_name: name }, bearer(admin.token)));
+    expect(response.status).toBe(200);
+    for (const path of ["/", "/index.html", "/login", "/settings/branding", "/w/START/t/1"]) {
+      const res = await t.app.request(path);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      const html = await res.text();
+      const escaped = "R&amp;D &quot;$&amp;&quot; &lt;/title&gt;&lt;script&gt;x&lt;/script&gt;";
+      expect(html).toContain(`<title>${escaped}</title>`);
+      expect(html).toContain(`<meta name="application-name" content="${escaped}" />`);
+      expect(html).not.toContain("<script>x</script>");
+      expect(html).not.toContain("Temujira");
+    }
   });
 });

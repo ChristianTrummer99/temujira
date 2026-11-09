@@ -21,6 +21,7 @@ import {
   DeleteStatusQuerySchema,
   FieldDefSchema,
   IdentitySessionSchema,
+  InstanceSettingsSchema,
   InboxConversationSchema,
   ListActivityQuerySchema,
   ListGlobalActivityQuerySchema,
@@ -133,6 +134,23 @@ export const ROUTES = {
     auth: "public",
     summary: "OpenAPI document generated from the route registry",
     response: z.record(z.string(), z.unknown()),
+  },
+
+  // ---- instance branding ----
+  "instance.get": {
+    method: "GET",
+    path: "/instance",
+    auth: "public",
+    summary: "Read the public app display name",
+    response: z.object({ instance: InstanceSettingsSchema }),
+  },
+  "instance.update": {
+    method: "PATCH",
+    path: "/instance",
+    auth: "admin",
+    summary: "Set the app display name (unrestricted admin credentials required)",
+    body: InstanceSettingsSchema,
+    response: z.object({ instance: InstanceSettingsSchema }),
   },
 
   // ---- setup ----

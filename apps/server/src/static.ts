@@ -1,6 +1,15 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
-import { extname, isAbsolute, join, normalize, resolve } from "node:path";import { Readable } from "node:stream";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { extname, isAbsolute, join, normalize, resolve } from "node:path";
+import { Readable } from "node:stream";
 import type { Context } from "hono";
+import { DEFAULT_INSTANCE_NAME, type InstanceSettings } from "@temujira/shared";
+
+function brandedHtml(html: string, name: string): string {
+  const escaped = name.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+  // Use replacement functions: names can contain the special replacement sequence $&.
+  return html.replace(/<title>[^]*?<\/title>/i, () => `<title>${escaped}</title>`)
+    .replace(/<\/head>/i, () => `<meta name="application-name" content="${escaped}" /></head>`);
+}
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -33,11 +42,11 @@ const MIME: Record<string, string> = {
  *   own notFound semantics are preserved.
  * - If `webDist` is unset (pure API dev), returns a friendly 404 for non-API routes.
  */
-export function staticMiddleware(webDist: string | undefined) {
+export function staticMiddleware(webDist: string | undefined, settings: () => InstanceSettings = () => ({ display_name: DEFAULT_INSTANCE_NAME })) {
   if (!webDist) {
     return function staticDisabled(c: Context) {
       if (c.req.path.startsWith("/api/")) return c.json({ error: { code: "not_found", message: "no API route" } }, 404);
-      return c.text("Temujira API is running. Set WEB_DIST to serve the web app.", 404);
+      return c.text(`${settings().display_name} API is running. Set WEB_DIST to serve the web app.`, 404);
     };
   }
 
@@ -66,6 +75,10 @@ export function staticMiddleware(webDist: string | undefined) {
       const mime = MIME[extname(target)] ?? "application/octet-stream";
       const headers = new Headers();
       headers.set("Content-Type", mime);
+      if (target === indexFile) {
+        headers.set("Cache-Control", "no-store");
+        return new Response(brandedHtml(readFileSync(target, "utf8"), settings().display_name), { status: 200, headers });
+      }
       headers.set("Content-Length", String(stat.size));
       headers.set(
         "Cache-Control",

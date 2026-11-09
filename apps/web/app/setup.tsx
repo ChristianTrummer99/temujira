@@ -11,13 +11,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
+import { useInstance } from '@/lib/instance';
+import { InstanceNameSchema } from '@temujira/shared';
 import { useRouter } from 'expo-router';
 import * as React from 'react';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 export default function SetupScreen() {
   const router = useRouter();
   const { client, setSession, user } = useAuth();
+  const { instance, setInstance } = useInstance();
+  const [displayName, setDisplayName] = React.useState(instance.display_name);
   const [name, setName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -49,6 +53,11 @@ export default function SetupScreen() {
 
   async function onCreateAccount() {
     if (submitting) return;
+    const parsed = InstanceNameSchema.safeParse(displayName);
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? 'Enter an app name.');
+      return;
+    }
     if (password !== confirm) {
       setError('Passwords do not match');
       return;
@@ -56,7 +65,8 @@ export default function SetupScreen() {
     setSubmitting(true);
     setError(null);
     try {
-      const { user: newUser, token } = await client.runSetup({ email, name, password });
+      const { user: newUser, token } = await client.runSetup({ email, name, password, display_name: parsed.data });
+      setInstance({ display_name: parsed.data });
       setSession(token, newUser);
       router.replace('/');
     } catch (e) {
@@ -67,15 +77,20 @@ export default function SetupScreen() {
   }
 
   return (
-    <View className="bg-background flex-1 items-center justify-center p-4">
+    <ScrollView className="bg-background flex-1" contentContainerClassName="grow items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Set up Temujira</CardTitle>
+          <CardTitle>Set up {instance.display_name}</CardTitle>
           <CardDescription>
             Create the first admin account for this self-hosted instance.
           </CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
+          <View className="gap-1.5">
+            <Label nativeID="setup-app-name-label">App name</Label>
+            <Input aria-labelledby="setup-app-name-label" value={displayName} onChangeText={setDisplayName} maxLength={80} />
+            <Text className="text-muted-foreground text-xs">You can change this later in Settings → Branding.</Text>
+          </View>
           <View className="gap-1.5">
             <Label nativeID="name-label">Name</Label>
             <Input
@@ -131,6 +146,6 @@ export default function SetupScreen() {
           </Button>
         </CardFooter>
       </Card>
-    </View>
+    </ScrollView>
   );
 }

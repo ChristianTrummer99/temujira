@@ -101,6 +101,13 @@ implementation agents report needed changes rather than editing `packages/shared
 
 TEXT ULID PKs, INTEGER unix-ms timestamps, INTEGER 0/1 booleans.
 
+- **instance_settings**: singleton row (`id = 1`), display_name. An absent row uses
+  Temujira. Public `GET /instance` exposes only this name. Admin-only `PATCH /instance`
+  rejects scope- or workspace-limited keys and records an admin-only change event.
+  Static HTML includes an escaped title and application-name meta tag. `InstanceProvider`
+  uses that value for the first render, refreshes on app focus, and updates app headings
+  and the browser title. Initial setup can save the name in the admin creation transaction.
+
 - **users**: email (unique, lowercased), name, password_hash (NULL = agent, no web login),
   role CHECK in (admin, member), is_agent, deactivated_at, timestamps. Nullable avatar_id
   and avatar_mime_type refer to a raster profile picture in the shared upload store. The

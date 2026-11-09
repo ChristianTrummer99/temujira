@@ -5,6 +5,7 @@ import { createSession, hashPassword, setSessionCookie } from "../auth";
 import { users } from "../db/schema";
 import { HttpError } from "../errors";
 import { seedGettingStarted } from "../seed";
+import { saveInstanceSettings } from "../instance";
 import { userToApi } from "../serialize";
 import { newId, now } from "../util";
 import { body, type AppContext, type Handlers } from "./types";
@@ -16,7 +17,7 @@ export function needsSetup(ctx: AppContext): boolean {
 
 export function createFirstAdmin(
   ctx: AppContext,
-  input: { email: string; name: string; passwordHash: string },
+  input: { email: string; name: string; passwordHash: string; display_name?: string },
 ): typeof users.$inferSelect {
   const t = now();
   const row: typeof users.$inferSelect = {
@@ -37,6 +38,7 @@ export function createFirstAdmin(
   };
   ctx.db.transaction((tx) => {
     tx.insert(users).values(row).run();
+    if (input.display_name !== undefined) saveInstanceSettings(tx, { display_name: input.display_name });
     seedGettingStarted(tx as unknown as typeof ctx.db, row.id);
   });
   return row;
@@ -55,7 +57,7 @@ export function setupHandlers(ctx: AppContext): Pick<Handlers, "setup.status" | 
       if (!needsSetup(ctx)) {
         throw new HttpError("forbidden", "setup already completed; log in instead");
       }
-      const user = createFirstAdmin(ctx, { email: input.email, name: input.name, passwordHash });
+      const user = createFirstAdmin(ctx, { email: input.email, name: input.name, passwordHash, display_name: input.display_name });
       const { token } = createSession(ctx.db, user.id);
       setSessionCookie(c, ctx.config, token);
       return c.json({ user: userToApi(user), token });

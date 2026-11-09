@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { UserAvatar } from '@/components/user-avatar';
+import { AppBrand } from '@/components/app-brand';
 import { WorkspaceActions } from '@/components/workspace-actions';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,6 +42,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Text } from '@/components/ui/text';
 import { useAuth } from '@/lib/auth';
+import { useInstance } from '@/lib/instance';
 import { hasScope } from '@/lib/scopes';
 import { InboxProvider, useInbox } from '@/lib/inbox';
 import { WorkspaceListProvider, useWorkspaceList } from '@/lib/workspaces';
@@ -128,6 +130,7 @@ function AppSidebar() {
   const { pathname } = useBackgroundRoute();
   const { isMobile, setOpenMobile } = useSidebar();
   const { user, logout } = useAuth();
+  const { instance } = useInstance();
   const { workspaces, archived, reload } = useWorkspaceList();
   const { unread } = useInbox();
 
@@ -150,12 +153,7 @@ function AppSidebar() {
         <Pressable
           className="h-12 flex-row items-center gap-2 rounded-md px-2"
           onPress={() => navigate('/')}>
-          <View className="bg-sidebar-primary h-7 w-7 items-center justify-center rounded-md">
-            <Text className="text-sidebar-primary-foreground text-sm font-bold">T</Text>
-          </View>
-          <Text className="text-sidebar-foreground text-base font-semibold tracking-tight">
-            Temujira
-          </Text>
+          <AppBrand name={instance.display_name} />
         </Pressable>
       </SidebarHeader>
       <SidebarContent>
@@ -378,6 +376,7 @@ function TopBarShell({ children }: { children: React.ReactNode }) {
 type Crumb = { label: string; href?: string };
 
 const SETTINGS_SECTION_TITLES: Record<string, string> = {
+  branding: 'Branding',
   profile: 'Profile',
   'api-keys': 'API Keys',
   users: 'Users',

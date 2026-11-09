@@ -17,6 +17,7 @@ import {
   type BulkUpdateTasksInput,
   type ReorderTaskInput,
   type IdentitySession,
+  type InstanceSettings,
   type LinkRelation,
   type ScopeId,
   type Status,
@@ -167,11 +168,19 @@ export class TemujiraClient {
     return this.call("meta.openapi", {}) as Promise<Record<string, unknown>>;
   }
 
+  // ---- instance ----
+  getInstance() {
+    return this.call("instance.get", {}) as Promise<{ instance: InstanceSettings }>;
+  }
+  updateInstance(body: InstanceSettings) {
+    return this.call("instance.update", {}, { body }) as Promise<{ instance: InstanceSettings }>;
+  }
+
   // ---- setup ----
   setupStatus() {
     return this.call("setup.status", {}) as Promise<{ needsSetup: boolean }>;
   }
-  runSetup(body: { email: string; name: string; password: string }) {
+  runSetup(body: { email: string; name: string; password: string; display_name?: string }) {
     return this.call("setup.run", {}, { body }) as Promise<{ user: User; token: string }>;
   }
 
@@ -563,6 +572,8 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "activity.global": "listGlobalActivity",
   "activity.task": "listTaskActivity",
   "meta.health": "health",
+  "instance.get": "getInstance",
+  "instance.update": "updateInstance",
   "meta.openapi": "openapi",
   "setup.status": "setupStatus",
   "setup.run": "runSetup",

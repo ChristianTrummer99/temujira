@@ -3,6 +3,7 @@ import { ROUTES, type RouteId } from "@temujira/shared";
 import { auditContext, type ActivityRecord } from "./audit-context";
 import { activityEvents } from "./db/schema";
 import { newId, now } from "./util";
+import { getInstanceSettings } from "./instance";
 import type { AppContext, AppEnv, Ctx } from "./routes/types";
 
 type MutationRoute = { [K in RouteId]: (typeof ROUTES)[K]["method"] extends "GET" ? never : K }[RouteId];
@@ -10,6 +11,7 @@ type MutationRoute = { [K in RouteId]: (typeof ROUTES)[K]["method"] extends "GET
 /** Exhaustive: adding a mutating API route requires an audit action at compile time. */
 export const AUDIT_ACTIONS = {
   "setup.run": "instance.initialized",
+  "instance.update": "instance.updated",
   "auth.login": "auth.signed_in", "auth.logout": "auth.signed_out", "auth.updateMe": "profile.updated",
   "apiKeys.create": "api_key.created", "apiKeys.revoke": "api_key.revoked",
   "identitySessions.acquire": "identity.acquired", "identitySessions.release": "identity.released",
@@ -78,7 +80,8 @@ function targets(ctx: AppContext, c: Ctx, route: MutationRoute, response: Row = 
   const id = string(entity.id) ?? param;
   let row: Row = {};
   let result: Target[] = [];
-  if (route === "tasks.bulkUpdate") result = (Array.isArray(input.task_ids) ? input.task_ids : []).map((id) => task(string(id)));
+  if (group === "instance") result = [{ visibility: "admin", snapshot: { display_name: getInstanceSettings(ctx.db).display_name } }];
+  else if (route === "tasks.bulkUpdate") result = (Array.isArray(input.task_ids) ? input.task_ids : []).map((id) => task(string(id)));
   else if (route === "tasks.reorder") result = [task(string(input.task_id))];
   else if (group === "tasks") result = [task(id ?? ref)];
   else if (group === "comments") {

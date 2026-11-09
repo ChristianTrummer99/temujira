@@ -29,6 +29,15 @@ email/password authentication, API key management, and every feature below marke
   targets mobile. Web is the priority; mobile correctness is explicitly deferred.
 - **FR-05 (post-v1)** Native mobile app polish (iOS/Android via the same Expo codebase).
 
+### Company branding
+
+- Admins can set a display name for the whole installation during setup or in Settings.
+  Use it in app headings, the sidebar and its initial, and the browser title. Save the name
+  in the database and apply it without a build or restart. Allow a reset to the default.
+- Make the display name public for sign-in screens. Name changes require an admin session
+  or an unrestricted admin key. Validate and safely render the name. Record changes in
+  admin-only history. Expose the setting through the API and `tmj api`.
+
 ### Auth, users, roles
 
 - **FR-06 (v1)** Email + password authentication. No OAuth/Google — explicitly out of scope.

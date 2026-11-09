@@ -17,6 +17,8 @@ import { commentsHandlers } from "./routes/commentsRoutes";
 import { deleteHandlers } from "./routes/deleteRoutes";
 import { fieldsHandlers } from "./routes/fieldsRoutes";
 import { inboxHandlers } from "./routes/inboxRoutes";
+import { instanceHandlers } from "./routes/instanceRoutes";
+import { getInstanceSettings } from "./instance";
 import { identitySessionHandlers } from "./routes/identitySessionsRoutes";
 import { searchHandlers } from "./routes/searchRoutes";
 import { backfillAttachmentSearch } from "./search";
@@ -152,6 +154,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
 
   const handlers: Handlers = {
     ...metaHandlers(ctx),
+    ...instanceHandlers(ctx),
     ...setupHandlers(ctx),
     ...authHandlers(ctx),
     ...apiKeyHandlers(ctx),
@@ -174,7 +177,7 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
 
   const app = new Hono<AppEnv>();
 
-  const serveWeb = staticMiddleware(config.webDist);
+  const serveWeb = staticMiddleware(config.webDist, () => getInstanceSettings(db));
 
   app.onError((err, c) => {
     if (err instanceof HttpError) {

@@ -17,7 +17,8 @@ export function registerSetup(program: Command): void {
     .requiredOption("--email <email>", "admin email address")
     .requiredOption("--password <password>", "admin password (min 8 characters)")
     .option("--name <name>", "admin display name", "Admin")
-    .action(async (opts: { email: string; password: string; name: string }, cmd: Command) => {
+    .option("--display-name <name>", "app name shown to users")
+    .action(async (opts: { email: string; password: string; name: string; displayName?: string }, cmd: Command) => {
       const ctx = getCtx(cmd, { requireAuth: false });
       const { needsSetup } = await ctx.client.setupStatus();
       if (!needsSetup) {
@@ -27,6 +28,7 @@ export function registerSetup(program: Command): void {
         email: opts.email,
         name: opts.name,
         password: opts.password,
+        display_name: opts.displayName,
       });
       ctx.client.setToken(sessionToken);
       const keyName = `cli@${os.hostname()}`;

@@ -18,13 +18,14 @@ export function seedDefaultStatuses(db: Db, workspaceId: string) {
   });
 }
 
-const WELCOME_BODY = `Welcome to **Temujira** — self-hosted project management for humans and agents.
+const WELCOME_BODY = `Welcome to your shared task workspace.
 
 A few things to try:
 
 - Create tasks with the **New task** button, or from the CLI: \`tmj task create --workspace START --title "My first task"\`
-- Edit statuses for this workspace under **Settings → Statuses** (create your own, recolor, reorder)
-- Create an **API key** under Settings → API keys and let an agent loose with \`TEMUJIRA_API_KEY\`
+- Edit statuses for this workspace under **Settings → Workspaces**.
+- Set the app name under **Settings → Branding**.
+- Create an **API key** under **Settings → Users & API keys** for the CLI or an agent.
 - Markdown works everywhere: **bold**, \`code\`, lists, [links](https://example.com)
 `;
 
@@ -41,7 +42,7 @@ export function seedGettingStarted(db: Db, adminUserId: string): void {
       id: newId(),
       workspaceId: wsId,
       number: 1,
-      title: "Welcome to Temujira 👋",
+      title: "Welcome to your workspace 👋",
       description: WELCOME_BODY,
       statusId: seeded[0]!.id,
       assigneeId: adminUserId,
