@@ -630,7 +630,8 @@ function TaskRow({
           <Text>Archived</Text>
         </Badge>
       ) : null}
-      <View className="hidden min-w-0 flex-1 sm:flex sm:min-w-14"><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} /></View>
+      {/* The cell takes the free width and right-aligns the tags; only the tag button itself is clickable. */}
+      <View className="hidden min-w-0 flex-1 sm:flex sm:min-w-14 sm:flex-row sm:justify-end"><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} /></View>
       <TaskStatusControl task={task} statuses={controls.statuses} onChanged={controls.onChanged} disabled={controls.busy} />
       <View className="hidden sm:flex">{task.assignee ? (
         <UserAvatar user={task.assignee} className="size-6" textClassName="text-[10px]" />
