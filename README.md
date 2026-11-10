@@ -210,15 +210,26 @@ initial follows the name. The setting applies to the whole installation and is s
 the database. It takes effect without a build or restart. Other open tabs update on focus.
 Use **Use default name**, then **Save changes**, to restore Temujira.
 
-The public `GET /api/v1/instance` endpoint returns only `instance.display_name`.
+Admins can also upload a **Logo** in **Settings → Branding**. The logo replaces the letter
+icon in the sidebar and the browser tab icon. Use a PNG, JPEG, GIF, or WebP image of up to
+2 MB; a square image fits best. The server checks the file signature and rejects SVG and
+HTML. The logo changes immediately for all users. **Remove logo** shows the initial again.
+
+The public `GET /api/v1/instance` endpoint returns `instance.display_name` and
+`instance.logo_id` (null without a logo). The public `GET /api/v1/instance/logo` endpoint
+returns the image. `POST` and `DELETE /api/v1/instance/logo` set and remove it.
 `PATCH /api/v1/instance` requires an admin session or an unrestricted admin API key.
-Names must contain 1–80 characters on one line. The server escapes names in the initial
-HTML, so the correct browser title appears before the app loads.
+Logo changes require the same credentials. Names must contain 1–80 characters on one
+line. The server escapes names in the initial HTML, so the correct browser title appears
+before the app loads.
 
 ```sh
 tmj api GET /instance
 tmj api PATCH /instance --body '{"display_name":"Acme Tasks"}'
 # First-run setup also accepts --display-name "Acme Tasks".
+tmj branding logo upload ./logo.png
+tmj branding logo download -o current-logo.png
+tmj branding logo remove
 ```
 
 The CLI command remains `tmj`; its environment variables and API URLs keep their names.

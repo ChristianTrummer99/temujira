@@ -22,7 +22,7 @@ export default function SettingsIndexScreen() {
     {
       to: '/settings/branding',
       title: 'Branding',
-      desc: 'Set the app name for your company',
+      desc: 'Set the app name and logo for your company',
       icon: PaletteIcon,
       visible: user?.role === 'admin',
     },

@@ -8,10 +8,14 @@ import { useAuth } from './auth';
 type InstanceState = { instance: InstanceSettings; setInstance: (value: InstanceSettings) => void };
 const InstanceContext = React.createContext<InstanceState | null>(null);
 
+/** The web build's own tab icon, used when no logo is set. */
+const DEFAULT_FAVICON = '/favicon.ico';
+
 function initialSettings(): InstanceSettings | null {
   if (Platform.OS !== 'web' || typeof document === 'undefined') return null;
-  // The server supplies the name in the HTML, before the first app render.
-  const parsed = InstanceSettingsSchema.safeParse({ display_name: document.querySelector('meta[name="application-name"]')?.getAttribute('content') });
+  // The server supplies the name and logo id in the HTML, before the first app render.
+  const meta = (name: string) => document.querySelector(`meta[name="${name}"]`)?.getAttribute('content');
+  const parsed = InstanceSettingsSchema.safeParse({ display_name: meta('application-name'), logo_id: meta('app-logo-id') ?? null });
   return parsed.success ? parsed.data : null;
 }
 
@@ -58,7 +62,16 @@ export function InstanceProvider({ children }: { children: React.ReactNode }) {
       document.head.appendChild(meta);
     }
     meta.content = instance.display_name;
-  }, [instance]);
+    // The uploaded logo is also the browser tab icon.
+    const href = instance.logo_id ? client.instanceLogoSource(instance.logo_id).uri : DEFAULT_FAVICON;
+    let icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!icon) {
+      icon = document.createElement('link');
+      icon.rel = 'icon';
+      document.head.appendChild(icon);
+    }
+    if (icon.getAttribute('href') !== href) icon.setAttribute('href', href);
+  }, [client, instance]);
 
   if (!instance) return <View className="bg-background flex-1 items-center justify-center gap-3 p-6">
     <Text className="text-muted-foreground text-sm">{error ? 'App settings could not be loaded.' : 'Loading…'}</Text>

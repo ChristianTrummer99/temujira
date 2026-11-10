@@ -99,6 +99,13 @@
       "when": 1794243819762,
       "tag": "0013_instance_branding",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1794322483030,
+      "tag": "0014_instance_logo",
+      "breakpoints": true
     }
   ]
 }

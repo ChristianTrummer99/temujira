@@ -2,13 +2,24 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, isAbsolute, join, normalize, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { Context } from "hono";
-import { DEFAULT_INSTANCE_NAME, type InstanceSettings } from "@temujira/shared";
+import { DEFAULT_INSTANCE_NAME, ROUTES, type InstanceSettings } from "@temujira/shared";
 
-function brandedHtml(html: string, name: string): string {
-  const escaped = name.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+
+function brandedHtml(html: string, settings: InstanceSettings): string {
+  const name = escapeHtml(settings.display_name);
+  const head = [`<meta name="application-name" content="${name}" />`];
+  if (settings.logo_id) {
+    // The app reads the logo id before its first render; the uploaded logo is also the tab icon.
+    const id = escapeHtml(settings.logo_id);
+    head.push(`<meta name="app-logo-id" content="${id}" />`,
+      `<link rel="icon" href="/api/v1${ROUTES["instance.getLogo"].path}?v=${id}" />`);
+    html = html.replace(/<link\b[^>]*\brel=["']?(?:shortcut\s+)?icon\b[^>]*>/gi, "");
+  }
   // Use replacement functions: names can contain the special replacement sequence $&.
-  return html.replace(/<title>[^]*?<\/title>/i, () => `<title>${escaped}</title>`)
-    .replace(/<\/head>/i, () => `<meta name="application-name" content="${escaped}" /></head>`);
+  return html.replace(/<title>[^]*?<\/title>/i, () => `<title>${name}</title>`)
+    .replace(/<\/head>/i, () => `${head.join("")}</head>`);
 }
 
 const MIME: Record<string, string> = {
@@ -42,7 +53,7 @@ const MIME: Record<string, string> = {
  *   own notFound semantics are preserved.
  * - If `webDist` is unset (pure API dev), returns a friendly 404 for non-API routes.
  */
-export function staticMiddleware(webDist: string | undefined, settings: () => InstanceSettings = () => ({ display_name: DEFAULT_INSTANCE_NAME })) {
+export function staticMiddleware(webDist: string | undefined, settings: () => InstanceSettings = () => ({ display_name: DEFAULT_INSTANCE_NAME, logo_id: null })) {
   if (!webDist) {
     return function staticDisabled(c: Context) {
       if (c.req.path.startsWith("/api/")) return c.json({ error: { code: "not_found", message: "no API route" } }, 404);
@@ -77,7 +88,7 @@ export function staticMiddleware(webDist: string | undefined, settings: () => In
       headers.set("Content-Type", mime);
       if (target === indexFile) {
         headers.set("Cache-Control", "no-store");
-        return new Response(brandedHtml(readFileSync(target, "utf8"), settings().display_name), { status: 200, headers });
+        return new Response(brandedHtml(readFileSync(target, "utf8"), settings()), { status: 200, headers });
       }
       headers.set("Content-Length", String(stat.size));
       headers.set(

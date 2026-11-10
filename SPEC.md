@@ -37,6 +37,10 @@ email/password authentication, API key management, and every feature below marke
 - Make the display name public for sign-in screens. Name changes require an admin session
   or an unrestricted admin key. Validate and safely render the name. Record changes in
   admin-only history. Expose the setting through the API and `tmj api`.
+- Admins can upload a logo (PNG, JPEG, GIF, or WebP; max 2 MB) that replaces the sidebar
+  initial and the browser tab icon, and can remove it. Trust the file signature, never the
+  supplied type; reject SVG and HTML. The logo is public, like the name. Logo changes need
+  the same credentials as name changes, record admin-only history, and are in `tmj branding logo`.
 
 ### Auth, users, roles
 

@@ -66,7 +66,7 @@ export default function SetupScreen() {
     setError(null);
     try {
       const { user: newUser, token } = await client.runSetup({ email, name, password, display_name: parsed.data });
-      setInstance({ display_name: parsed.data });
+      setInstance({ ...instance, display_name: parsed.data });
       setSession(token, newUser);
       router.replace('/');
     } catch (e) {

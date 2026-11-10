@@ -14,6 +14,9 @@ import {
 export const instanceSettings = sqliteTable("instance_settings", {
   id: integer("id").primaryKey(),
   displayName: text("display_name").notNull(),
+  // Raster image in the shared upload store; the MIME type comes from the file signature.
+  logoId: text("logo_id"),
+  logoMimeType: text("logo_mime_type"),
 }, (t) => [check("instance_settings_singleton", sql`${t.id} = 1`)]);
 
 export const users = sqliteTable(

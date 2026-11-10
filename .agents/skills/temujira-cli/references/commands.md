@@ -58,6 +58,19 @@ admin session or an unrestricted admin API key. Scope- or workspace-limited keys
 change it. Use 1–80 characters on one line. Set `Temujira` to restore the default name.
 The CLI remains `tmj`. The setup option `--name` names the admin; `--display-name` names the app.
 
+## App logo
+
+```text
+tmj branding logo upload <file>
+tmj branding logo download -o <path> [--force]
+tmj branding logo remove
+```
+
+The logo replaces the letter icon in the sidebar and the browser tab icon. Use a PNG, JPEG,
+GIF, or WebP image of up to 2 MB; a square image fits best. SVG and HTML are rejected.
+Reading the logo is public. Upload and removal need the same credentials as name changes.
+`tmj api GET /instance` shows the current `logo_id` (null without a logo).
+
 ## Users
 
 ```text

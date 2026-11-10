@@ -16,6 +16,7 @@ import { COMMAND_ROUTES as TAG_ROUTES } from "./commands/tag";
 import { COMMAND_ROUTES as TASK_ROUTES } from "./commands/task";
 import { COMMAND_ROUTES as USER_ROUTES } from "./commands/user";
 import { COMMAND_ROUTES as AVATAR_ROUTES } from "./commands/avatar";
+import { COMMAND_ROUTES as BRANDING_ROUTES } from "./commands/branding";
 import { COMMAND_ROUTES as WORKSPACE_ROUTES } from "./commands/workspace";
 
 /**
@@ -39,6 +40,7 @@ export const COMMAND_ROUTE_MAP: Record<string, readonly RouteId[]> = {
   ...ACTIVITY_ROUTES,
   ...SEARCH_ROUTES,
   ...INBOX_ROUTES,
+  ...BRANDING_ROUTES,
   ...API_ROUTES,
   ...IDENTITY_ROUTES,
 };

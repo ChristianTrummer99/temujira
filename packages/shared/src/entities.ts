@@ -22,8 +22,14 @@ export const DEFAULT_INSTANCE_NAME = "Temujira";
 export const InstanceNameSchema = z.string().trim().min(1, "Enter an app name.").max(80, "Use 80 characters or less.")
   .regex(/^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+$/u, "Use a single line with visible characters.");
 
-export const InstanceSettingsSchema = z.object({ display_name: InstanceNameSchema });
+/** Largest accepted app logo upload (PNG, JPEG, GIF, or WebP; never SVG or HTML). */
+export const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+
+/** Public app branding. Each logo upload gets a new `logo_id`; null shows the name initial. */
+export const InstanceSettingsSchema = z.object({ display_name: InstanceNameSchema, logo_id: UlidSchema.nullable() });
 export type InstanceSettings = z.infer<typeof InstanceSettingsSchema>;
+export const UpdateInstanceInputSchema = z.object({ display_name: InstanceNameSchema });
+export type UpdateInstanceInput = z.infer<typeof UpdateInstanceInputSchema>;
 
 /** Accepts "true"/"1"/"yes" (query strings) or a real boolean. */
 export const QueryBoolSchema = z
@@ -660,7 +666,7 @@ export const ACTIVITY_CATEGORIES = [
   { id: "assignments", label: "Assignments", actions: ["task.assigned", "task.unassigned"] },
   { id: "files", label: "Files", actions: ["attachment.uploaded", "attachment.deleted"] },
   { id: "links", label: "Links", actions: ["task.linked", "task.unlinked"] },
-  { id: "settings", label: "Settings", actions: ["instance.updated", "workspace.created", "workspace.updated", "workspace.deleted", "status.created", "status.updated", "status.deleted", "statuses.reordered", "tag.created", "tag.updated", "tag.deleted", "field.created", "field.updated", "field.deleted", "fields.reordered"] },
+  { id: "settings", label: "Settings", actions: ["instance.updated", "instance.logo_updated", "instance.logo_removed", "workspace.created", "workspace.updated", "workspace.deleted", "status.created", "status.updated", "status.deleted", "statuses.reordered", "tag.created", "tag.updated", "tag.deleted", "field.created", "field.updated", "field.deleted", "fields.reordered"] },
   { id: "accounts", label: "Accounts", actions: ["instance.initialized", "auth.signed_in", "auth.signed_out", "profile.updated", "user.created", "user.updated", "user.deactivated", "api_key.created", "api_key.revoked", "identity.acquired", "identity.released", "avatar.updated", "avatar.removed", "inbox.read", "queue.added", "queue.state_changed", "queue.removed", "queue.reordered"] },
 ] as const;
 export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number]["id"];

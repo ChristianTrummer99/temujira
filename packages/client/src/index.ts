@@ -18,6 +18,7 @@ import {
   type ReorderTaskInput,
   type IdentitySession,
   type InstanceSettings,
+  type UpdateInstanceInput,
   type LinkRelation,
   type ScopeId,
   type Status,
@@ -172,8 +173,24 @@ export class TemujiraClient {
   getInstance() {
     return this.call("instance.get", {}) as Promise<{ instance: InstanceSettings }>;
   }
-  updateInstance(body: InstanceSettings) {
+  updateInstance(body: UpdateInstanceInput) {
     return this.call("instance.update", {}, { body }) as Promise<{ instance: InstanceSettings }>;
+  }
+  uploadInstanceLogo(file: UploadInput) {
+    return this.call("instance.uploadLogo", {}, { formData: this.uploadForm(file) }) as Promise<{ instance: InstanceSettings }>;
+  }
+  deleteInstanceLogo() {
+    return this.call("instance.deleteLogo", {}) as Promise<{ instance: InstanceSettings }>;
+  }
+  async downloadInstanceLogo(): Promise<Response> {
+    const def = ROUTES["instance.getLogo"];
+    const response = await this.send(def.method, def.path);
+    if (!response.ok) await this.parse(response);
+    return response;
+  }
+  /** Public image source. The logo id is the version, so a new upload gets a new URL. */
+  instanceLogoSource(logoId: string) {
+    return { uri: `${this.baseUrl}/api/v1${ROUTES["instance.getLogo"].path}?v=${encodeURIComponent(logoId)}` };
   }
 
   // ---- setup ----
@@ -574,6 +591,9 @@ export const ROUTE_METHOD_MAP: Record<RouteId, keyof TemujiraClient> = {
   "meta.health": "health",
   "instance.get": "getInstance",
   "instance.update": "updateInstance",
+  "instance.getLogo": "downloadInstanceLogo",
+  "instance.uploadLogo": "uploadInstanceLogo",
+  "instance.deleteLogo": "deleteInstanceLogo",
   "meta.openapi": "openapi",
   "setup.status": "setupStatus",
   "setup.run": "runSetup",

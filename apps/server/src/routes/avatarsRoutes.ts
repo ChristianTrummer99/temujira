@@ -9,8 +9,8 @@ import { newId, now } from "../util";
 import { readUpload } from "./attachmentsRoutes";
 import { currentUser, type AppContext, type Handlers } from "./types";
 
-/** Trust the file signature, not the supplied name or MIME type. No SVG/HTML avatars. */
-function imageMime(bytes: Buffer): string | null {
+/** Trust the file signature, not the supplied name or MIME type. No SVG/HTML pictures or logos. */
+export function imageMime(bytes: Buffer): string | null {
   if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
   if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "image/jpeg";
   if (["GIF87a", "GIF89a"].includes(bytes.subarray(0, 6).toString("ascii"))) return "image/gif";

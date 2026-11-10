@@ -6,6 +6,7 @@ import { registerActivity } from "./commands/activity";
 import { registerSearch } from "./commands/search";
 import { registerApi } from "./commands/api";
 import { registerApikey } from "./commands/apikey";
+import { registerBranding } from "./commands/branding";
 import { registerAttach } from "./commands/attach";
 import { registerAuth } from "./commands/auth";
 import { registerComment } from "./commands/comment";
@@ -81,6 +82,7 @@ export function buildProgram(): Command {
   registerActivity(program);
   registerSearch(program);
   registerInbox(program);
+  registerBranding(program);
   registerApi(program);
   registerIdentity(program);
   addGlobalOptions(program);

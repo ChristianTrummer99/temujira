@@ -12,6 +12,7 @@ type MutationRoute = { [K in RouteId]: (typeof ROUTES)[K]["method"] extends "GET
 export const AUDIT_ACTIONS = {
   "setup.run": "instance.initialized",
   "instance.update": "instance.updated",
+  "instance.uploadLogo": "instance.logo_updated", "instance.deleteLogo": "instance.logo_removed",
   "auth.login": "auth.signed_in", "auth.logout": "auth.signed_out", "auth.updateMe": "profile.updated",
   "apiKeys.create": "api_key.created", "apiKeys.revoke": "api_key.revoked",
   "identitySessions.acquire": "identity.acquired", "identitySessions.release": "identity.released",
@@ -80,7 +81,7 @@ function targets(ctx: AppContext, c: Ctx, route: MutationRoute, response: Row = 
   const id = string(entity.id) ?? param;
   let row: Row = {};
   let result: Target[] = [];
-  if (group === "instance") result = [{ visibility: "admin", snapshot: { display_name: getInstanceSettings(ctx.db).display_name } }];
+  if (group === "instance") result = [{ visibility: "admin", snapshot: { ...getInstanceSettings(ctx.db) } }];
   else if (route === "tasks.bulkUpdate") result = (Array.isArray(input.task_ids) ? input.task_ids : []).map((id) => task(string(id)));
   else if (route === "tasks.reorder") result = [task(string(input.task_id))];
   else if (group === "tasks") result = [task(id ?? ref)];

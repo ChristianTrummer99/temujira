@@ -17,6 +17,7 @@ const PAGE_SIZE = 100;
 
 const LABELS: Record<string, string> = {
   'instance.updated': 'changed the app name',
+  'instance.logo_updated': 'changed the app logo', 'instance.logo_removed': 'removed the app logo',
   'task.created': 'created the task', 'task.updated': 'updated the task',
   'task.assigned': 'assigned the task', 'task.unassigned': 'unassigned the task',
   'task.reordered': 'changed task order',

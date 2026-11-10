@@ -153,7 +153,7 @@ function AppSidebar() {
         <Pressable
           className="h-12 flex-row items-center gap-2 rounded-md px-2"
           onPress={() => navigate('/')}>
-          <AppBrand name={instance.display_name} />
+          <AppBrand name={instance.display_name} logoId={instance.logo_id} />
         </Pressable>
       </SidebarHeader>
       <SidebarContent>

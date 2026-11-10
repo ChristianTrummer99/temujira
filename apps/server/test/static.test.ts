@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { bearer, jsonReq, makeTestApp, setupAdmin } from "./helpers";
+import { bearer, fileUpload, jsonReq, makeTestApp, setupAdmin } from "./helpers";
 
 let t: Awaited<ReturnType<typeof makeTestApp>>;
 let webDist: string;
@@ -11,7 +11,7 @@ beforeAll(async () => {
   // A fake Expo export: index.html + an asset.
   webDist = mkdtempSync(join(tmpdir(), "tmj-web-"));
   mkdirSync(join(webDist, "assets"), { recursive: true });
-  writeFileSync(join(webDist, "index.html"), "<!doctype html><html><head><title>Temujira</title></head><body><div id=root></div></body></html>");
+  writeFileSync(join(webDist, "index.html"), "<!doctype html><html><head><title>Temujira</title><link rel=\"icon\" href=\"/favicon.ico\" /></head><body><div id=root></div></body></html>");
   writeFileSync(join(webDist, "assets", "logo.png"), "PNGDATA");
   t = await makeTestApp({ webDist });
 });
@@ -69,5 +69,24 @@ describe("static web serving + SPA fallback", () => {
       expect(html).not.toContain("<script>x</script>");
       expect(html).not.toContain("Temujira");
     }
+  });
+
+  it("uses an uploaded logo as the tab icon and gives the app its id before the first render", async () => {
+    const own = await makeTestApp({ webDist });
+    try {
+      const admin = await setupAdmin(own.app);
+      const before = await (await own.app.request("/")).text();
+      expect(before).toContain('<link rel="icon" href="/favicon.ico" />');
+      expect(before).not.toContain("app-logo-id");
+      const png = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jJQAAAABJRU5ErkJggg==", "base64"));
+      const upload = await own.app.request("/api/v1/instance/logo", fileUpload(png, "logo.png", "image/png", bearer(admin.token)));
+      const { instance } = await upload.json() as { instance: { logo_id: string } };
+      for (const path of ["/", "/settings/branding"]) {
+        const html = await (await own.app.request(path)).text();
+        expect(html).toContain(`<meta name="app-logo-id" content="${instance.logo_id}" />`);
+        expect(html).toContain(`<link rel="icon" href="/api/v1/instance/logo?v=${instance.logo_id}" />`);
+        expect(html).not.toContain("/favicon.ico");
+      }
+    } finally { own.cleanup(); }
   });
 });

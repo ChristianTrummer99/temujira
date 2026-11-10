@@ -145,6 +145,8 @@ export async function buildApp(config: ServerConfig): Promise<BuiltApp> {
   for (const user of db.select({ avatarId: users.avatarId }).from(users).all()) {
     if (user.avatarId) validIds.add(user.avatarId);
   }
+  const logoId = getInstanceSettings(db).logo_id;
+  if (logoId) validIds.add(logoId);
   const swept = storage.sweepOrphans(validIds);
   if (swept > 0)
     console.log(`[temujira] removed ${swept} orphaned upload file(s)`);
