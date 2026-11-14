@@ -1,152 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import '@/components/attachment-viewers.css';
 import { cn } from '@/lib/utils';
+import { listenPreviewInput, previewFrameBridge } from '@/lib/preview-input';
 import hljs from 'highlight.js/lib/common';
-import { MaximizeIcon, RotateCwIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react-native';
 import * as React from 'react';
+import { usePreviewZoom } from './preview-zoom';
+export { PreviewZoom } from './preview-zoom';
+export { PdfPreview } from './pdf-preview';
 
 /* ------------------------------------------------------------------ image */
 
-/** Raster images: wheel zoom, drag pan, rotate, double-click fit/actual size. */
+/** Image fitting only. All input and zoom controls belong to the shared surface. */
 export function ImageViewer({ url, alt }: { url: string; alt: string }) {
-  const [scale, setScale] = React.useState(1);
-  const [rotation, setRotation] = React.useState(0);
-  const [offset, setOffset] = React.useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = React.useState(false);
-  const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const imgRef = React.useRef<HTMLImageElement | null>(null);
-  const dragState = React.useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
-
-  const reset = React.useCallback(() => {
-    setScale(1);
-    setRotation(0);
-    setOffset({ x: 0, y: 0 });
-  }, []);
-  const zoomBy = React.useCallback((factor: number) => {
-    setScale((s) => Math.min(8, Math.max(0.1, s * factor)));
-  }, []);
-
-  // React's onWheel is registered passively, so preventDefault() would be ignored.
-  React.useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      setScale((s) => Math.min(8, Math.max(0.1, s * Math.exp(-e.deltaY * 0.0015))));
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, []);
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      if (e.key === '+' || e.key === '=') zoomBy(1.25);
-      else if (e.key === '-') zoomBy(0.8);
-      else if (e.key === '0') reset();
-      else if (e.key.toLowerCase() === 'r') setRotation((r) => (r + 90) % 360);
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [reset, zoomBy]);
-
-  const pannable = scale > 1 || rotation !== 0;
-
-  return (
-    <div
-      ref={containerRef}
-      className="relative flex h-full w-full items-center justify-center overflow-hidden bg-black/40"
-      style={{ cursor: dragging ? 'grabbing' : pannable ? 'grab' : 'zoom-in' }}
-      onPointerDown={(e) => {
-        if (!pannable) return;
-        dragState.current = { px: e.clientX, py: e.clientY, ox: offset.x, oy: offset.y };
-        setDragging(true);
-        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-      }}
-      onPointerMove={(e) => {
-        const d = dragState.current;
-        if (!d) return;
-        setOffset({ x: d.ox + (e.clientX - d.px), y: d.oy + (e.clientY - d.py) });
-      }}
-      onPointerUp={() => {
-        dragState.current = null;
-        setDragging(false);
-      }}
-      onPointerCancel={() => {
-        dragState.current = null;
-        setDragging(false);
-      }}
-      onDoubleClick={() => {
-        if (pannable || offset.x !== 0 || offset.y !== 0) {
-          reset();
-          return;
-        }
-        const img = imgRef.current;
-        if (img && img.clientWidth > 0) {
-          setScale(Math.min(8, Math.max(1, img.naturalWidth / img.clientWidth)));
-        }
-      }}>
-      <img
-        ref={imgRef}
-        src={url}
-        alt={alt}
-        draggable={false}
-        className="select-none"
-        style={{
-          maxWidth: '100%',
-          maxHeight: '100%',
-          transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale}) rotate(${rotation}deg)`,
-          transition: dragging ? 'none' : 'transform 120ms ease-out',
-        }}
-      />
-      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-black/70 px-1.5 py-1 text-white shadow-lg">
-        <ViewerButton label="Zoom out" onPress={() => zoomBy(0.8)}>
-          <ZoomOutIcon size={16} color="#fff" />
-        </ViewerButton>
-        <button
-          type="button"
-          onClick={reset}
-          aria-label="Reset zoom"
-          className="min-w-12 rounded-full px-1 py-0.5 text-center text-xs tabular-nums hover:bg-white/15">
-          {Math.round(scale * 100)}%
-        </button>
-        <ViewerButton label="Zoom in" onPress={() => zoomBy(1.25)}>
-          <ZoomInIcon size={16} color="#fff" />
-        </ViewerButton>
-        <span className="mx-1 h-4 w-px bg-white/25" />
-        <ViewerButton label="Rotate 90°" onPress={() => setRotation((r) => (r + 90) % 360)}>
-          <RotateCwIcon size={16} color="#fff" />
-        </ViewerButton>
-        <ViewerButton label="Fit to view" onPress={reset}>
-          <MaximizeIcon size={16} color="#fff" />
-        </ViewerButton>
-      </div>
-    </div>
-  );
-}
-
-function ViewerButton({
-  label,
-  onPress,
-  children,
-}: {
-  label: string;
-  onPress: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onPress}
-      className="rounded-full p-1.5 hover:bg-white/15">
-      {children}
-    </button>
-  );
+  const { width, height, rotation } = usePreviewZoom();
+  return <div className="flex items-center justify-center overflow-hidden bg-black/40" style={{ width, height }}>
+    <img src={url} alt={alt} draggable={false} className="shrink-0 select-none"
+      style={{ width: rotation % 180 ? height : width, height: rotation % 180 ? width : height, objectFit: 'contain', transform: `rotate(${rotation}deg)` }} />
+  </div>;
 }
 
 /* ------------------------------------------------------------------ media */
@@ -188,22 +58,22 @@ function MediaError({ filename }: { filename: string }) {
 /* ------------------------------------------------------- sandboxed html/svg */
 
 /**
- * Uploaded HTML/SVG renders in an iframe with `sandbox=""` (scripts, forms, popups and
- * same-origin access all disabled) plus a CSP that blocks every active request. Passive
- * resources (images/styles/fonts/media) may still load. Never rendered as page markup.
+ * Uploaded HTML/SVG stays in an opaque-origin sandbox. A nonce allows only the trusted
+ * input bridge to run. Uploaded scripts, handlers, frames, forms, and popups stay blocked.
+ * Never add allow-same-origin: the preview must not have access to the app or its cookies.
  */
 const SANDBOX_CSP =
-  "default-src 'none'; img-src * data: blob:; media-src * data: blob:; style-src 'unsafe-inline' *; font-src * data:;";
+  "default-src 'none'; script-src-attr 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; img-src * data: blob:; media-src * data: blob:; style-src 'unsafe-inline' *; font-src * data:;";
 
-function sandboxDoc(source: string, mode: 'html' | 'svg'): string {
-  const csp = `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">`;
-  if (mode === 'svg') {
-    return `<!doctype html><html><head><meta charset="utf-8">${csp}<style>html,body{margin:0;min-height:100%;display:grid;place-items:center;background:#fff}svg{max-width:100%;max-height:100%}</style></head><body>${source}</body></html>`;
-  }
-  if (/<head[^>]*>/i.test(source)) {
-    return source.replace(/<head[^>]*>/i, (m) => `${m}${csp}`);
-  }
-  return `<!doctype html><html><head><meta charset="utf-8">${csp}</head><body>${source}</body></html>`;
+function sandboxDoc(source: string, mode: 'html' | 'svg', token: string): string {
+  // Parsing is inert. Also remove scripts and automatic navigation before frame loading.
+  const parsed = new DOMParser().parseFromString(source, 'text/html');
+  parsed.querySelectorAll('script,meta[http-equiv],base').forEach((node) => node.remove());
+  const csp = `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP} script-src 'nonce-${token}';">`;
+  const bridge = `<script nonce="${token}">(${previewFrameBridge.toString()})(${JSON.stringify(token)},${listenPreviewInput.toString()})</script>`;
+  const style = mode === 'svg' ? '<style>html,body{margin:0;min-height:100%;display:grid;place-items:center;background:#fff}svg{max-width:100%;max-height:100%}</style>' : '';
+  // The policy and bridge precede ALL uploaded markup, including malformed documents.
+  return `<!doctype html><html><head><meta charset="utf-8">${csp}${bridge}${style}</head><body>${parsed.documentElement.outerHTML}</body></html>`;
 }
 
 export function SandboxedFrame({
@@ -215,14 +85,25 @@ export function SandboxedFrame({
   mode: 'html' | 'svg';
   title: string;
 }) {
-  const doc = React.useMemo(() => sandboxDoc(source, mode), [source, mode]);
+  const token = React.useMemo(() => Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join(''), [source, mode]);
+  const doc = React.useMemo(() => sandboxDoc(source, mode, token), [source, mode, token]);
+  const { bindFrame, width, height } = usePreviewZoom();
+  const frame = React.useRef<HTMLIFrameElement>(null);
+  const cleanup = React.useRef<(() => void) | undefined>(undefined);
+  const connect = React.useCallback(() => {
+    cleanup.current?.();
+    if (frame.current) cleanup.current = bindFrame(frame.current, token);
+  }, [bindFrame, token]);
+  React.useEffect(() => { connect(); return () => cleanup.current?.(); }, [connect, width, height]);
   return (
     <iframe
+      ref={frame}
+      onLoad={connect}
       title={title}
-      sandbox=""
+      sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       srcDoc={doc}
-      className="h-full w-full border-0 bg-white"
+      className="block w-full border-0 bg-white"
     />
   );
 }

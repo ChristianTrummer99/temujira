@@ -23,6 +23,7 @@ node_modules
 **/.expo
 dist
 **/dist
+apps/web/public/pdfjs
 build
 **/build
 coverage

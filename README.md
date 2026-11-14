@@ -153,6 +153,21 @@ tmj activity list --category replies --category files --workspace ENG --json
 Activity categories are `tasks`, `comments`, `replies`, `mentions`, `assignments`, `files`,
 `links`, `settings`, and `accounts`. Categories combine with other filters and permissions.
 
+### File preview zoom
+
+In the web app, pinch to zoom in PDF, image, and rendered HTML or SVG previews.
+The same controls work in the preview dialog and in full screen. Use two fingers on
+a touch screen or trackpad. A normal wheel gesture scrolls the file.
+
+Use **+** or **−** to change the zoom. Select the percentage to reset the view.
+With the preview focused, the **+**, **−**, and **0** keys do the same actions.
+Zoom resets when you change files. Images also support drag to pan and rotation.
+PDF text remains selectable. Source, text, and media previews keep their own controls.
+
+HTML and SVG files stay in an isolated frame. Uploaded scripts are blocked. A small,
+trusted input bridge sends gestures to the shared zoom control. PDF.js loads only when
+you open a PDF; its worker, fonts, character maps, and WASM files are served locally.
+
 ### Profile pictures
 
 Set or remove your picture in **Settings → Profile**. User managers can also change pictures

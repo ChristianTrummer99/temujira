@@ -207,6 +207,7 @@ export function AttachmentPreviewDialog({
   React.useEffect(() => {
     if (!attachment || Platform.OS !== 'web') return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (e.key === 'ArrowRight') {
@@ -459,18 +460,14 @@ function PreviewBody({
     return <Placeholder attachment={attachment} text="Preview is available on the web app." />;
   }
 
-  switch (kind) {
+  const content = (() => { switch (kind) {
     case 'image':
       return preview.url ? (
         <viewers.ImageViewer url={preview.url} alt={attachment.filename} />
       ) : null;
     case 'pdf':
       return preview.url ? (
-        <iframe
-          title={attachment.filename}
-          src={preview.url}
-          className="h-full w-full border-0 bg-white"
-        />
+        <viewers.PdfPreview url={preview.url} />
       ) : null;
     case 'video':
       return preview.url ? (
@@ -517,7 +514,9 @@ function PreviewBody({
       return (
         <Placeholder attachment={attachment} text="No preview available — download it instead." />
       );
-  }
+  } })();
+  const zoomable = kind === 'image' || kind === 'pdf' || ((kind === 'html' || kind === 'svg') && htmlMode === 'rendered');
+  return zoomable ? <viewers.PreviewZoom key={`${attachment.id}:${kind}:${htmlMode}`} image={kind === 'image'}>{content}</viewers.PreviewZoom> : content;
 }
 
 function Placeholder({ attachment, text }: { attachment: Attachment; text: string }) {

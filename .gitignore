@@ -18,3 +18,6 @@ coverage/
 
 # Playwright CLI session artifacts
 .playwright-cli/
+
+# Generated from the pinned PDF.js package by the web build.
+apps/web/public/pdfjs/

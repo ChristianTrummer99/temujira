@@ -12,9 +12,10 @@ import { useAuth } from './auth';
  * Detection only picks a RENDERING PATH; both signals it uses are untrusted:
  * `mime_type` is stored verbatim from the uploader's multipart part header and `filename`'s
  * extension is equally uploader-chosen. So every path must be safe when the signal lies:
- * images decode (never script), PDFs render in a browser viewer that has no page-context
- * script access, media elements only decode, text kinds go through <Text> which escapes,
- * and html/svg render only inside a sandboxed iframe with scripts disabled. Critically we
+ * images decode (never script), PDFs use PDF.js page/text rendering without scripting,
+ * media elements only decode, text kinds go through <Text> which escapes,
+ * and html/svg render only inside an opaque-origin iframe that blocks uploaded scripts.
+ * A nonce allows the trusted zoom input bridge only. Critically we
  * NEVER build a Blob typed `image/svg+xml` or `text/html`: a blob: URL is same-origin with
  * the app, so an svg-typed blob URL would run its script on the app's origin.
  */

@@ -619,11 +619,11 @@ function TaskRow({
   const router = useRouter();
   const archived = task.archived_at != null;
   const fieldValue = field ? (task.field_values ?? {})[field.id] : undefined;
-  const href = `/w/${workspaceKey}/t/${task.number}`;
+  const href = `/w/${workspaceKey}/t/${task.number}` as const;
 
   return (
     <TaskDropZone enabled={controls.dragEnabled} onDrop={() => controls.onDrop(task.id)}><View
-      {...rowClickProps(href, (to) => router.push(to))}
+      {...rowClickProps(href, () => router.push(href))}
       testID={`task-row-${task.key}`}
       className={
         'action-row border-border flex-row items-center gap-2 px-3 py-1' +

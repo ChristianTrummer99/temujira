@@ -95,3 +95,25 @@
 .hljs-deletion {
   color: hsl(var(--destructive));
 }
+
+/* PDF.js text-layer positioning (Mozilla Foundation, Apache-2.0). Keep text selectable
+   while the canvas and its text share the same outer preview transform. */
+.tmj-pdf-page .textLayer {
+  position: absolute; inset: 0; overflow: clip; line-height: 1;
+  text-align: initial; transform-origin: 0 0; text-size-adjust: none;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.tmj-pdf-page .textLayer :is(span, br) {
+  position: absolute; color: transparent; white-space: pre; cursor: text;
+  transform-origin: 0 0; user-select: text;
+}
+.tmj-pdf-page .textLayer > :not(.markedContent),
+.tmj-pdf-page .textLayer .markedContent span:not(.markedContent) {
+  --font-height: 0; --scale-x: 1; --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.tmj-pdf-page .textLayer .markedContent { display: contents; }
+.tmj-pdf-page .textLayer ::selection { background: #2563eb55; color: transparent; }
