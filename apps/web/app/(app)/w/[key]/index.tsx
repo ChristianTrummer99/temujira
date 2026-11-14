@@ -626,12 +626,14 @@ function TaskRow({
       {...rowClickProps(href, () => router.push(href))}
       testID={`task-row-${task.key}`}
       className={
-        'action-row border-border flex-row items-center gap-2 px-3 py-1' +
+        'action-row border-border min-w-0 flex-row flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5' +
         (last ? '' : ' border-b') +
         (Platform.OS === 'web' ? ' hover:bg-accent/50 cursor-pointer transition-colors' : '') +
         (controls.selected.has(task.id) ? ' bg-primary/5' : '') +
         (archived ? ' opacity-55' : '')
       }>
+      {/* These groups wrap based on the row width, including a narrow pane on a wide screen. */}
+      <View className="min-w-0 basis-80 grow shrink flex-row items-center gap-2">
       {controls.canWrite ? <>
         <Checkbox accessibilityLabel={`Select ${task.key}`} checked={controls.selected.has(task.id)} disabled={controls.busy} onCheckedChange={() => controls.onSelect(task.id)} />
         <Popover><TaskDragHandle disabled={!controls.canOrder} onStart={() => controls.onDragStart(task)} onEnd={controls.onDragEnd}
@@ -645,13 +647,15 @@ function TaskRow({
           <Text className="text-muted-foreground p-2 text-xs">Keyboard: Alt + ↑ / ↓</Text>
         </PopoverContent></Popover>
       </> : null}
-      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(href)} className="min-w-0 flex-1 flex-row items-center gap-x-3 py-1 sm:max-w-[45%] sm:flex-initial">
-        <Text numberOfLines={1} className="text-muted-foreground min-w-16 shrink-0 font-mono text-xs">{task.key}</Text>
-        <Text numberOfLines={1} className="min-w-0 flex-1 text-sm">{task.title}</Text>
+      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(href)} className="min-w-0 flex-1 flex-row flex-wrap items-center gap-x-3 py-1">
+        <Text numberOfLines={1} className="text-muted-foreground min-w-16 max-w-full shrink-0 font-mono text-xs">{task.key}</Text>
+        <Text numberOfLines={1} className="min-w-0 basis-32 grow shrink text-sm">{task.title}</Text>
       </Pressable>
+      </View>
+      <View className="min-w-0 basis-96 grow shrink flex-row flex-wrap items-center justify-end gap-2">
       {fieldValue ? (
-        <Badge variant="outline">
-          <Text className="text-xs">{fieldValue}</Text>
+        <Badge variant="outline" className="min-w-0 max-w-36 shrink">
+          <Text numberOfLines={1} className="min-w-0 shrink text-xs">{fieldValue}</Text>
         </Badge>
       ) : null}
       {archived ? (
@@ -659,17 +663,20 @@ function TaskRow({
           <Text>Archived</Text>
         </Badge>
       ) : null}
-      {/* The cell takes the free width and right-aligns the tags; only the tag button opens the tag picker. */}
-      <View className="hidden min-w-0 flex-1 sm:flex sm:min-w-14 sm:flex-row sm:justify-end"><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} /></View>
+      {/* Only the visible tag button opens the picker. Extra tags use a count. */}
+      <View className={`min-w-0 grow shrink flex-row justify-end ${task.tags.length ? 'basis-56' : 'basis-12'}`}><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} maxTags={2} /></View>
+      <View className="min-w-0 max-w-full shrink flex-row items-center gap-2">
       <TaskStatusControl task={task} statuses={controls.statuses} onChanged={controls.onChanged} disabled={controls.busy} />
-      <View className="hidden sm:flex">{task.assignee ? (
+      <View className="shrink-0">{task.assignee ? (
         <UserAvatar user={task.assignee} className="size-6" textClassName="text-[10px]" />
       ) : (
         <View className="border-border size-6 items-center justify-center rounded-full border border-dashed">
           <Text className="text-muted-foreground text-[10px]">-</Text>
         </View>
       )}</View>
-      <TaskActions task={task} users={controls.users} onChanged={controls.onChanged} />
+      <View className="shrink-0"><TaskActions task={task} users={controls.users} onChanged={controls.onChanged} /></View>
+      </View>
+      </View>
     </View></TaskDropZone>
   );
 }

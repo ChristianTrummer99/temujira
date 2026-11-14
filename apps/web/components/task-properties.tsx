@@ -19,7 +19,7 @@ export function TaskStatusControl({ task, statuses, onChanged, disabled = false 
   const { client, user } = useAuth();
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
-  return <View className="gap-1">
+  return <View className="min-w-0 shrink gap-1">
     <Select value={{ value: task.status_id, label: task.status.name }} onValueChange={async (o) => {
       if (!o || o.value === task.status_id || busy) return;
       setBusy(true); setError('');
@@ -28,7 +28,7 @@ export function TaskStatusControl({ task, statuses, onChanged, disabled = false 
       finally { setBusy(false); }
     }}>
       <SelectTrigger disabled={disabled || busy || !hasScope(user, 'tasks:write')} accessibilityLabel={`Status for ${task.key}`} iconClassName="size-3"
-        className="hover:bg-accent dark:hover:bg-accent h-7 max-w-52 gap-1 border-0 bg-transparent px-1 py-0 shadow-none sm:h-7 sm:py-0 dark:bg-transparent">
+        className="hover:bg-accent dark:hover:bg-accent h-7 min-w-0 max-w-52 shrink gap-1 border-0 bg-transparent px-1 py-0 shadow-none sm:h-7 sm:py-0 dark:bg-transparent">
         <StatusPill status={task.status} />
       </SelectTrigger>
       <SelectContent>{statuses.map((s) => <SelectItem key={s.id} value={s.id} label={s.name} />)}</SelectContent>
@@ -38,8 +38,8 @@ export function TaskStatusControl({ task, statuses, onChanged, disabled = false 
 }
 
 /** Searchable, immediate tag edits. Add/remove operations preserve concurrent unrelated tags. */
-export function TaskTagsControl({ task, tags, onChanged, onTagsChanged, disabled = false, showTags = true }: {
-  task: Task; tags: Tag[]; onChanged: (task: Task) => void; onTagsChanged?: () => void; disabled?: boolean; showTags?: boolean;
+export function TaskTagsControl({ task, tags, onChanged, onTagsChanged, disabled = false, showTags = true, maxTags = 5 }: {
+  task: Task; tags: Tag[]; onChanged: (task: Task) => void; onTagsChanged?: () => void; disabled?: boolean; showTags?: boolean; maxTags?: number;
 }) {
   const { client, user } = useAuth();
   const [search, setSearch] = React.useState('');
@@ -61,10 +61,10 @@ export function TaskTagsControl({ task, tags, onChanged, onTagsChanged, disabled
     catch (e) { setError(e instanceof Error ? e.message : 'Could not change tags'); }
     finally { setBusy(false); }
   }
-  return <Popover>
+  return <Popover className="min-w-0 max-w-full shrink">
     <PopoverTrigger asChild>
       <Button variant="ghost" size="sm" disabled={disabled || !canWrite} accessibilityLabel={`Tags for ${task.key}`} className={`h-7 min-w-0 max-w-full shrink gap-1 overflow-hidden px-1 sm:h-7 ${showTags ? 'justify-end' : 'justify-start'}`}>
-        {showTags && task.tags.length ? <TagPills tags={task.tags} max={5} /> : <Icon as={TagIcon} className="text-muted-foreground size-3.5" />}
+        {showTags && task.tags.length ? <TagPills tags={task.tags} max={maxTags} /> : <Icon as={TagIcon} className="text-muted-foreground size-3.5" />}
         {!showTags ? <Text className="text-sm">Edit tags</Text> : null}
         <Icon as={PlusIcon} className="text-muted-foreground size-3" />
       </Button>
