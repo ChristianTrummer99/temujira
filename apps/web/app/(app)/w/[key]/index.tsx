@@ -36,6 +36,7 @@ import type { TaskTagMatchMode } from '@temujira/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ActivityIcon,
+  ArchiveIcon,
   ArrowDownIcon,
   ArrowUpIcon,
   GripVerticalIcon,
@@ -522,8 +523,9 @@ function TaskGroupCard({
   field?: FieldDef;
 } & TaskGroupControls) {
   const count = group.tasks.length;
+  const [compact, setCompact] = React.useState(true);
   return (
-    <View className="border-border mb-3 overflow-hidden rounded-lg border">
+    <View className="border-border mb-3 overflow-hidden rounded-lg border" onLayout={(event) => setCompact(event.nativeEvent.layout.width < 640)}>
       <TaskDropZone enabled={controls.dragEnabled} onDrop={() => controls.onDrop(group.tasks[0]?.id ?? null)}><Pressable
         onPress={onToggle}
         accessibilityRole="button"
@@ -556,6 +558,7 @@ function TaskGroupCard({
               workspaceKey={workspaceKey}
               last={i === count - 1}
               field={field}
+              compact={compact}
               {...controls}
               canMoveUp={i > 0}
               canMoveDown={i < count - 1}
@@ -603,6 +606,7 @@ function TaskRow({
   workspaceKey,
   last,
   field,
+  compact,
   canMoveUp,
   canMoveDown,
   ...controls
@@ -613,6 +617,7 @@ function TaskRow({
   last?: boolean;
   /** Set when the list is grouped by a custom field — show that field's value as a pill. */
   field?: FieldDef;
+  compact: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
 } & TaskGroupControls) {
@@ -626,14 +631,13 @@ function TaskRow({
       {...rowClickProps(href, () => router.push(href))}
       testID={`task-row-${task.key}`}
       className={
-        'action-row border-border min-w-0 flex-row flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5' +
+        'action-row border-border min-w-0 flex-row items-center py-1' +
+        (compact ? ' gap-1.5 px-2' : ' gap-2 px-3') +
         (last ? '' : ' border-b') +
         (Platform.OS === 'web' ? ' hover:bg-accent/50 cursor-pointer transition-colors' : '') +
         (controls.selected.has(task.id) ? ' bg-primary/5' : '') +
         (archived ? ' opacity-55' : '')
       }>
-      {/* These groups wrap based on the row width, including a narrow pane on a wide screen. */}
-      <View className="min-w-0 basis-80 grow shrink flex-row items-center gap-2">
       {controls.canWrite ? <>
         <Checkbox accessibilityLabel={`Select ${task.key}`} checked={controls.selected.has(task.id)} disabled={controls.busy} onCheckedChange={() => controls.onSelect(task.id)} />
         <Popover><TaskDragHandle disabled={!controls.canOrder} onStart={() => controls.onDragStart(task)} onEnd={controls.onDragEnd}
@@ -647,36 +651,35 @@ function TaskRow({
           <Text className="text-muted-foreground p-2 text-xs">Keyboard: Alt + ↑ / ↓</Text>
         </PopoverContent></Popover>
       </> : null}
-      <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(href)} className="min-w-0 flex-1 flex-row flex-wrap items-center gap-x-3 py-1">
-        <Text numberOfLines={1} className="text-muted-foreground min-w-16 max-w-full shrink-0 font-mono text-xs">{task.key}</Text>
-        <Text numberOfLines={1} className="min-w-0 basis-32 grow shrink text-sm">{task.title}</Text>
-      </Pressable>
+      {/* Text shares the available width. The controls keep their place on the right. */}
+      <View className="min-w-0 flex-1 flex-row items-center gap-2">
+        <Pressable accessibilityRole="link" accessibilityLabel={`${task.key} ${task.title}`} onPress={() => router.push(href)} className="min-w-0 flex-1 flex-row items-center gap-2 py-1">
+          <View className="min-w-0 max-w-[45%] shrink flex-row">
+            <Text numberOfLines={1} className="text-muted-foreground min-w-0 shrink font-mono text-xs">{workspaceKey}</Text>
+            <Text className="text-muted-foreground shrink-0 font-mono text-xs">-{task.number}</Text>
+          </View>
+          <Text numberOfLines={1} className="min-w-8 flex-1 text-sm">{task.title}</Text>
+        </Pressable>
+        {(!compact && fieldValue) || archived ? <View className="min-w-0 max-w-[20%] shrink flex-row items-center gap-1">
+          {!compact && fieldValue ? <Badge variant="outline" className="min-w-0 max-w-36 shrink">
+            <Text numberOfLines={1} className="min-w-0 shrink text-xs">{fieldValue}</Text>
+          </Badge> : null}
+          {archived ? <Badge variant="outline" accessibilityLabel="Archived" className={`min-w-0 shrink ${compact ? 'px-1' : ''}`}>
+            {compact ? <Icon as={ArchiveIcon} className="size-3" /> : <Text numberOfLines={1} className="min-w-0 shrink">Archived</Text>}
+          </Badge> : null}
+        </View> : null}
+        {/* Use the row width for the compact layout on both web and native. */}
+        {!compact ? <View className="min-w-0 max-w-[40%] flex-1 flex-row justify-end"><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} maxTags={2} /></View> : null}
       </View>
-      <View className="min-w-0 basis-96 grow shrink flex-row flex-wrap items-center justify-end gap-2">
-      {fieldValue ? (
-        <Badge variant="outline" className="min-w-0 max-w-36 shrink">
-          <Text numberOfLines={1} className="min-w-0 shrink text-xs">{fieldValue}</Text>
-        </Badge>
-      ) : null}
-      {archived ? (
-        <Badge variant="outline">
-          <Text>Archived</Text>
-        </Badge>
-      ) : null}
-      {/* Only the visible tag button opens the picker. Extra tags use a count. */}
-      <View className={`min-w-0 grow shrink flex-row justify-end ${task.tags.length ? 'basis-56' : 'basis-12'}`}><TaskTagsControl task={task} tags={controls.tags} onChanged={controls.onChanged} onTagsChanged={controls.onTagsChanged} disabled={controls.busy} maxTags={2} /></View>
-      <View className="min-w-0 max-w-full shrink flex-row items-center gap-2">
-      <TaskStatusControl task={task} statuses={controls.statuses} onChanged={controls.onChanged} disabled={controls.busy} />
-      <View className="shrink-0">{task.assignee ? (
+      <View className="min-w-0 max-w-[30%] shrink"><TaskStatusControl task={task} statuses={controls.statuses} onChanged={controls.onChanged} disabled={controls.busy} /></View>
+      {!compact ? <View className="shrink-0">{task.assignee ? (
         <UserAvatar user={task.assignee} className="size-6" textClassName="text-[10px]" />
       ) : (
         <View className="border-border size-6 items-center justify-center rounded-full border border-dashed">
           <Text className="text-muted-foreground text-[10px]">-</Text>
         </View>
-      )}</View>
-      <View className="shrink-0"><TaskActions task={task} users={controls.users} onChanged={controls.onChanged} /></View>
-      </View>
-      </View>
+      )}</View> : null}
+      <TaskActions task={task} users={controls.users} onChanged={controls.onChanged} />
     </View></TaskDropZone>
   );
 }

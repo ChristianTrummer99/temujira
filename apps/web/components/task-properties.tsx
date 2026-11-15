@@ -19,8 +19,8 @@ export function TaskStatusControl({ task, statuses, onChanged, disabled = false 
   const { client, user } = useAuth();
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
-  return <View className="min-w-0 shrink gap-1">
-    <Select value={{ value: task.status_id, label: task.status.name }} onValueChange={async (o) => {
+  return <View className="min-w-0 max-w-52 shrink gap-1">
+    <Select className="min-w-0 max-w-full shrink" value={{ value: task.status_id, label: task.status.name }} onValueChange={async (o) => {
       if (!o || o.value === task.status_id || busy) return;
       setBusy(true); setError('');
       try { onChanged((await client.updateTask(task.id, { status_id: o.value })).task); }
@@ -28,7 +28,7 @@ export function TaskStatusControl({ task, statuses, onChanged, disabled = false 
       finally { setBusy(false); }
     }}>
       <SelectTrigger disabled={disabled || busy || !hasScope(user, 'tasks:write')} accessibilityLabel={`Status for ${task.key}`} iconClassName="size-3"
-        className="hover:bg-accent dark:hover:bg-accent h-7 min-w-0 max-w-52 shrink gap-1 border-0 bg-transparent px-1 py-0 shadow-none sm:h-7 sm:py-0 dark:bg-transparent">
+        className="hover:bg-accent dark:hover:bg-accent h-7 min-w-0 max-w-full shrink gap-1 border-0 bg-transparent px-1 py-0 shadow-none sm:h-7 sm:py-0 dark:bg-transparent">
         <StatusPill status={task.status} />
       </SelectTrigger>
       <SelectContent>{statuses.map((s) => <SelectItem key={s.id} value={s.id} label={s.name} />)}</SelectContent>
