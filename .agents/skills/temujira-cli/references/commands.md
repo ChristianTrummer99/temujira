@@ -27,8 +27,9 @@ tmj apikey revoke <apiKeyId>
 
 `setup` creates the first admin only. Login and setup mint and save an API key. Hidden
 password prompts require a TTY; automation must pass password options or use an API key.
-Admin-only `--user` API-key operations act on another user; `apikey list --all`
-lists every user's keys (metadata only — secrets are never retrievable).
+Use `--user` to select another user's keys. This requires `api_keys:manage`.
+`apikey list --all` requires the same scope and lists every user's key metadata.
+Existing key secrets cannot be retrieved.
 
 Normal agent sessions reuse a shared identity/key. `use-key` verifies an existing key from
 stdin and never prints it. It saves shared credentials by default; `--directory` creates
@@ -62,7 +63,7 @@ The CLI remains `tmj`. The setup option `--name` names the admin; `--display-nam
 
 ```text
 tmj branding logo upload <file>
-tmj branding logo download -o <path> [--force]
+tmj branding logo download --output <path> [--force]
 tmj branding logo remove
 ```
 
@@ -79,10 +80,14 @@ tmj user search <query> [--limit <n>]
 tmj user create --name <name>
                 (--email <email> --password <password> | --agent)
                 [--role admin|member] [--with-key]
+                [--scope <scope>]...
+                [--workspace <idOrKey>]... [--all-workspaces]
 tmj user get <userId>
 tmj user update <userId> [--name <name>] [--role admin|member]
                 [--password [password]] [--reactivate]
                 [--exclusive|--shared]
+                [--scope <scope>]...
+                [--workspace <idOrKey>]... [--all-workspaces]
 tmj user deactivate <userId>
 
 tmj user avatar upload <file> [--user <idOrEmailOrMe>]
@@ -96,6 +101,12 @@ pickers address them by name.
 `--exclusive` / `--shared` set the per-identity access policy (agent accounts only, see
 Identity sessions); the default is shared.
 `--deactivated` includes deactivated users rather than filtering exclusively to them.
+
+Repeat `--scope` to set the user's capability scopes. On update, these values replace
+the complete scope list. Repeat `--workspace` to set the complete workspace allowlist.
+Use `--all-workspaces` for access to every workspace; do not combine it with `--workspace`.
+Omitted access flags keep the existing settings on update. User access and API-key limits
+are separate: a key cannot grant access that its owner does not have.
 
 Avatar commands default to `--user me`. PNG, JPEG, GIF, and WebP pictures up to 2 MB are
 supported. File signatures determine the served image type. Self-service needs no write
