@@ -1,8 +1,5 @@
-import {
-  AttachmentPreviewDialog,
-  AttachmentThumb,
-  attachmentIcon,
-} from '@/components/attachment-preview';
+import { AttachmentPreviewDialog } from '@/components/attachment-preview';
+import { AttachmentList } from '@/components/attachment-list';
 import { DescriptionEditor } from '@/components/description-editor';
 import { Markdown } from '@/components/markdown';
 import { MarkdownField } from '@/components/markdown-field';
@@ -48,8 +45,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/lib/auth';
 import { useInbox } from '@/lib/inbox';
 import { saveAttachment } from '@/lib/download';
-import { formatAbsolute, formatBytes, splitTaskKey } from '@/lib/format';
-import { evictPreview, isPreviewable } from '@/lib/preview';
+import { formatAbsolute, splitTaskKey } from '@/lib/format';
+import { evictPreview } from '@/lib/preview';
 import { useResource } from '@/lib/use-resource';
 import type {
   Attachment,
@@ -69,7 +66,6 @@ import {
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  DownloadIcon,
   FileIcon,
   Link2Icon,
   ListChecksIcon,
@@ -1029,52 +1025,17 @@ function TaskAttachments({
       {attachments.length === 0 ? (
         <Text className="text-muted-foreground text-sm">No attachments.</Text>
       ) : (
-        <View className="gap-1.5">
-          {attachments.map((a) => (
-            <View
-              key={a.id}
-              className="border-border bg-card flex-row items-center gap-3 rounded-md border p-2.5">
-              <AttachmentThumb attachment={a} />
-              <Pressable
-                onPress={() => (isPreviewable(a) ? onPreview(a) : onDownload(a.id, a.filename))}
-                className="min-w-0 flex-1">
-                <Text numberOfLines={1} className="text-sm underline">
-                  {a.filename}
-                </Text>
-              </Pressable>
-              <Text className="text-muted-foreground text-xs">{formatBytes(a.size)}</Text>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
-                onPress={() => onDownload(a.id, a.filename)}
-                accessibilityLabel={`Download ${a.filename}`}>
-                <Icon as={DownloadIcon} className="text-muted-foreground size-3.5" />
-              </Button>
-              {canDelete || currentUserId === a.uploader_id ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  accessibilityLabel={`Delete ${a.filename}`}
-                  onPress={async () => {
-                    try {
-                      await client.deleteAttachment(a.id);
-                      evictPreview(a.id);
-                      onChanged({
-                        ...task,
-                        attachments: attachments.filter((x) => x.id !== a.id),
-                      });
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : 'Delete failed');
-                    }
-                  }}>
-                  <Icon as={TrashIcon} className="text-destructive size-3.5" />
-                </Button>
-              ) : null}
-            </View>
-          ))}
-        </View>
+        <AttachmentList attachments={attachments} error={error} onPreview={onPreview} onDownload={onDownload}
+          canDelete={(a) => !!canDelete || currentUserId === a.uploader_id}
+          onDelete={async (a) => {
+            try {
+              await client.deleteAttachment(a.id);
+              evictPreview(a.id);
+              onChanged({ ...task, attachments: attachments.filter((x) => x.id !== a.id) });
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Delete failed');
+            }
+          }} />
       )}
     </View>
   );
@@ -1478,42 +1439,17 @@ function CommentCard({
         {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
         <AttachmentUploads uploads={uploads} />
         {comment.attachments.length > 0 ? (
-          <View className="mt-1 flex-row flex-wrap gap-1.5">
-            {comment.attachments.map((a) => (
-              <View
-                key={a.id}
-                className="border-border bg-card flex-row items-center gap-1.5 rounded-md border px-2 py-1">
-                <Icon as={attachmentIcon(a)} className="text-muted-foreground size-3.5" />
-                <Pressable
-                  onPress={() =>
-                    isPreviewable(a) ? onPreview(a) : onDownload(a.id, a.filename)
-                  }>
-                  <Text className="text-xs underline">{a.filename}</Text>
-                </Pressable>
-                <Text className="text-muted-foreground text-xs">{formatBytes(a.size)}</Text>
-                {currentUserId === comment.author_id || currentUserIsAdmin ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 w-5 p-0"
-                    onPress={async () => {
-                      try {
-                        await client.deleteAttachment(a.id);
-                        evictPreview(a.id);
-                        onPatch({
-                          ...comment,
-                          attachments: comment.attachments.filter((x) => x.id !== a.id),
-                        });
-                      } catch (e) {
-                        setError(e instanceof Error ? e.message : 'Delete failed');
-                      }
-                    }}>
-                    <Icon as={TrashIcon} className="text-destructive size-3" />
-                  </Button>
-                ) : null}
-              </View>
-            ))}
-          </View>
+          <AttachmentList attachments={comment.attachments} compact error={error} onPreview={onPreview} onDownload={onDownload}
+            canDelete={() => currentUserId === comment.author_id || currentUserIsAdmin}
+            onDelete={async (a) => {
+              try {
+                await client.deleteAttachment(a.id);
+                evictPreview(a.id);
+                onPatch({ ...comment, attachments: comment.attachments.filter((x) => x.id !== a.id) });
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'Delete failed');
+              }
+            }} />
         ) : null}
       </View>
     </View>
