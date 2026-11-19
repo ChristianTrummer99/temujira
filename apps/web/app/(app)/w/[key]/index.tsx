@@ -404,18 +404,23 @@ export default function WorkspaceTasksScreen() {
         </View> : null}
       </View>
 
-      {canWrite ? <View className={`border-border flex-row flex-wrap items-center gap-3 border-b px-5 py-2 ${selectedIds.length ? 'bg-primary/5' : ''}`}>
-        <Checkbox accessibilityLabel="Select visible tasks" checked={allSelected} disabled={busy || !ready || !visibleIds.length} onCheckedChange={() => setSelected(allSelected ? new Set() : new Set(visibleIds))} />
-        <Text className="text-muted-foreground min-w-24 text-xs">{selectedIds.length ? `${selectedIds.length} selected` : 'Select tasks'}</Text>
-        {selectedIds.length ? <>
-          <BulkSelect label="Set status" options={statuses.map((s) => ({ value: s.id, label: s.name }))} disabled={busy} onChoose={(id) => bulk({ status_id: id })} />
-          <BulkSelect label="Assign" options={[{ value: 'none', label: 'Unassigned' }, ...users.map((u) => ({ value: u.id, label: u.name }))]} disabled={busy} onChoose={(id) => bulk({ assignee_id: id === 'none' ? null : id })} />
-          <BulkSelect label="Add tag" options={tags.map((t) => ({ value: t.id, label: t.name }))} disabled={busy} onChoose={(id) => bulk({ add_tag_ids: [id] })} />
-          <BulkSelect label="Remove tag" options={tags.map((t) => ({ value: t.id, label: t.name }))} disabled={busy} onChoose={(id) => bulk({ remove_tag_ids: [id] })} />
-          <Button variant="ghost" size="sm" disabled={busy} onPress={() => bulk({ archived: true })}><Text>Archive</Text></Button>
-          {includeArchived ? <Button variant="ghost" size="sm" disabled={busy} onPress={() => bulk({ archived: false })}><Text>Restore</Text></Button> : null}
-          <Button variant="ghost" size="sm" disabled={busy} onPress={() => setSelected(new Set())} accessibilityLabel="Clear selection"><Icon as={XIcon} className="size-4" /></Button>
-        </> : <Text className="text-muted-foreground text-xs">{sort === 'position' ? 'Drag a handle to reorder. Select tasks to edit them together.' : 'Use Manual order to drag tasks.'}</Text>}
+      {canWrite ? <View className="relative z-20 h-12 shrink-0">
+        {/* Keep the list position fixed while the actions change. Menus open above this layer. */}
+        <View testID="task-selection-bar" className={`border-border bg-background absolute inset-x-0 top-0 h-12 flex-row items-center gap-3 border-b px-5 ${selectedIds.length ? 'shadow-md shadow-black/5' : ''}`}>
+          <Checkbox accessibilityLabel="Select visible tasks" checked={allSelected} disabled={busy || !ready || !visibleIds.length} onCheckedChange={() => setSelected(allSelected ? new Set() : new Set(visibleIds))} />
+          <Text numberOfLines={1} className="text-muted-foreground shrink-0 text-xs">{selectedIds.length ? `${selectedIds.length} selected` : 'Select tasks'}</Text>
+          {selectedIds.length ? <>
+            <ScrollView testID="task-selection-actions" horizontal className="min-w-0 flex-1" contentContainerClassName="items-center gap-2 pr-1">
+              <BulkSelect label="Set status" options={statuses.map((s) => ({ value: s.id, label: s.name }))} disabled={busy} onChoose={(id) => bulk({ status_id: id })} />
+              <BulkSelect label="Assign" options={[{ value: 'none', label: 'Unassigned' }, ...users.map((u) => ({ value: u.id, label: u.name }))]} disabled={busy} onChoose={(id) => bulk({ assignee_id: id === 'none' ? null : id })} />
+              <BulkSelect label="Add tag" options={tags.map((t) => ({ value: t.id, label: t.name }))} disabled={busy} onChoose={(id) => bulk({ add_tag_ids: [id] })} />
+              <BulkSelect label="Remove tag" options={tags.map((t) => ({ value: t.id, label: t.name }))} disabled={busy} onChoose={(id) => bulk({ remove_tag_ids: [id] })} />
+              <Button variant="ghost" size="sm" disabled={busy} onPress={() => bulk({ archived: true })}><Text>Archive</Text></Button>
+              {includeArchived ? <Button variant="ghost" size="sm" disabled={busy} onPress={() => bulk({ archived: false })}><Text>Restore</Text></Button> : null}
+            </ScrollView>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" disabled={busy} onPress={() => setSelected(new Set())} accessibilityLabel="Clear selection"><Icon as={XIcon} className="size-4" /></Button>
+          </> : <Text numberOfLines={1} className="text-muted-foreground min-w-0 flex-1 text-xs">{sort === 'position' ? 'Drag a handle to reorder. Select tasks to edit them together.' : 'Use Manual order to drag tasks.'}</Text>}
+        </View>
       </View> : null}
       {actionError ? <Text role="alert" className="text-destructive px-5 py-2 text-sm">{actionError}</Text> : null}
       {notice ? <Text role="status" className="text-muted-foreground px-5 pt-2 text-xs">{notice}</Text> : null}
